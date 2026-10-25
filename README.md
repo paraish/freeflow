@@ -196,10 +196,10 @@ manual download.
   gates, axis settings, compensation matrix and keywords. On claude.ai the file is saved
   inside a .zip (the hosted page can only save certain file types); unzip it before opening it
   in other software. Opened from `dist/freeflow.html`, it saves the .wsp directly.
-- **Open folder** opens a folder of FCS files containing exactly one .wsp, applies the
-  workspace and connects each of its samples to an FCS file by file name (then by `$FIL`),
-  checking event counts. A folder with no .wsp, or more than one, is refused with an
-  explanation. Dropping a folder on the page does the same. **Open FCS files** also accepts a
+- **Open folder** opens a folder of FCS files. If it holds one .wsp, the workspace is applied
+  and each of its samples is connected to an FCS file by file name (then by `$FIL`),
+  checking event counts. A folder with no .wsp just opens its FCS files; one with more than
+  one .wsp is refused with an explanation. Dropping a folder on the page does the same. **Open FCS files** also accepts a
   .wsp (or the saved .zip) picked together with FCS files.
 - Imported from .wsp workspaces: rectangle, polygon, ellipse (converted to a polygon), range
   and quadrant gates; linear, log, biex, Logicle and ArcSinh axes;

@@ -172,7 +172,7 @@ function exampleLayout() {
 // Every way of opening things (file picker, folder picker, drag and drop)
 // ends here with a flat list of { name, path, read() } entries. FCS files
 // become samples; a .zip is unpacked first; a FlowJo .wsp found among them
-// is applied to the samples. A folder must contain exactly one .wsp.
+// is applied to the samples. A folder may hold at most one .wsp.
 
 const isFCS = (n) => /\.(fcs|lmd)$/i.test(n);
 const isWSP = (n) => /\.wsp$/i.test(n);
@@ -240,10 +240,6 @@ async function openEntries(rawEntries, { folder = false } = {}) {
   const extras = entries.filter((e) => e.name === BUNDLE_JSON);
   const fcs = entries.filter((e) => isFCS(e.name));
   const where = folder ? 'This folder' : 'These files';
-  if (folder && wsps.length === 0) {
-    toast(`${where} has no workspace (.wsp) file${fcs.length ? `, only ${fcs.length} FCS file${fcs.length > 1 ? 's' : ''}` : ''}. Add the .wsp to the folder, or use Open FCS files to open the FCS files without gates.`, true);
-    return;
-  }
   if (wsps.length > 1) {
     toast(`${where} ${folder ? 'has' : 'include'} ${wsps.length} workspace files (${wsps.map((w) => w.path).join(', ')}). FreeFlow can only connect one workspace at a time: keep one .wsp and try again.`, true);
     return;
