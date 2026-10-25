@@ -2,14 +2,15 @@ import { parseFCS } from './fcs.js';
 import { exportWSP, parseWSP } from './wsp.js';
 import { makeZip, readZip } from './zip.js';
 import { SharedWorkspaces, stableStringify } from './share.js';
-import { EXAMPLE_SAMPLES, makeSyntheticFCS } from './synth.js';
+import { EXAMPLE_CONTROLS, EXAMPLE_SAMPLES, makeSyntheticControl, makeSyntheticFCS } from './synth.js';
+import { computeSpillover, detectControls } from './compcalc.js';
 import { applyCompensation, buildChannels, createSample, gatingContext, sampleKey } from './model.js';
 import {
   TRANSFORM_TYPES, channelKind, convertTransform, defaultTransform, formatNumber, makeScaler, validBiex, validLogicle,
 } from './transforms.js';
 import { suggestWidth } from './logicle.js';
 import {
-  channelStats, cloneGate, deserialize, findByPath, gateParams, makePopulation, newId, pathOf, pointInPolygon,
+  allIndices, channelStats, cloneGate, deserialize, findByPath, gateParams, makePopulation, newId, pathOf, pointInPolygon,
   quadSiblings, recompute, serialize, uniqueName, walk,
 } from './gating.js';
 import { geometry, histogram, renderPlot } from './plot.js';
@@ -1182,7 +1183,7 @@ function renderSamples() {
           <button class="twisty" data-act="twisty-sample" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Show' : 'Hide'} gates of ${esc(s.name)}">${collapsed ? '▸' : '▾'}</button>
           <button class="sample-pick" data-act="pick" title="${esc(s.fileName)}">
             <span class="sample-name">${esc(s.name)}</span>
-            <span class="sample-meta">${fmtInt(s.n)} events${s.comp ? ` · ${s.comp.enabled ? 'comp' : 'comp off'}` : ''}</span>
+            <span class="sample-meta">${fmtInt(s.n)} events${s.comp ? ` · ${s.comp.enabled ? 'comp' : 'comp off'}` : ''}${s.isControl ? ' · control' : ''}</span>
           </button>
           <button class="icon-btn" data-act="remove" aria-label="Remove ${esc(s.name)}" title="Remove sample">×</button>
         </div>
@@ -1479,18 +1480,58 @@ function statsTSV() {
 
 // ---------------------------------------------------------------- compensation panel
 
+// The compensation panel has two tabs: the matrix itself, and calculating
+// one from single-stain controls.
+const CC = { tab: null, unstainedId: '', assign: {}, path: [], result: null, target: 'non-controls', detected: false };
+
+function compDetectors(s) {
+  if (s?.comp) return s.comp.names;
+  return (s?.params || []).filter((p) => channelKind(p.name) === 'fluor').map((p) => p.name);
+}
+
+function ccIdx(s) {
+  const pop = findByPath(s.root, CC.path);
+  return pop ? pop.indices : allIndices(s.n);
+}
+
+function autoDetectControls(s) {
+  const detectors = compDetectors(s);
+  const stainOf = (d) => s.params.find((p) => p.name === d)?.stain || '';
+  const found = detectControls(S.samples, detectors, { idxOf: ccIdx, stainOf });
+  CC.unstainedId = found.unstained?.id ?? '';
+  CC.assign = Object.fromEntries(detectors.map((d) => [d, found.singles[d]?.id ?? '']));
+  CC.notes = found.notes;
+  CC.result = null;
+  CC.detected = true;
+  markControls();
+}
+
+function markControls() {
+  const ids = new Set([CC.unstainedId, ...Object.values(CC.assign)].filter(Boolean));
+  for (const x of S.samples) x.isControl = ids.has(x.id);
+}
+
 function renderComp() {
   const s = sample();
   const el = $('comp-body');
   if (!s) return;
+  if (!CC.tab) CC.tab = s.comp ? 'matrix' : 'calc';
+  const tabs = `<div class="seg-group comp-tabs" role="tablist">
+    <button class="seg${CC.tab === 'matrix' ? ' is-on' : ''}" role="tab" aria-selected="${CC.tab === 'matrix'}" data-act="comp-tab" data-tab="matrix">Matrix</button>
+    <button class="seg${CC.tab === 'calc' ? ' is-on' : ''}" role="tab" aria-selected="${CC.tab === 'calc'}" data-act="comp-tab" data-tab="calc">Calculate from controls</button></div>`;
+  el.innerHTML = tabs + (CC.tab === 'calc' ? compCalcHTML(s) : compMatrixHTML(s));
+}
+
+function compMatrixHTML(s) {
   if (!s.comp) {
-    el.innerHTML = `<p>${esc(s.name)} has no spillover matrix in its keywords ($SPILLOVER or SPILL). Calculating a matrix from single-stain controls is coming in the next version.</p>`;
-    return;
+    return `<p>${esc(s.name)} has no compensation matrix yet: its file has no $SPILLOVER keyword. Calculate one from your single-stain controls in the other tab.</p>`;
   }
   const { names, matrix, enabled } = s.comp;
   const label = (n) => esc(channelInfo(s, n).stain ? `${n} (${channelInfo(s, n).stain})` : n);
-  el.innerHTML = `
-    <p class="muted small">Spillover values in percent. Each row is a fluorochrome; each column is the detector it spills into. Read from the file's ${esc(s.keywords.$SPILLOVER ? '$SPILLOVER' : 'SPILL')} keyword.</p>
+  const source = s.comp.source === 'controls' ? 'Calculated from single-stain controls.'
+    : `Read from the file's ${esc(s.keywords.$SPILLOVER ? '$SPILLOVER' : 'SPILL')} keyword.`;
+  return `
+    <p class="muted small">Spillover values in percent. Each row is a fluorochrome; each column is the detector it spills into. ${source}</p>
     <label class="check"><input id="comp-enabled" type="checkbox" ${enabled ? 'checked' : ''}> Apply compensation to ${esc(s.name)}</label>
     <div class="table-scroll"><table class="matrix">
       <thead><tr><th scope="col">Fluorochrome → detector</th>${names.map((n) => `<th scope="col">${label(n)}</th>`).join('')}</tr></thead>
@@ -1498,9 +1539,104 @@ function renderComp() {
         : `<input type="number" step="0.01" class="${matrix[i][j] * 100 > 10 ? 'hot' : ''}" data-i="${i}" data-j="${j}" value="${+(matrix[i][j] * 100).toFixed(3)}" aria-label="Spillover of ${esc(rn)} into ${esc(cn)}">`}</td>`).join('')}</tr>`).join('')}</tbody>
     </table></div>
     <div class="btn-row">
-      <button class="btn" data-act="comp-reset">Reset to file values</button>
+      <button class="btn" data-act="comp-reset" ${s.comp.fileMatrix ? '' : 'disabled'}>Reset to file values</button>
       <button class="btn" data-act="comp-all" ${S.samples.length < 2 ? 'disabled' : ''}>Use this matrix for all samples</button>
     </div>`;
+}
+
+function compCalcHTML(s) {
+  if (!CC.detected) autoDetectControls(s);
+  const detectors = compDetectors(s);
+  if (!detectors.length) return '<p>This sample has no fluorescence parameters to compensate.</p>';
+  const opts = (sel, none) => `<option value="">${none}</option>${S.samples.map((x) => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}`;
+  const found = Object.values(CC.assign).filter(Boolean).length;
+  const paths = [];
+  const first = S.samples.find((x) => x.id === Object.values(CC.assign).find(Boolean)) || s;
+  walk(first.root, (p) => paths.push(pathOf(p)));
+  const r = CC.result;
+  const label = (n) => esc(channelInfo(s, n).stain ? `${n} (${channelInfo(s, n).stain})` : n);
+  const resultHTML = !r ? '' : `
+    <h3 class="comp-h">Calculated matrix</h3>
+    <div class="table-scroll"><table class="matrix">
+      <thead><tr><th scope="col">Fluorochrome → detector</th>${r.detectors.map((n) => `<th scope="col">${label(n)}</th>`).join('')}</tr></thead>
+      <tbody>${r.detectors.map((rn, i) => `<tr><th scope="row">${label(rn)}</th>${r.detectors.map((cn, j) => `<td><span class="${i === j ? 'diag' : r.matrix[i][j] * 100 > 10 ? 'hot-text' : ''}">${i === j ? '100' : (r.matrix[i][j] * 100).toFixed(2).replace(/^-0\.00$/, '0.00')}</span></td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>
+    <div class="table-scroll"><table class="mini">
+      <thead><tr><th scope="col">Fluorochrome</th><th scope="col">Control</th><th scope="col">Positives used</th><th scope="col">Negatives</th></tr></thead>
+      <tbody>${r.rows.map((row) => `<tr><th scope="row">${esc(row.detector)}</th><td class="left">${row.control ? esc(row.control.name) : '—'}</td><td>${row.nPos != null ? fmtInt(row.nPos) : '—'}</td><td>${row.nNeg != null ? fmtInt(row.nNeg) : '—'}</td></tr>`).join('')}</tbody>
+    </table></div>
+    ${r.warnings.length ? `<ul class="warn-list">${r.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : '<p class="ok-note">All controls gave clear positives.</p>'}
+    <fieldset class="apply-to"><legend>Apply to</legend>
+      ${[['non-controls', 'All samples except the controls'], ['all', 'All samples'], ['this', `Only ${s.name}`]].map(([v, t]) => `<label class="check check-small"><input type="radio" name="cc-target" value="${v}" ${CC.target === v ? 'checked' : ''}> ${esc(t)}</label>`).join('')}
+    </fieldset>
+    <div class="btn-row"><button class="btn btn-primary" data-act="cc-apply">Apply matrix</button></div>`;
+  return `
+    <p class="muted small">Pick an unstained control and one single-stain control per fluorochrome. FreeFlow found ${found} of ${detectors.length} automatically, from file and tube names (such as “FITC Stained Control”) and from which detector each control is brightest in. Spillover = (median of bright positives − median of negatives) in each detector ÷ the same in the stain's own detector, on uncompensated data.</p>
+    ${CC.notes?.length ? `<ul class="warn-list">${CC.notes.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+    ${found === 0 ? `<p class="notice">No compensation controls were found among the open samples. Open your control FCS files, or choose them below.${S.examples ? ' <button class="btn btn-small" data-act="cc-examples">Add example controls</button>' : ''}</p>` : ''}
+    <div class="cc-grid">
+      <label class="field"><span>Negative (unstained)</span><select id="cc-unstained">${opts(CC.unstainedId, 'None: use each control’s dim events')}</select></label>
+      ${detectors.map((d) => `<label class="field"><span>${label(d)}</span><select data-cc-det="${esc(d)}">${opts(CC.assign[d], 'No control')}</select></label>`).join('')}
+      <label class="field"><span>Measure on</span><select id="cc-path">${paths.map((p) => `<option value="${esc(JSON.stringify(p))}" ${JSON.stringify(p) === JSON.stringify(CC.path) ? 'selected' : ''}>${esc(['All Events', ...p].join(' / '))}</option>`).join('')}</select></label>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" data-act="cc-calc" ${found ? '' : 'disabled'}>Calculate matrix</button>
+      <button class="btn" data-act="cc-detect">Detect controls again</button>
+    </div>
+    ${resultHTML}`;
+}
+
+function runCompCalc() {
+  const s = sample();
+  const detectors = compDetectors(s);
+  const byId = (id) => S.samples.find((x) => x.id === id) || null;
+  const controls = {};
+  const missing = [];
+  for (const d of detectors) {
+    const c = byId(CC.assign[d]);
+    if (!c) continue;
+    if (!detectors.every((x) => c.raw.has(x))) { missing.push(c.name); continue; }
+    controls[d] = c;
+  }
+  const unstained = byId(CC.unstainedId);
+  const out = computeSpillover({ detectors, controls, unstained, idxOf: ccIdx, fallback: s.comp && s.comp.names.join() === detectors.join() ? s.comp.matrix : null });
+  if (missing.length) out.warnings.unshift(`${missing.join(', ')} lack some of the detectors and were not used.`);
+  CC.result = { ...out, detectors };
+}
+
+function applyCompCalc() {
+  const s = sample();
+  const r = CC.result;
+  if (!r) return;
+  const controlIds = new Set([CC.unstainedId, ...Object.values(CC.assign)].filter(Boolean));
+  const targets = CC.target === 'this' ? [s] : S.samples.filter((x) => CC.target === 'all' || !controlIds.has(x.id));
+  const skipped = [];
+  let n = 0;
+  for (const t of targets) {
+    if (!r.detectors.every((d) => t.rangeOf[d] !== undefined)) { skipped.push(t.name); continue; }
+    t.comp = {
+      names: [...r.detectors], matrix: r.matrix.map((row) => [...row]),
+      fileMatrix: t.comp?.fileMatrix ?? null, enabled: true, source: 'controls',
+    };
+    buildChannels(t);
+    applyCompensation(t);
+    recompute(t.root, ctxFor(t), t.n);
+    n++;
+  }
+  S.version++;
+  CC.tab = 'matrix';
+  renderAll();
+  toast(`Applied the calculated matrix to ${n} sample${n === 1 ? '' : 's'}.${skipped.length ? ` Skipped ${skipped.join(', ')}: missing detectors.` : ''}`, skipped.length > 0);
+}
+
+function addExampleControls() {
+  for (const c of EXAMPLE_CONTROLS) {
+    const { name, buffer } = makeSyntheticControl(c);
+    addSample(parseFCS(buffer, `${name}.fcs`), true);
+  }
+  CC.detected = false;
+  renderAll();
+  toast('Added 5 example controls: unstained plus one single stain per fluorochrome.');
 }
 
 function compChanged(s) {
@@ -1529,6 +1665,7 @@ let layoutEditor = null;
 function layoutEnv() {
   return {
     samples: () => S.samples,
+    batchSamples: () => S.samples.filter((x) => !x.isControl),
     activeSample: () => sample(),
     sampleKey,
     findByPath,
@@ -1815,10 +1952,16 @@ function bind() {
   $('comp-close').addEventListener('click', () => { $('comp-panel').hidden = true; });
   $('comp-panel').addEventListener('click', (e) => {
     if (e.target === $('comp-panel')) $('comp-panel').hidden = true;
-    const act = e.target.closest('[data-act]')?.dataset.act;
+    const btn = e.target.closest('[data-act]');
+    const act = btn?.dataset.act;
     const s = sample();
+    if (act === 'comp-tab') { CC.tab = btn.dataset.tab; renderComp(); return; }
+    if (act === 'cc-detect') { CC.detected = false; renderComp(); renderSamples(); return; }
+    if (act === 'cc-examples') { addExampleControls(); return; }
+    if (act === 'cc-calc') { runCompCalc(); renderComp(); return; }
+    if (act === 'cc-apply') { applyCompCalc(); return; }
     if (!s?.comp) return;
-    if (act === 'comp-reset') { s.comp.matrix = s.comp.fileMatrix.map((r) => [...r]); compChanged(s); }
+    if (act === 'comp-reset' && s.comp.fileMatrix) { s.comp.matrix = s.comp.fileMatrix.map((r) => [...r]); s.comp.source = 'file'; compChanged(s); }
     if (act === 'comp-all') {
       let n = 0;
       for (const o of S.samples) {
@@ -1837,6 +1980,11 @@ function bind() {
   });
   $('comp-panel').addEventListener('change', (e) => {
     const s = sample();
+    const t = e.target;
+    if (t.id === 'cc-unstained') { CC.unstainedId = t.value; CC.result = null; markControls(); renderComp(); renderSamples(); return; }
+    if (t.dataset.ccDet) { CC.assign[t.dataset.ccDet] = t.value; CC.result = null; markControls(); renderComp(); renderSamples(); return; }
+    if (t.id === 'cc-path') { CC.path = JSON.parse(t.value); CC.result = null; renderComp(); return; }
+    if (t.name === 'cc-target') { CC.target = t.value; return; }
     if (!s?.comp) return;
     if (e.target.id === 'comp-enabled') { s.comp.enabled = e.target.checked; compChanged(s); return; }
     if (e.target.dataset.i !== undefined) {

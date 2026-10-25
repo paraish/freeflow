@@ -118,3 +118,46 @@ export const EXAMPLE_SAMPLES = [
   { name: 'D01_PMA', donor: 'D01', condition: 'PMA/Iono', events: 60000, seed: 12 },
   { name: 'D02_Unstim', donor: 'D02', condition: 'Unstim', events: 60000, seed: 13 },
 ];
+
+// Compensation controls in the style BD FACSDiva exports them: an unstained
+// tube and one single-stain tube per fluorochrome, all lymphocyte-like
+// cells, with the same spillover as the samples. `stain` is an index into
+// FLUORS, or null for the unstained control.
+export function makeSyntheticControl({ stain, events = 20000, seed }) {
+  const r = rng(seed);
+  const cols = Array.from({ length: 8 }, () => new Float32Array(events));
+  const truth = new Float64Array(4);
+  for (let e = 0; e < events; e++) {
+    const fa = Math.max(200, 72000 + r.normal() * 7000);
+    cols[0][e] = fa;
+    cols[1][e] = fa * 0.86 * (1 + r.normal() * 0.04);
+    cols[2][e] = Math.max(100, 24000 + r.normal() * 5000);
+    const positive = stain !== null && r.uniform() < 0.45;
+    for (let i = 0; i < 4; i++) {
+      const auto = 60 * Math.exp(r.normal() * 0.6) * 0.8;
+      truth[i] = positive && i === stain ? 15000 * Math.exp(r.normal() * 0.35) + auto : auto;
+    }
+    for (let j = 0; j < 4; j++) {
+      let s = 0;
+      for (let i = 0; i < 4; i++) s += truth[i] * SPILLOVER[i][j];
+      s += r.normal() * (90 + Math.sqrt(Math.max(0, s)) * 1.8);
+      cols[3 + j][e] = Math.min(RANGE - 1, s);
+    }
+    cols[7][e] = (e / events) * 60000;
+  }
+  const label = stain === null ? 'Unstained Control' : `${FLUORS[stain].name.replace(/-A$/, '')} Stained Control`;
+  const name = `Compensation Controls_${label}`;
+  const params = [
+    { name: 'FSC-A', range: RANGE }, { name: 'FSC-H', range: RANGE }, { name: 'SSC-A', range: RANGE },
+    ...FLUORS.map((f) => ({ name: f.name, range: RANGE })),
+    { name: 'Time', range: 60000 },
+  ];
+  const spill = [FLUORS.length, ...FLUORS.map((f) => f.name), ...SPILLOVER.flat()].join(',');
+  const keywords = {
+    $FIL: `${name}.fcs`, $DATE: '25-OCT-2026', $CYT: 'Example cytometer (synthetic data)',
+    $SRC: 'Compensation Controls', 'TUBE NAME': label, $SPILLOVER: spill,
+  };
+  return { name, buffer: writeFCS({ params, columns: cols, keywords }) };
+}
+
+export const EXAMPLE_CONTROLS = [null, 0, 1, 2, 3].map((stain, i) => ({ stain, seed: 101 + i }));

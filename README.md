@@ -21,7 +21,21 @@ replaces the examples.
 - **Compensation**: the acquisition matrix (`$SPILLOVER`, `SPILL`, `$SPILL`) is read and
   applied automatically, creating `Comp-` parameters. The matrix can be edited per sample,
   switched off, reset, or applied to all samples.
-- **Axis scaling** per parameter:
+- **Compensation from single-stain controls** (Compensation → Calculate from controls):
+  - Finds the unstained control and one single-stain control per fluorochrome automatically,
+    from file and tube names (BD FACSDiva's "FITC Stained Control", "Unstained Control",
+    names with the fluorochrome or marker) and from which detector each control is brightest
+    in. It warns when a control's name and data disagree. Every assignment can be changed.
+  - Spillover = (median of bright positives − median of negatives) in each detector ÷ the
+    same in the stain's own detector, on uncompensated data. Negatives come from the
+    unstained control, or from each control's dim events if there is none. You can measure on
+    a gated population (e.g. Singlets) instead of all events.
+  - Shows the matrix, events used and warnings (too few positives, weak separation, missing
+    controls) before you apply it to all samples except the controls, all samples, or one.
+  - Checked on synthetic controls made with a known matrix: every value is recovered within
+    0.15 percentage points.
+  - Controls are marked in the sample list and left out of batch layouts.
+
   - linear (min/max)
   - log (decades)
   - **Biex** (FlowJo's biexponential, the default for fluorescence): top of scale, positive
@@ -129,8 +143,7 @@ change wins.
 
 ## Roadmap
 
-- **Phase 2**: compute compensation from single-stain controls (auto-detected from
-  keywords and filenames), sample groups, gates linked across a group.
+- **Phase 2**: sample groups, gates linked across a group.
 - **Phase 3**: sample- and group-level annotations you type in, table editor with CSV/Excel
   export, histogram overlays in layouts.
 - **Phase 4**: Boolean and exclusion gates, derived parameters, contour/zebra plots,
@@ -168,6 +181,7 @@ Source is plain ES modules in `src/`, bundled into one HTML file by `scripts/bui
 | `src/plot.js` | Canvas rendering |
 | `src/synth.js` | Synthetic example data |
 | `src/biex.js` | FlowJo biex transform |
+| `src/compcalc.js` | Compensation from single-stain controls |
 | `src/model.js` | Samples: channels, compensation, gating context |
 | `src/wsp.js` | FlowJo workspace export and import |
 | `src/zip.js` | Zip reading and writing |
