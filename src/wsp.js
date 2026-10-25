@@ -344,13 +344,13 @@ export function parseWSP(text, DOMParserImpl = globalThis.DOMParser) {
   const doc = new DOMParserImpl().parseFromString(text, 'application/xml');
   const root = doc.documentElement;
   if (!root || root.localName !== 'Workspace' || doc.getElementsByTagName('parsererror').length) {
-    throw new Error('This file is not a FlowJo workspace: it is not readable XML with a <Workspace> root.');
+    throw new Error('This file is not a .wsp workspace: it is not readable XML with a <Workspace> root.');
   }
   const warnings = [];
   let linkN = 0;
   const newLink = () => `wq${++linkN}`;
   const list = kid(root, 'SampleList');
-  if (!list) throw new Error('This FlowJo workspace has no SampleList.');
+  if (!list) throw new Error('This workspace has no SampleList.');
 
   const samples = kids(list, 'Sample').map((sEl) => {
     const node = kid(sEl, 'SampleNode');

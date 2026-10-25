@@ -3,9 +3,9 @@
 [![Cite this software](https://img.shields.io/badge/cite-CITATION.cff-blue)](CITATION.cff)
 
 
-Flow cytometry analysis in the browser: open FCS files, compensate, draw gates on
-transformed axes, and compare population statistics across samples. Files are read
-locally in your browser and are never uploaded.
+A free, open-source tool for flow cytometry analysis and figure generation, running in the
+browser: open FCS files, compensate, gate, compare statistics across samples and build
+figures. Files are read locally in your browser and are never uploaded.
 
 **Status: Phase 1 (gating core).** Built for conventional (non-spectral) cytometers.
 
@@ -209,8 +209,8 @@ Source is plain ES modules in `src/`, bundled into one HTML file by `scripts/bui
 
 If FreeFlow contributed to your work, please cite it:
 
-> Misra, Paraish S. (2026). FreeFlow: browser-based flow cytometry analysis with FlowJo
-> workspace compatibility (Version 0.1.0) [Computer software]. https://github.com/paraish/freeflow
+> Misra, Paraish S. (2026). FreeFlow: a free, open-source tool for flow cytometry analysis
+> and figure generation (Version 0.1.0) [Computer software]. https://github.com/paraish/freeflow
 
 In author-initial styles: Misra PS (Vancouver) or Misra, P. S. (APA).
 

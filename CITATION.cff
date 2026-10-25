@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If FreeFlow contributed to your work, please cite it as below."
-title: "FreeFlow: browser-based flow cytometry analysis with FlowJo workspace compatibility"
+title: "FreeFlow: a free, open-source tool for flow cytometry analysis and figure generation"
 type: software
 authors:
   - family-names: Misra
@@ -15,4 +15,4 @@ keywords:
   - gating
   - compensation
   - FCS
-  - FlowJo
+  - figure generation

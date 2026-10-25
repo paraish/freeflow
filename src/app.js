@@ -232,7 +232,7 @@ async function openEntries(rawEntries, { folder = false } = {}) {
   const fcs = entries.filter((e) => isFCS(e.name));
   const where = folder ? 'This folder' : 'These files';
   if (folder && wsps.length === 0) {
-    toast(`${where} has no FlowJo workspace (.wsp) file${fcs.length ? `, only ${fcs.length} FCS file${fcs.length > 1 ? 's' : ''}` : ''}. Add the .wsp to the folder, or use Open FCS files to open the FCS files without gates.`, true);
+    toast(`${where} has no workspace (.wsp) file${fcs.length ? `, only ${fcs.length} FCS file${fcs.length > 1 ? 's' : ''}` : ''}. Add the .wsp to the folder, or use Open FCS files to open the FCS files without gates.`, true);
     return;
   }
   if (wsps.length > 1) {
@@ -461,15 +461,15 @@ async function saveBundle() {
       data: [
         `${name}: a FreeFlow analysis bundle`,
         '',
-        `Contains ${named.length} FCS file${named.length === 1 ? '' : 's'}, a FlowJo workspace (${name}.wsp) with the gates, axis settings`,
+        `Contains ${named.length} FCS file${named.length === 1 ? '' : 's'}, a workspace (${name}.wsp) with the gates, axis settings`,
         'and compensation, and FreeFlow layouts (freeflow.json).',
         '',
         'To continue in FreeFlow: open https://paraish.github.io/freeflow/ and use Open FCS files to open this .zip',
         '(or unzip it and use Open folder).',
-        'To continue in FlowJo: unzip it and open the .wsp; keep it in the folder with the FCS files.',
+        'To continue in other analysis software: unzip it and open the .wsp; keep it in the folder with the FCS files.',
         '',
-        'If FreeFlow contributed to your work, please cite: Misra, Paraish S. (2026). FreeFlow: browser-based flow',
-        'cytometry analysis with FlowJo workspace compatibility [Computer software]. https://github.com/paraish/freeflow',
+        'If FreeFlow contributed to your work, please cite: Misra, Paraish S. (2026). FreeFlow: a free, open-source',
+        'tool for flow cytometry analysis and figure generation [Computer software]. https://github.com/paraish/freeflow',
         '',
       ].join('\r\n'),
     });
@@ -1857,7 +1857,7 @@ async function renderShare() {
     pill.hidden = true;
   }
   $('save-note').textContent = globalThis.claude?.use
-    ? 'On claude.ai the .wsp is saved inside a .zip; unzip it before opening it in FlowJo. FreeFlow opens the .zip directly.'
+    ? 'On claude.ai the .wsp is saved inside a .zip; unzip it before opening it in other software. FreeFlow opens the .zip directly.'
     : '';
   if ($('share-panel').hidden) return;
   const el = $('share-body');

@@ -11,11 +11,11 @@
       <span class="brand-mark" aria-hidden="true"></span>
       <span class="brand-name">FreeFlow</span>
     </div>
-    <label class="btn btn-primary file-btn" title="Open .fcs files, plus a FlowJo .wsp or a saved .zip">
+    <label class="btn btn-primary file-btn" title="Open .fcs files, plus a .wsp workspace or a saved .zip">
       <input id="file-input" type="file" accept=".fcs,.lmd,.wsp,.zip,application/octet-stream" multiple>
       Open FCS files
     </label>
-    <label class="btn file-btn" title="Open a folder with FCS files and one FlowJo .wsp workspace">
+    <label class="btn file-btn" title="Open a folder with FCS files and one .wsp workspace">
       <input id="folder-input" type="file" webkitdirectory multiple>
       Open folder
     </label>
@@ -40,12 +40,12 @@
       <label class="welcome-option file-btn">
         <input id="welcome-files" type="file" accept=".fcs,.lmd,.wsp,.zip,application/octet-stream" multiple>
         <span class="welcome-title">Open FCS files</span>
-        <span class="welcome-text">FCS 2.0 to 3.2. Pick a FlowJo .wsp too to bring its gates.</span>
+        <span class="welcome-text">FCS 2.0 to 3.2. Pick a .wsp workspace too to bring its gates.</span>
       </label>
       <label class="welcome-option file-btn">
         <input id="welcome-folder" type="file" webkitdirectory multiple>
         <span class="welcome-title">Open a folder</span>
-        <span class="welcome-text">FCS files with one FlowJo workspace (.wsp); samples connect automatically.</span>
+        <span class="welcome-text">FCS files with one .wsp workspace; samples connect automatically.</span>
       </label>
       <button id="try-examples" class="welcome-option welcome-try">
         <span class="welcome-title">Try sample data</span>
@@ -158,7 +158,7 @@
   <footer class="site-foot">
     <p class="cite">
       <strong>How to cite:</strong> if FreeFlow contributed to your work, please cite
-      <span id="cite-text">Misra, Paraish S. (2026). FreeFlow: browser-based flow cytometry analysis with FlowJo workspace compatibility (Version 0.1.0) [Computer software]. https://github.com/paraish/freeflow</span>
+      <span id="cite-text">Misra, Paraish S. (2026). FreeFlow: a free, open-source tool for flow cytometry analysis and figure generation (Version 0.1.0) [Computer software]. https://github.com/paraish/freeflow</span>
       <button id="copy-cite" class="btn btn-small">Copy citation</button>
     </p>
     <p class="legal">For research use only, not for diagnostic procedures. Provided as is, without warranty.
@@ -186,15 +186,15 @@
     </header>
     <section class="sheet-section">
       <h3>Analysis bundle</h3>
-      <p class="muted small">One .zip with the original FCS files, the gates, axis settings, compensation and layouts. Send it to someone and they continue where you left off: they open the .zip in FreeFlow (Open FCS files), or unzip it and open the .wsp in FlowJo.</p>
+      <p class="muted small">One .zip with the original FCS files, the gates, axis settings, compensation and layouts. Send it to someone and they continue where you left off: they open the .zip in FreeFlow (Open FCS files), or unzip it and open the .wsp workspace in other analysis software.</p>
       <div class="row-field">
         <label class="field"><span>Name</span><input id="ws-name" type="text" autocomplete="off"></label>
         <button id="save-bundle" class="btn btn-primary">Download bundle (.zip)</button>
       </div>
     </section>
     <section class="sheet-section">
-      <h3>FlowJo workspace file</h3>
-      <p class="muted small">Just the gates, axis settings and compensation as a FlowJo 10 workspace (.wsp), for when the other person already has the FCS files. Uses the name above.</p>
+      <h3>Workspace file (.wsp)</h3>
+      <p class="muted small">Just the gates, axis settings and compensation as a .wsp workspace, for when the other person already has the FCS files. Uses the name above.</p>
       <div class="btn-row"><button id="save-wsp" class="btn">Download .wsp only</button></div>
       <p id="save-note" class="muted small"></p>
     </section>
