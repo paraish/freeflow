@@ -108,6 +108,8 @@
           <button class="seg" data-type="dot">Dot</button>
           <button class="seg" data-type="histogram">Histogram</button>
         </div>
+        <label class="dot-size" title="Size of each event on pseudocolor and dot plots">Dot size
+          <input id="dot-size" type="range" min="1" max="6" step="1" value="1"></label>
       </div>
       <div class="axis-row">
         <label class="axis-pick"><span>X</span><select id="axis-x"></select></label>
@@ -242,5 +244,9 @@
 </div>
 <div id="drop" class="drop" hidden><p>Drop FCS files to open them</p></div>
 <div id="toast" class="toast" role="status" hidden></div>
+<form id="name-pop" class="name-pop" hidden autocomplete="off">
+  <input id="name-pop-input" type="text" aria-label="Gate name">
+  <button class="btn btn-primary btn-small" type="submit">OK</button>
+</form>
 <div id="drag-ghost" class="drag-ghost" aria-hidden="true"></div>
 <script>/*__JS__*/</script>

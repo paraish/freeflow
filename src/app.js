@@ -45,6 +45,7 @@ const S = {
   multi: new Set(), // ids of gates selected together in the trees (any sample)
   anchor: null, // { id, list } of the last clicked tree row, for Shift-click ranges
   collapsed: new Set(), // "<list>:<population id>" and "sample:<sample id>" keys
+  dotSize: 1, // pixels per event on pseudocolor and dot plots
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1071,6 +1072,7 @@ function redo() {
 }
 
 function restoreSnapshot(snap) {
+  closeNamePop(false);
   for (const s of S.samples) {
     const t = snap.trees.get(s.id);
     if (!t) continue;
@@ -1143,7 +1145,7 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
 
 // ---------------------------------------------------------------- plot
 
-const plot = { canvas: null, geo: null, size: 480, pending: false };
+const plot = { canvas: null, geo: null, size: 480, pending: false, last: { x: 0, y: 0 } }; // last: the pointer, for the name box
 
 function cssVar(n) {
   return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -1201,7 +1203,7 @@ function drawPlot() {
   }
   plot.geo = renderPlot(canvas, {
     w, h, dpr: devicePixelRatio || 1, colors, fontSans, fontMono,
-    type: v.type, xs: scaled(s, v.x), ys: hist ? null : scaled(s, v.y), idx: pop.indices,
+    type: v.type, xs: scaled(s, v.x), ys: hist ? null : scaled(s, v.y), idx: pop.indices, dotSize: S.dotSize,
     xTicks: sx.ticks(), yTicks,
     xLabel: channelInfo(s, v.x).label, yLabel: hist ? '% of max' : channelInfo(s, v.y).label,
     gates: gateShapes(), draft,
@@ -1286,7 +1288,7 @@ function drawTile(s, force = false) {
   const has = (n) => s.channels.some((c) => c.name === n);
   const w = Math.max(120, Math.floor(t.canvas.parentElement.clientWidth - 12));
   const shapes = has(v.x) && (hist || has(v.y)) ? gateShapes(pop, v) : [];
-  const key = [w, pop.id, objId(pop.indices), v.x, v.y, v.type, scalerFor(v.x).key, hist ? '' : scalerFor(v.y).key, S.selId,
+  const key = [w, S.dotSize, pop.id, objId(pop.indices), v.x, v.y, v.type, scalerFor(v.x).key, hist ? '' : scalerFor(v.y).key, S.selId,
     cssVar('--surface'), JSON.stringify(shapes.map((sh) => [sh.pts, sh.cx, sh.cy, sh.lo, sh.hi, sh.level, sh.sub, sh.quads?.map((q) => q.sub)]))].join('|');
   if (!force && key === t.key) return;
   t.key = key;
@@ -1298,7 +1300,7 @@ function drawTile(s, force = false) {
   }
   t.geo = renderPlot(t.canvas, {
     w, h: w, dpr: devicePixelRatio || 1, colors, fontSans: cssVar('--font-sans'), fontMono: cssVar('--font-mono'), compact: true,
-    type: v.type, xs: scaled(s, v.x), ys: hist ? null : scaled(s, v.y), idx: pop.indices,
+    type: v.type, xs: scaled(s, v.x), ys: hist ? null : scaled(s, v.y), idx: pop.indices, dotSize: S.dotSize,
     xTicks: scalerFor(v.x).ticks(), yTicks: hist ? histTicks() : scalerFor(v.y).ticks(),
     xLabel: '', yLabel: '', gates: shapes,
   });
@@ -1489,6 +1491,7 @@ function commitFolderDrag(d) {
 }
 
 function onPointerDown(ev) {
+  plot.last = { x: ev.clientX, y: ev.clientY };
   if (!sample() || ev.button !== 0) return;
   const { px, py, sx, sy } = eventScale(ev);
   const v = viewOf(viewedPop());
@@ -1559,7 +1562,8 @@ function onPointerMove(ev) {
   }
 }
 
-function onPointerUp() {
+function onPointerUp(ev) {
+  plot.last = { x: ev.clientX, y: ev.clientY };
   if (drag) {
     const moved = drag.undoPushed;
     if (moved && drag.forFolder) commitFolderDrag(drag);
@@ -1621,7 +1625,8 @@ function createGate(gate, baseName) {
   S.tool = 'select'; // back to Select after each gate
   if (S.mode === 'group') adoptAsFolderGates([pop]);
   renderAll();
-  focusGateName();
+  // After the click that finished the gate, which would otherwise take the focus.
+  setTimeout(() => { if (pop.parent?.children.includes(pop)) openNamePop(pop, plot.last.x + 14, plot.last.y + 10); }, 0);
 }
 
 // Group gating: gates drawn on the main plot become the folder's gates and
@@ -1716,7 +1721,7 @@ function treeRows(s, list) {
       <button class="pop-pick" data-act="view" title="${p.gate ? 'Click to open. Drag to copy. Ctrl/⌘- or Shift-click to select several.' : 'Click to open'}">
         <span class="pop-name">${esc(p.name)}${p.link ? `<span class="fg-mark${p.custom ? ' is-custom' : ''}" title="${esc(p.custom ? `Folder gate from ${folderGateName(p.link)}, adjusted for this sample only` : `Folder gate from ${folderGateName(p.link)}`)}">${p.custom ? 'adjusted' : ''}</span>` : ''}</span>
         <span class="pop-stats"><span class="pop-num">${fmtInt(p.indices.length)}</span><span class="pop-pct">${par}</span></span>
-      </button></li>`);
+      </button>${p.gate ? `<button class="row-edit" data-act="rename" aria-label="Rename ${esc(p.name)}" title="Rename">✎</button>` : ''}</li>`);
     if (!collapsed) for (const c of p.children) visit(c, depth + 1);
   };
   visit(s.root, 0);
@@ -2067,6 +2072,7 @@ function renderToolbar() {
     xs.disabled = ys.disabled = !s;
   }
   $('axis-y-wrap').hidden = hist;
+  $('dot-size').disabled = !s || hist;
   const hint = TOOLS.find((t) => t.id === S.tool)?.hint ?? '';
   $('hint').textContent = S.mode === 'group'
     ? `${hint} Gates drawn or changed here apply to every sample in ${currentGroup().name}; to change one sample only, adjust its gate in its tile.`
@@ -2730,9 +2736,54 @@ function toast(msg, isError = false) {
   toastTimer = setTimeout(() => { el.hidden = true; }, isError ? 7000 : 2600);
 }
 
-function focusGateName() {
-  const inp = $('gate-name');
-  if (inp) { inp.focus(); inp.select(); }
+// A small name box at a point on the page: right after a gate is drawn, or
+// from a gate's ✎ button in the trees.
+const NP = { pop: null };
+
+function openNamePop(pop, x, y) {
+  NP.pop = pop;
+  const f = $('name-pop');
+  f.hidden = false;
+  f.style.left = `${Math.max(8, Math.min(innerWidth - f.offsetWidth - 8, x))}px`;
+  f.style.top = `${Math.max(8, Math.min(innerHeight - f.offsetHeight - 8, y))}px`;
+  const inp = $('name-pop-input');
+  inp.value = pop.name;
+  inp.focus();
+  inp.select();
+}
+
+function closeNamePop(save) {
+  const f = $('name-pop');
+  if (f.hidden) return;
+  const pop = NP.pop;
+  if (save && pop && !renamePop(pop, $('name-pop-input').value)) return;
+  NP.pop = null;
+  f.hidden = true;
+}
+
+// Renames a population; a folder gate is renamed in every sample. Returns
+// false when the name is taken.
+function renamePop(pop, raw) {
+  const name = raw.trim();
+  if (!name || name === pop.name) return true;
+  if (pop.parent.children.some((c) => c !== pop && c.name === name)) {
+    toast(`Another population under ${pop.parent.name} is already called "${name}".`, true);
+    return false;
+  }
+  pushUndo();
+  const oldPath = pathOf(viewedPop());
+  const popPath = pathOf(pop);
+  const t = templateFor(pop);
+  const onMain = findPop(pop.id)?.sample === sample();
+  pop.name = name;
+  if (t) { t.node.name = name; syncFolderGates(); }
+  // Keep viewing the same population if the renamed one is on the path.
+  if ((onMain || t) && oldPath.slice(0, popPath.length).join('\u0000') === popPath.join('\u0000')) {
+    oldPath[popPath.length - 1] = name;
+    S.viewPath = oldPath;
+  }
+  renderAll();
+  return true;
 }
 
 function renderAll() {
@@ -2987,6 +3038,11 @@ function bind() {
     const found = findPop(row.dataset.id);
     if (!found) return;
     const { id, list } = row.dataset;
+    if (e.target.closest('[data-act="rename"]')) {
+      const r = row.querySelector('.pop-name').getBoundingClientRect();
+      openNamePop(found.pop, r.left - 6, r.top - 6);
+      return;
+    }
     if (e.target.closest('[data-act="twisty"]')) {
       const key = `${list}:${id}`;
       if (S.collapsed.has(key)) S.collapsed.delete(key); else S.collapsed.add(key);
@@ -3118,6 +3174,21 @@ function bind() {
     const shown = visibleSamples();
     if (shown.length && !shown.some((x) => x.id === S.sampleId)) { S.sampleId = shown[0].id; S.selId = null; S.draft = null; }
     renderAll();
+  });
+  $('name-pop').addEventListener('submit', (e) => { e.preventDefault(); closeNamePop(true); });
+  $('name-pop').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); closeNamePop(false); }
+  });
+  $('name-pop-input').addEventListener('blur', () => setTimeout(() => {
+    if (document.activeElement?.closest?.('#name-pop')) return;
+    if (NP.pop && !$('name-pop').hidden) { const pop = NP.pop; NP.pop = null; $('name-pop').hidden = true; renamePop(pop, $('name-pop-input').value); }
+  }, 0));
+  try { S.dotSize = Math.min(6, Math.max(1, Math.round(+localStorage.getItem('freeflow.dotSize')) || 1)); } catch { /* default */ }
+  $('dot-size').value = String(S.dotSize);
+  $('dot-size').addEventListener('input', (e) => {
+    S.dotSize = +e.target.value;
+    try { localStorage.setItem('freeflow.dotSize', String(S.dotSize)); } catch { /* not stored */ }
+    requestPlot();
   });
   $('tiles').addEventListener('pointerdown', onTilePointerDown);
   $('tiles').addEventListener('pointermove', onTilePointerMove);
@@ -3301,26 +3372,7 @@ function bind() {
   $('inspector').addEventListener('change', (e) => {
     if (e.target.id !== 'gate-name') return;
     const pop = inspectorPop();
-    const name = e.target.value.trim();
-    if (!pop || !name || name === pop.name) { e.target.value = pop?.name ?? ''; return; }
-    if (pop.parent.children.some((c) => c !== pop && c.name === name)) {
-      toast(`Another population under ${pop.parent.name} is already called "${name}".`, true);
-      e.target.value = pop.name;
-      return;
-    }
-    pushUndo();
-    const wasViewed = viewedPop();
-    const oldPath = pathOf(wasViewed);
-    const popPath = pathOf(pop);
-    pop.name = name;
-    const t = templateFor(pop);
-    if (t) { t.node.name = name; syncFolderGates(); }
-    // Keep viewing the same population if the renamed one is on the path.
-    if (oldPath.slice(0, popPath.length).join('\u0000') === popPath.join('\u0000')) {
-      oldPath[popPath.length - 1] = name;
-      S.viewPath = oldPath;
-    }
-    renderAll();
+    if (!pop || !renamePop(pop, e.target.value)) e.target.value = pop?.name ?? '';
   });
   $('inspector').addEventListener('keydown', (e) => {
     if (e.target.id === 'gate-name' && e.key === 'Enter') e.target.blur();
@@ -3358,6 +3410,7 @@ function bind() {
     // The name box is focused right after drawing a gate; until the name is
     // edited, Ctrl+Z should undo the gate rather than the text.
     if (e.target.id === 'gate-name' && e.target.value === inspectorPop()?.name) typing = false;
+    if (e.target.id === 'name-pop-input' && e.target.value === NP.pop?.name) typing = false;
     if ((e.ctrlKey || e.metaKey) && !typing && ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y')) { e.preventDefault(); redo(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); return; }
     if ((e.ctrlKey || e.metaKey) && !typing && !e.shiftKey && !e.altKey) {

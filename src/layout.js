@@ -61,14 +61,14 @@ export function createLayoutEditor(root, env) {
     };
   }
 
-  function densityHref(s, pop, view, data, pw, ph) {
+  function densityHref(s, pop, view, data, pw, ph, dot = 1) {
     const scale = 2;
     const bw = Math.max(8, Math.min(1200, Math.round(pw * scale)));
     const bh = Math.max(8, Math.min(1200, Math.round(ph * scale)));
-    const key = `${env.cacheKey(s, pop, view)}|${bw}x${bh}`;
+    const key = `${env.cacheKey(s, pop, view)}|${bw}x${bh}|${dot}`;
     let href = imageCache.get(key);
     if (!href) {
-      const px = bivariatePixels({ xs: data.xs, ys: data.ys, idx: data.idx, type: view.type, dotRGB: [0, 0, 0] }, bw, bh);
+      const px = bivariatePixels({ xs: data.xs, ys: data.ys, idx: data.idx, type: view.type, dotRGB: [0, 0, 0], dotSize: dot * scale }, bw, bh);
       const c = document.createElement('canvas');
       c.width = bw; c.height = bh;
       c.getContext('2d').putImageData(new ImageData(px, bw, bh), 0, 0);
@@ -108,7 +108,7 @@ export function createLayoutEditor(root, env) {
       xTicks: data.xTicks, yTicks: data.yTicks, gates: data.gates,
       showGates: item.showGates !== false, showLabels: item.showLabels !== false,
       histogram: hist ? data.histogram : null,
-      image: hist ? null : { href: densityHref(s, pop, view, data, pw, ph) },
+      image: hist ? null : { href: densityHref(s, pop, view, data, pw, ph, item.dotSize || 1) },
     });
   }
 
@@ -277,6 +277,7 @@ export function createLayoutEditor(root, env) {
           ${field('', 'X axis label', txt('lp-xlabel', it.xLabel, 'Channel name'))}
           ${field('', 'Y axis label', txt('lp-ylabel', it.yLabel, view.type === 'histogram' ? '% of max' : 'Channel name'))}
           ${field('', 'Font size', num('lp-font', it.fontSize, 'min="6" max="40" step="1"'))}
+          ${view.type === 'histogram' ? '' : field('', 'Dot size', num('lp-dot', it.dotSize || 1, 'min="1" max="6" step="1"'))}
           <div class="field-pair">${field('', 'Width', num('lp-w', it.w, 'min="80" step="4"'))}${field('', 'Height', num('lp-h', it.h, 'min="80" step="4"'))}</div>
           ${check('lp-gates', it.showGates !== false, 'Show gates')}
           ${check('lp-labels', it.showLabels !== false, 'Show gate names and %')}
@@ -501,6 +502,7 @@ export function createLayoutEditor(root, env) {
         case 'lp-xlabel': it.xLabel = val; return changed();
         case 'lp-ylabel': it.yLabel = val; return changed();
         case 'lp-font': if (n >= 6) { it.fontSize = n; changed(); } return;
+        case 'lp-dot': if (n >= 1 && n <= 6) { it.dotSize = Math.round(n); changed(); } return;
         case 'lp-w': if (n >= 80) { it.w = n; changed(); } return;
         case 'lp-h': if (n >= 80) { it.h = n; changed(); } return;
         case 'lp-gates': it.showGates = val; return changed();

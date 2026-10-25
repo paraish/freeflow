@@ -62,9 +62,34 @@ const clampBin = (v, n) => {
   return b < 0 ? 0 : b >= n ? n - 1 : b;
 };
 
+// Grows each event to a d x d square: every pixel takes the largest value
+// within the square around it (empty pixels are -1).
+function dilate(v, w, h, d) {
+  const lo = Math.floor((d - 1) / 2), hi = d - 1 - lo;
+  const tmp = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      let m = -1;
+      for (let k = Math.max(0, x - hi); k <= Math.min(w - 1, x + lo); k++) if (v[row + k] > m) m = v[row + k];
+      tmp[row + x] = m;
+    }
+  }
+  const out = new Float32Array(w * h);
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      let m = -1;
+      for (let k = Math.max(0, y - hi); k <= Math.min(h - 1, y + lo); k++) if (tmp[k * w + x] > m) m = tmp[k * w + x];
+      out[y * w + x] = m;
+    }
+  }
+  return out;
+}
+
 // RGBA pixels of a bivariate plot, one bin per pixel, row 0 at the top.
-// Empty bins stay transparent.
-export function bivariatePixels({ xs, ys, idx, type, dotRGB }, bw, bh) {
+// Empty bins stay transparent. `dotSize` draws each event as a square of
+// that many pixels.
+export function bivariatePixels({ xs, ys, idx, type, dotRGB, dotSize = 1 }, bw, bh) {
   const counts = new Float32Array(bw * bh);
   for (let i = 0; i < idx.length; i++) {
     const e = idx[i];
@@ -72,24 +97,28 @@ export function bivariatePixels({ xs, ys, idx, type, dotRGB }, bw, bh) {
     const by = bh - 1 - clampBin(ys[e], bh);
     counts[by * bw + bx]++;
   }
-  const px = new Uint8ClampedArray(bw * bh * 4);
+  // Each pixel's level from 0 to 1, or -1 when empty.
+  let level = new Float32Array(bw * bh).fill(-1);
   if (type === 'dot') {
-    const [r, gg, b] = dotRGB;
-    for (let i = 0; i < counts.length; i++) {
-      if (counts[i] > 0) { px[i * 4] = r; px[i * 4 + 1] = gg; px[i * 4 + 2] = b; px[i * 4 + 3] = 255; }
-    }
+    for (let i = 0; i < counts.length; i++) if (counts[i] > 0) level[i] = 1;
   } else {
     const smooth = boxBlur(boxBlur(counts, bw, bh, 2), bw, bh, 2);
     let max = 0;
     for (let i = 0; i < counts.length; i++) if (counts[i] > 0 && smooth[i] > max) max = smooth[i];
     const k = 40;
     const norm = Math.log1p(k);
-    for (let i = 0; i < counts.length; i++) {
-      if (counts[i] === 0) continue;
-      const t = Math.log1p((k * smooth[i]) / max) / norm;
-      const c = Math.min(255, Math.round(t * 255)) * 3;
-      px[i * 4] = LUT[c]; px[i * 4 + 1] = LUT[c + 1]; px[i * 4 + 2] = LUT[c + 2]; px[i * 4 + 3] = 255;
-    }
+    for (let i = 0; i < counts.length; i++) if (counts[i] > 0) level[i] = Math.log1p((k * smooth[i]) / max) / norm;
+  }
+  const d = Math.max(1, Math.round(dotSize));
+  if (d > 1) level = dilate(level, bw, bh, d);
+  const px = new Uint8ClampedArray(bw * bh * 4);
+  const [r, gg, b] = dotRGB || [0, 0, 0];
+  for (let i = 0; i < level.length; i++) {
+    const t = level[i];
+    if (t < 0) continue;
+    if (type === 'dot') { px[i * 4] = r; px[i * 4 + 1] = gg; px[i * 4 + 2] = b; px[i * 4 + 3] = 255; continue; }
+    const c = Math.min(255, Math.round(t * 255)) * 3;
+    px[i * 4] = LUT[c]; px[i * 4 + 1] = LUT[c + 1]; px[i * 4 + 2] = LUT[c + 2]; px[i * 4 + 3] = 255;
   }
   return px;
 }
