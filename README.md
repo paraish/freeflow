@@ -276,5 +276,4 @@ attribution and the "How to cite" notice in the app's footer. See `NOTICE`, whic
 FlowKit (BSD 3-Clause) and cytolib (AGPL-3.0), the sources of the biex transform.
 
 For research use only, not for diagnostic procedures. Provided as is, without warranty.
-FreeFlow is not affiliated with or endorsed by BD Biosciences or FlowJo; FlowJo is a trademark
-of Becton, Dickinson and Company.
+FreeFlow is not affiliated with or endorsed by BD Biosciences or FlowJo.
