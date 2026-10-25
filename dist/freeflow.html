@@ -223,11 +223,11 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 
 /* ---- population trees */
 .twisty {
-  flex: none; width: 20px; border: 0; background: none; color: var(--muted); cursor: pointer;
-  font-size: 10px; padding: 0; display: grid; place-items: center;
+  flex: none; width: 22px; border: 0; background: none; color: var(--muted); cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 0; display: grid; place-items: center;
 }
 .twisty:hover { color: var(--fg); }
-.twisty-space { flex: none; width: 20px; }
+.twisty-space { flex: none; width: 22px; }
 .pop-row {
   display: flex; align-items: stretch;
   padding-left: calc(4px + var(--depth) * 12px);
@@ -248,7 +248,7 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 .pop-pct { width: 44px; text-align: right; }
 .pop-row.is-sel .pop-name { color: var(--gate-sel); }
 .pop-name { overflow-wrap: break-word; }
-.pop-name::before { content: ""; display: inline-block; width: 6px; height: 6px; border: 1.5px solid currentColor; border-radius: 1px; margin-right: 6px; vertical-align: 1px; opacity: 0.55; }
+.pop-name::before { content: ""; display: inline-block; width: 6px; height: 6px; background: currentColor; border-radius: 50%; margin-right: 7px; vertical-align: 2px; opacity: 0.45; }
 .pop-row[draggable="true"] .pop-pick { cursor: grab; }
 .pop-row.is-dragging { opacity: 0.45; }
 .pop-row.is-drop, .sample-row.is-drop { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
@@ -487,8 +487,7 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .group-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .group-row.is-sel .group-name { font-weight: 600; }
 .group-count { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
-.group-icon { width: 14px; height: 11px; flex: none; border: 1.5px solid currentColor; border-radius: 2px 2px 2px 2px; position: relative; opacity: 0.55; align-self: center; }
-.group-icon::before { content: ""; position: absolute; left: -1.5px; top: -4px; width: 6px; height: 3px; border: 1.5px solid currentColor; border-bottom: 0; border-radius: 2px 2px 0 0; }
+.group-icon { width: 7px; height: 7px; flex: none; background: currentColor; border-radius: 50%; opacity: 0.45; align-self: center; margin: 0 2px; }
 .group-sep { border-top: 1px solid var(--line); margin: 4px 12px; }
 .group-form { margin: 0 12px 10px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunk); display: flex; flex-direction: column; gap: 8px; }
 .group-form .field { grid-template-columns: minmax(0, 1fr); gap: 3px; }
@@ -517,7 +516,7 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .fg-confirm { list-style: none; margin: 2px 8px 6px 24px; padding: 8px; border-radius: var(--r); background: var(--multi-soft); display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .fg-confirm p { margin: 0; }
 .fg-mark { display: inline-block; margin-left: 6px; font-size: 10px; color: var(--accent); vertical-align: 1px; }
-.fg-mark::before { content: ""; display: inline-block; width: 9px; height: 7px; border: 1.25px solid currentColor; border-radius: 1px; margin-right: 3px; vertical-align: -0.5px; }
+.fg-mark::before { content: ""; display: inline-block; width: 6px; height: 6px; background: currentColor; border-radius: 50%; margin-right: 3px; vertical-align: 1px; }
 .fg-mark.is-custom { color: var(--gate-sel); font-weight: 600; }
 .fg-status { padding: 8px 10px; border-radius: var(--r); background: var(--accent-soft); font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
 .fg-status.is-custom { background: var(--multi-soft); }

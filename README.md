@@ -69,7 +69,7 @@ with one click).
   folder. Folders are saved in analysis bundles, shared workspaces and .wsp files (as sample
   groups), and .wsp sample groups open as folders.
 - **Folder gates**: drag a gate onto a folder and it becomes that folder's gate. Every sample in
-  the folder gets a linked copy (marked with a folder sign), including samples added to the
+  the folder gets a linked copy (marked with a blue dot after its name), including samples added to the
   folder later. Moving or reshaping it on one sample changes that sample only: its copy is
   marked "adjusted", stays in the same place in the tree, and the gates under it stay linked and
   recalculate from it. The gate panel offers **Use the folder's gate** (undo the adjustment) and
