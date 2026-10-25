@@ -66,6 +66,15 @@ with one click).
   drag a gate onto a folder to copy it to every sample in it, and repeat a batch layout over one
   folder. Folders are saved in analysis bundles, shared workspaces and .wsp files (as sample
   groups), and .wsp sample groups open as folders.
+- **Folder gates**: drag a gate onto a folder and it becomes that folder's gate. Every sample in
+  the folder gets a linked copy (marked with a folder sign), including samples added to the
+  folder later. Moving or reshaping it on one sample changes that sample only: its copy is
+  marked "adjusted", stays in the same place in the tree, and the gates under it stay linked and
+  recalculate from it. The gate panel offers **Use the folder's gate** (undo the adjustment) and
+  **Apply this gate to the whole folder**. Under each folder in the Folders pane, × on a gate asks
+  whether to **Delete gate for all samples** or **Delete only the grouping** (each sample keeps
+  its copy as an ordinary gate). Folder gates and adjustments are kept in bundles and shared
+  workspaces; .wsp files carry each sample's full gates plus the folder memberships.
 - **Samples column**: every sample with its own gating tree, each collapsible (per sample,
   per population, or **Expand all** / **Collapse all**). It scrolls separately from the
   active sample's **Populations** column, so you can drag between any two trees. Clicking a

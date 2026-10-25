@@ -8,6 +8,7 @@ import { PUBLIC_SITE, makeShareLink, sharedFileFrom } from './links.js';
 import { EXAMPLE_CONTROLS, EXAMPLE_SAMPLES, makeSyntheticControl, makeSyntheticFCS } from './synth.js';
 import { computeSpillover, detectControls } from './compcalc.js';
 import { ALL, CONTROLS, addMember, members, nameMatches, newGroup, removeMember, setRule } from './groups.js';
+import { applyTemplates, findTemplate, removeLinkedPops, subtreeGids, templateFrom, unlinkPops, walkTemplate } from './groupgates.js';
 import { applyCompensation, buildChannels, createSample, gatingContext, sampleKey } from './model.js';
 import {
   TRANSFORM_TYPES, channelKind, convertTransform, defaultTransform, formatNumber, makeScaler, validBiex, validLogicle,
@@ -15,7 +16,7 @@ import {
 import { suggestWidth } from './logicle.js';
 import {
   allIndices, channelStats, cloneGate, deserialize, findByPath, gateParams, makePopulation, newId, pathOf, pointInPolygon,
-  quadSiblings, recompute, serialize, uniqueName, walk,
+  quadSiblings, recompute, serialize, uniqueName, unlinked, walk,
 } from './gating.js';
 import { geometry, histogram, renderPlot } from './plot.js';
 import { createLayoutEditor, newLayout } from './layout.js';
@@ -38,6 +39,7 @@ const S = {
   mode: 'gating', // or 'layout'
   layouts: [],
   groups: [], // folders; see groups.js
+  groupGates: {}, // folder id -> folder gate templates; see groupgates.js
   groupId: ALL, // the folder shown in the Samples column
   multi: new Set(), // ids of gates selected together in the trees (any sample)
   anchor: null, // { id, list } of the last clicked tree row, for Shift-click ranges
@@ -284,6 +286,7 @@ async function openEntries(rawEntries, { folder = false } = {}) {
   }
   for (const s of added) applyPendingShared(s);
   let bundleLayouts = 0;
+  const syncAfter = () => { if (Object.keys(S.groupGates).length) syncFolderGates(); };
   for (const e of extras) {
     try {
       const info = JSON.parse(new TextDecoder().decode(await e.read()));
@@ -294,6 +297,21 @@ async function openEntries(rawEntries, { folder = false } = {}) {
         const names = new Set(info.groups.map((g) => g.name));
         S.groups = [...S.groups.filter((g) => !ids.has(g.id) && !names.has(g.name)), ...info.groups];
       }
+      if (info.groupGates && typeof info.groupGates === 'object') {
+        // Folder ids in the bundle match the folders restored just above.
+        S.groupGates = { ...S.groupGates, ...info.groupGates };
+      }
+      // Which populations follow which folder gate, and which are adjusted.
+      for (const [key, links] of Object.entries(info.links || {})) {
+        const x = S.samples.find((y) => sampleKey(y) === key);
+        if (!x) continue;
+        for (const l of links) {
+          const p = findByPath(x.root, l.path);
+          if (!p) continue;
+          p.link = l.link;
+          if (l.custom) p.custom = true;
+        }
+      }
       if (Array.isArray(info.layouts)) {
         const ids = new Set(info.layouts.map((l) => l.id));
         S.layouts = [...S.layouts.filter((l) => !ids.has(l.id)), ...info.layouts];
@@ -303,6 +321,7 @@ async function openEntries(rawEntries, { folder = false } = {}) {
       errors.push(`${e.path}: ${err.message}`);
     }
   }
+  syncAfter();
   if (added.length) S.sampleId = added[0].id;
   if (!sample()) S.sampleId = S.samples[0]?.id ?? null;
   S.viewPath = [];
@@ -479,7 +498,7 @@ async function buildBundle(name) {
   files.push({ name: `${name}/${name}.wsp`, data: wspText });
   files.push({
     name: `${name}/${BUNDLE_JSON}`,
-    data: JSON.stringify({ app: 'FreeFlow', format: 1, created: new Date().toISOString(), layouts: S.layouts, groups: S.groups }, null, 1),
+    data: JSON.stringify({ app: 'FreeFlow', format: 1, created: new Date().toISOString(), layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, links: bundleLinks(named) }, null, 1),
   });
   files.push({
     name: `${name}/README.txt`,
@@ -500,6 +519,17 @@ async function buildBundle(name) {
   });
   const zip = await makeZipCompressed(files);
   return { zip, bytes, count: named.length, skipped: S.samples.length - samples.length };
+}
+
+// For each bundled sample: the populations linked to folder gates.
+function bundleLinks(named) {
+  const out = {};
+  for (const { s, fn } of named) {
+    const list = [];
+    walk(s.root, (p) => { if (p.link) list.push({ path: pathOf(p), link: p.link, custom: !!p.custom }); });
+    if (list.length) out[sampleKey({ fileName: fn, n: s.n })] = list;
+  }
+  return out;
 }
 
 const mb = (n) => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
@@ -670,7 +700,7 @@ function showSharedCard(fileUrl, problem = '') {
 
 // ---------------------------------------------------------------- shared workspaces (live collaboration)
 
-const stripViews = (o) => ({ name: o.name, gate: o.gate, children: o.children.map(stripViews) });
+const stripViews = (o) => ({ name: o.name, gate: o.gate, link: o.link, custom: o.custom, children: o.children.map(stripViews) });
 
 function sharedState(s) {
   return {
@@ -722,7 +752,8 @@ function flushRemoteQueue() {
   for (const core of list) onRemoteSample(core);
 }
 
-function onRemoteMeta({ transforms, layouts, groups }) {
+function onRemoteMeta({ transforms, layouts, groups, groupGates }) {
+  S.groupGates = JSON.parse(JSON.stringify(groupGates || {}));
   S.transforms = { ...transforms };
   S.layouts = JSON.parse(JSON.stringify(layouts || []));
   S.groups = JSON.parse(JSON.stringify(groups || []));
@@ -813,6 +844,7 @@ function recomputeAll() {
 function mergeInto(src, dstParent) {
   let dst = dstParent.children.find((c) => c.name === src.name);
   if (dst) {
+    if (dst.link && JSON.stringify(dst.gate) !== JSON.stringify(src.gate)) dst.custom = true;
     dst.gate = src.gate ? cloneGate(src.gate) : null;
     if (src.view) dst.view = { ...src.view };
   } else {
@@ -888,7 +920,7 @@ function missingParams(items, target) {
 // Adds copies of serialized populations (with their sub-gates) as children of
 // `parent` in sample `target`. Names that are already taken get a number.
 function pasteInto(items, target, parent, label) {
-  items = JSON.parse(JSON.stringify(items));
+  items = JSON.parse(JSON.stringify(items)).map(unlinked);
   const missing = missingParams(items, target);
   if (missing.length) {
     toast(`Can't copy: ${target.name} has no parameter ${missing.join(', ')}.`, true);
@@ -983,6 +1015,7 @@ function snapshot() {
   return {
     trees: new Map(S.samples.map((s) => [s.id, serialize(s.root)])),
     viewPath: [...S.viewPath],
+    groupGates: JSON.parse(JSON.stringify(S.groupGates)),
   };
 }
 
@@ -1002,6 +1035,7 @@ function undo() {
     recompute(s.root, ctxFor(s), s.n);
   }
   S.viewPath = snap.viewPath;
+  if (snap.groupGates) S.groupGates = snap.groupGates;
   S.selId = null;
   S.draft = null;
   S.version++;
@@ -1191,6 +1225,8 @@ function applyDrag(sx, sy) {
     S.undo.push(d.undoSnap);
     $('undo').disabled = false;
     d.undoPushed = true;
+    // A folder gate moved on one sample becomes this sample's own version.
+    for (const q of d.mode === 'quad' ? quadSiblings(d.pop) : [d.pop]) if (q.link) q.custom = true;
   }
   if (!d.undoPushed) return;
   const fx = (n) => scalerFor(n).fwd;
@@ -1390,6 +1426,10 @@ function createQuad(sx, sy) {
 function deleteGate(pop) {
   const pops = pop.gate?.type === 'quad' ? quadSiblings(pop) : [pop];
   pushUndo();
+  for (const q of pops) {
+    const t = templateFor(q);
+    if (t) { t.node.omit = [...new Set([...(t.node.omit || []), sampleKey(sample())])]; }
+  }
   const parent = pop.parent;
   parent.children = parent.children.filter((c) => !pops.includes(c));
   S.viewPath = pathOf(viewedPop());
@@ -1429,7 +1469,7 @@ function treeRows(s, list) {
       : '<span class="twisty-space"></span>';
     rows.push(`<li class="${cls.join(' ')}" style="--depth:${depth}" data-id="${p.id}" data-list="${list}"${drag}>${twisty}
       <button class="pop-pick" data-act="view" title="${p.gate ? 'Click to open. Drag to copy. Ctrl/⌘- or Shift-click to select several.' : 'Click to open'}">
-        <span class="pop-name">${esc(p.name)}</span>
+        <span class="pop-name">${esc(p.name)}${p.link ? `<span class="fg-mark${p.custom ? ' is-custom' : ''}" title="${esc(p.custom ? `Folder gate from ${folderGateName(p.link)}, adjusted for this sample only` : `Folder gate from ${folderGateName(p.link)}`)}">${p.custom ? 'adjusted' : ''}</span>` : ''}</span>
         <span class="pop-stats"><span class="pop-num">${fmtInt(p.indices.length)}</span><span class="pop-pct">${par}</span></span>
       </button></li>`);
     if (!collapsed) for (const c of p.children) visit(c, depth + 1);
@@ -1453,15 +1493,37 @@ const currentGroup = () => groupById(S.groupId) || BUILT_IN[0];
 const visibleSamples = () => groupMembers(currentGroup());
 const isUserGroup = (g) => !!g && g.id !== ALL && g.id !== CONTROLS;
 
-const GF = { editing: null, open: false }; // the new/edit folder form
+const GF = { editing: null, open: false, confirm: null }; // the new/edit folder form, and a pending folder-gate delete
 
 function renderGroups() {
   const el = $('groups');
   const row = (g) => {
     const n = groupMembers(g).length;
     const edit = isUserGroup(g) ? `<button class="icon-btn" data-act="edit-group" aria-label="Edit ${esc(g.name)}" title="Rename or change the rule">✎</button>` : '';
+    const gates = templatesOf(g.id);
+    const gateRows = [];
+    const adjusted = (gid) => S.samples.reduce((a, x) => { let c = 0; walk(x.root, (p) => { if (p.link?.gid === gid && p.custom) c++; }); return a + c; }, 0);
+    for (const e of gates) {
+      const depthOf = new Map();
+      walkTemplate([e.node], (node, parent) => {
+        const depth = parent ? depthOf.get(parent.gid) + 1 : 0;
+        depthOf.set(node.gid, depth);
+        const adj = adjusted(node.gid);
+        const confirming = GF.confirm?.group === g.id && GF.confirm.gid === node.gid;
+        gateRows.push(`<li class="fg-row${confirming ? ' is-confirm' : ''}" style="--depth:${depth}" data-group="${esc(g.id)}" data-gid="${esc(node.gid)}">
+          <span class="fg-name" title="${esc(['All Events', ...e.parentPath, node.name].join(' / '))}">${esc(node.name)}${adj ? ` <span class="fg-adj">${adj} adjusted</span>` : ''}</span>
+          <button class="icon-btn" data-act="fg-delete" aria-label="Delete folder gate ${esc(node.name)}" title="Delete…">×</button></li>`);
+        if (confirming) {
+          gateRows.push(`<li class="fg-confirm" data-group="${esc(g.id)}" data-gid="${esc(node.gid)}">
+            <p>Delete “${esc(node.name)}”${node.children.length ? ' and its sub-gates' : ''}:</p>
+            <button class="btn btn-small btn-danger" data-act="fg-del-all">Delete gate for all samples</button>
+            <button class="btn btn-small" data-act="fg-del-group">Delete only the grouping</button>
+            <button class="btn btn-small btn-quiet" data-act="fg-cancel">Cancel</button></li>`);
+        }
+      });
+    }
     return `<li class="group-row${g.id === S.groupId ? ' is-sel' : ''}" data-group="${esc(g.id)}">
-      <button class="group-pick" data-act="pick-group"><span class="group-icon" aria-hidden="true"></span><span class="group-name">${esc(g.name)}</span><span class="group-count">${n}</span></button>${edit}</li>`;
+      <button class="group-pick" data-act="pick-group"><span class="group-icon" aria-hidden="true"></span><span class="group-name">${esc(g.name)}</span><span class="group-count">${n}</span></button>${edit}</li>${gateRows.length ? `<li class="fg-list"><ul>${gateRows.join('')}</ul></li>` : ''}`;
   };
   keepScroll(el, () => {
     el.innerHTML = BUILT_IN.map(row).join('') + (S.groups.length ? '<li class="group-sep" aria-hidden="true"></li>' : '') + S.groups.map(row).join('');
@@ -1507,6 +1569,7 @@ function saveGroupForm() {
   if (!g) { g = newGroup(name); S.groups.push(g); }
   g.name = name;
   setRule(g, contains, auto, S.samples, sampleKey);
+  syncFolderGates();
   S.groupId = g.id;
   GF.open = false;
   GF.editing = null;
@@ -1545,12 +1608,89 @@ function dropOnGroup(src, gid) {
     const s = src.sampleDrag;
     if (g.id === ALL) return;
     if (g.id === CONTROLS) { s.controlManual = true; s.isControl = true; } else addMember(g, sampleKey(s));
+    syncFolderGates();
     renderAll();
     toast(`Added ${s.name} to ${g.name}.`);
     return;
   }
-  copyGatesToSamples(src.items, groupMembers(g), g.name);
+  makeFolderGates(g, src.items);
 }
+
+// ---------------------------------------------------------------- folder gates
+
+const templatesOf = (gid) => S.groupGates[gid] || [];
+
+// Brings every sample in line with every folder's gates: members get linked
+// copies, samples that left a folder keep their gates without the link.
+// Returns the names of samples that lack a folder gate's parent population.
+function syncFolderGates() {
+  const missing = new Set();
+  for (const gid of Object.keys(S.groupGates)) {
+    const g = groupById(gid);
+    if (!g || !S.groupGates[gid].length) {
+      for (const x of S.samples) unlinkPops(x, gid);
+      delete S.groupGates[gid];
+      continue;
+    }
+    const inFolder = new Set(groupMembers(g));
+    for (const x of S.samples) {
+      if (!inFolder.has(x)) {
+        if (unlinkPops(x, gid)) recompute(x.root, ctxFor(x), x.n);
+        continue;
+      }
+      const { changed, unplaced } = applyTemplates(S.groupGates[gid], x, gid, sampleKey(x));
+      for (const parent of changed) recompute(parent, ctxFor(x), x.n);
+      if (unplaced.length) missing.add(x.name);
+    }
+  }
+  S.version++;
+  return [...missing];
+}
+
+function makeFolderGates(g, items) {
+  const entries = S.groupGates[g.id] || (S.groupGates[g.id] = []);
+  const fresh = items.filter(({ pop }) => pop.link?.group !== g.id);
+  if (!fresh.length) { toast(`${itemsLabel(items)} is already a folder gate in ${g.name}.`); return; }
+  pushUndo();
+  for (const { pop } of fresh) entries.push({ parentPath: pathOf(pop.parent), node: templateFrom(pop) });
+  const missing = syncFolderGates();
+  renderAll();
+  const n = groupMembers(g).length - missing.length;
+  toast(`${itemsLabel(fresh)} is now a folder gate in ${g.name}, applied to ${n} sample${n === 1 ? '' : 's'}. Adjusting it on one sample changes only that sample.${missing.length ? ` Not applied to ${missing.join(', ')}: missing its parent population.` : ''}`, missing.length > 0);
+}
+
+function folderGateName(link) {
+  return groupById(link.group)?.name || 'a folder';
+}
+
+// Deleting a folder gate from the Folders pane: for every sample, or only
+// the folder's management of it (each sample keeps its copy).
+function deleteFolderGate(groupId, gid, everywhere) {
+  const t = findTemplate(templatesOf(groupId), gid);
+  if (!t) return;
+  pushUndo();
+  const gids = subtreeGids(t.node);
+  t.remove();
+  for (const x of S.samples) {
+    if (everywhere) {
+      for (const parent of removeLinkedPops(x, groupId, gids)) recompute(parent, ctxFor(x), x.n);
+    } else {
+      unlinkPops(x, groupId, gids);
+    }
+  }
+  if (!templatesOf(groupId).length) delete S.groupGates[groupId];
+  S.viewPath = pathOf(viewedPop());
+  S.selId = null;
+  S.version++;
+  GF.confirm = null;
+  renderAll();
+  toast(everywhere ? `Deleted "${t.node.name}" from every sample in ${groupById(groupId)?.name}.`
+    : `"${t.node.name}" is no longer a folder gate; each sample keeps its own copy.`);
+}
+
+// The template node behind a linked population.
+const templateFor = (pop) => (pop?.link ? findTemplate(templatesOf(pop.link.group), pop.link.gid) : null);
+
 
 function renderSamples() {
   const el = $('samples');
@@ -1723,6 +1863,13 @@ function renderInspector() {
       <div><dt>Of parent</dt><dd>${fmtPct(pct(pop.indices.length, pop.parent.indices.length))}</dd></div>
       <div><dt>Of total</dt><dd>${fmtPct(pct(pop.indices.length, s.n))}</dd></div>
     </dl>
+    ${pop.link ? `<div class="fg-status${pop.custom ? ' is-custom' : ''}">
+      <p><strong>Folder gate</strong> from ${esc(folderGateName(pop.link))}. ${pop.custom
+        ? 'Adjusted for this sample only: the other samples keep the folder’s gate.'
+        : 'Moving or reshaping it here changes this sample only.'}</p>
+      ${pop.custom ? `<div class="btn-row"><button class="btn btn-small" data-act="fg-use">Use the folder’s gate</button>
+        <button class="btn btn-small" data-act="fg-promote">Apply this gate to the whole folder</button></div>` : ''}
+    </div>` : ''}
     <div class="btn-row">
       ${pop === viewedPop() ? '' : '<button class="btn" data-act="open-gate">Open population</button>'}
       <button class="btn" data-act="clip-gate" title="Copy, then paste into any population (Ctrl+C)">Copy gate</button>
@@ -2460,6 +2607,7 @@ function bind() {
       const g = currentGroup();
       const s = S.samples.find((x) => x.id === row.dataset.id);
       removeMember(g, sampleKey(s));
+      syncFolderGates();
       renderAll();
       toast(`Removed ${s.name} from ${g.name}. It is still open in All samples.`);
       return;
@@ -2468,6 +2616,7 @@ function bind() {
       const s = S.samples.find((x) => x.id === row.dataset.id);
       s.controlManual = false;
       markControls();
+      syncFolderGates();
       renderAll();
       return;
     }
@@ -2623,8 +2772,17 @@ function bind() {
   }
 
   $('groups').addEventListener('click', (e) => {
-    const row = e.target.closest('.group-row');
     const act = e.target.closest('[data-act]')?.dataset.act;
+    const fg = e.target.closest('.fg-row, .fg-confirm');
+    if (fg) {
+      const { group, gid } = fg.dataset;
+      if (act === 'fg-delete') { GF.confirm = { group, gid }; renderGroups(); }
+      if (act === 'fg-cancel') { GF.confirm = null; renderGroups(); }
+      if (act === 'fg-del-all') deleteFolderGate(group, gid, true);
+      if (act === 'fg-del-group') deleteFolderGate(group, gid, false);
+      return;
+    }
+    const row = e.target.closest('.group-row');
     if (!row) return;
     if (act === 'edit-group') { GF.open = true; GF.editing = row.dataset.group; renderGroupForm(); $('gf-name')?.focus(); return; }
     S.groupId = row.dataset.group;
@@ -2658,6 +2816,8 @@ function bind() {
       }
       const g = groupById(GF.editing);
       S.groups = S.groups.filter((x) => x !== g);
+      for (const x of S.samples) unlinkPops(x, g.id);
+      delete S.groupGates[g.id];
       for (const l of S.layouts) if (l.batchGroup === g.id) l.batchGroup = null;
       if (S.groupId === g.id) S.groupId = ALL;
       GF.open = false;
@@ -2757,6 +2917,19 @@ function bind() {
     const pop = inspectorPop();
     if (!pop) return;
     if (act === 'open-gate') navigate(pop);
+    if (act === 'fg-use' || act === 'fg-promote') {
+      const t = templateFor(pop);
+      if (!t) return;
+      pushUndo();
+      const set = pop.gate?.type === 'quad' ? quadSiblings(pop) : [pop];
+      if (act === 'fg-promote') {
+        for (const q of set) { const tq = templateFor(q); if (tq) tq.node.gate = cloneGate(q.gate); }
+      }
+      for (const q of set) delete q.custom;
+      syncFolderGates();
+      renderAll();
+      toast(act === 'fg-promote' ? `Applied this gate to every sample in ${folderGateName(pop.link)} (except ones adjusted on their own).` : 'Back to the folder’s gate.');
+    }
     if (act === 'clip-gate') copyGates([{ sample: sample(), pop }]);
     if (act === 'delete-gate') deleteGate(pop);
     if (act === 'copy-gate') {
@@ -2779,6 +2952,8 @@ function bind() {
     const oldPath = pathOf(wasViewed);
     const popPath = pathOf(pop);
     pop.name = name;
+    const t = templateFor(pop);
+    if (t) { t.node.name = name; syncFolderGates(); }
     // Keep viewing the same population if the renamed one is on the path.
     if (oldPath.slice(0, popPath.length).join('\u0000') === popPath.join('\u0000')) {
       oldPath[popPath.length - 1] = name;
@@ -2876,7 +3051,7 @@ export function start() {
   bind();
   S.shared = new SharedWorkspaces({
     localSamples: () => S.samples.map(sharedState),
-    localMeta: () => ({ transforms: { ...S.transforms }, layouts: JSON.parse(JSON.stringify(S.layouts)), groups: JSON.parse(JSON.stringify(S.groups)) }),
+    localMeta: () => ({ transforms: { ...S.transforms }, layouts: JSON.parse(JSON.stringify(S.layouts)), groups: JSON.parse(JSON.stringify(S.groups)), groupGates: JSON.parse(JSON.stringify(S.groupGates)) }),
     applySample: onRemoteSample,
     applyMeta: onRemoteMeta,
     isBusy: () => !!drag || !!S.draft,

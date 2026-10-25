@@ -126,20 +126,34 @@ export function cloneGate(g) {
 
 // Plain-object copy of a subtree (names, gates, views), used for undo and
 // for copying gates between samples.
+// A population that came from a folder gate carries `link`
+// ({ group, gid }); `custom` marks one whose gate was adjusted for this
+// sample only. Both travel with the tree.
 export function serialize(pop) {
-  return {
+  const o = {
     name: pop.name,
     gate: pop.gate ? cloneGate(pop.gate) : null,
     view: pop.view ? { ...pop.view } : null,
     children: pop.children.map(serialize),
   };
+  if (pop.link) o.link = { ...pop.link };
+  if (pop.custom) o.custom = true;
+  return o;
 }
 
 export function deserialize(obj, parent) {
   const p = makePopulation(obj.name, obj.gate ? cloneGate(obj.gate) : null, parent);
   p.view = obj.view ? { ...obj.view } : null;
+  if (obj.link) p.link = { ...obj.link };
+  if (obj.custom) p.custom = true;
   p.children = obj.children.map((c) => deserialize(c, p));
   return p;
+}
+
+// The same tree without folder links, for copies that should stand alone.
+export function unlinked(obj) {
+  const { link, custom, ...rest } = obj;
+  return { ...rest, children: obj.children.map(unlinked) };
 }
 
 // Quadrant gates come in sets of four that share a centre.
