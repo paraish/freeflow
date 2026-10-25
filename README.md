@@ -35,8 +35,15 @@ replaces the examples.
   delete, undo (Ctrl/⌘+Z). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
 - **Population tree** with counts and % of parent.
-- **Copying gates**: copy one gate (with its sub-gates) or the whole tree to every other
-  sample. Populations with the same name are updated, not duplicated.
+- **Copying gates between populations**:
+  - Drag a gate in the population tree onto any other population to copy it (with its
+    sub-gates) there. Quadrant gates travel as their set of four.
+  - Drag a gate onto a sample in the sample list to copy it to the same place in that
+    sample's tree.
+  - Or select a gate, press Ctrl/⌘+C (or **Copy gate**), open any population in any sample,
+    and press Ctrl/⌘+V (or **Paste**).
+  - **Copy to all samples** and **Copy tree to all** copy to every other sample. In these
+    and in drops onto a sample, a population with the same name is updated, not duplicated.
 - **Statistics**: per-population median, mean and CV for every channel, and a
   samples × populations table (frequency of parent, frequency of total, count, median or
   mean of a chosen channel). **Copy table** puts it on the clipboard for Excel or Sheets.
@@ -50,13 +57,13 @@ replaces the examples.
 | Enter or double-click | Close a polygon |
 | Esc | Cancel drawing / deselect |
 | Delete / Backspace | Delete the selected gate |
+| Ctrl/⌘ + C, Ctrl/⌘ + V | Copy the selected gate, paste it into the population being viewed |
 | Ctrl/⌘ + Z | Undo |
 
 ## Roadmap
 
 - **Phase 2**: compute compensation from single-stain controls (auto-detected from
-  keywords and filenames), sample groups, gates linked across a group, drag-and-drop gates
-  between populations, save and reopen workspaces.
+  keywords and filenames), sample groups, gates linked across a group, save and reopen workspaces.
 - **Phase 3**: layout editor and batch reports, annotations built from file keywords and
   sample- or group-level values, table editor with CSV/Excel export.
 - **Phase 4**: FlowJo `.wsp` import, Boolean gates, derived parameters, contour/zebra plots,

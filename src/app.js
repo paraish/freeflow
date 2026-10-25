@@ -25,6 +25,7 @@ const S = {
   examples: false,
   version: 0,
   stat: { metric: 'freqParent', channel: null },
+  clip: null, // copied gates: { items: [serialized populations], label }
 };
 
 const $ = (id) => document.getElementById(id);
@@ -317,6 +318,99 @@ function copyToAll(pops) {
   renderAll();
   if (skipped.length) toast(`Copied to ${copied} sample${copied === 1 ? '' : 's'}. Skipped ${skipped.join(', ')}: missing the parent population or a parameter.`, true);
   else toast(`Copied to ${copied} sample${copied === 1 ? '' : 's'}.`);
+}
+
+// ---------------------------------------------------------------- copying gates between populations
+
+// A quadrant gate always travels as its set of four.
+function gateSet(pop) {
+  return pop.gate?.type === 'quad' ? quadSiblings(pop) : [pop];
+}
+
+function setLabel(pops) {
+  return pops.length > 1 && pops[0].gate?.type === 'quad' ? 'the quadrant gate' : `"${pops[0].name}"`;
+}
+
+function missingParams(items, target) {
+  const need = new Set();
+  const visit = (o) => { if (o.gate) gateParams(o.gate).forEach((n) => need.add(n)); o.children.forEach(visit); };
+  items.forEach(visit);
+  const have = new Set(target.channels.map((c) => c.name));
+  return [...need].filter((n) => !have.has(n));
+}
+
+// Adds copies of serialized populations (with their sub-gates) as children of
+// `parent` in sample `target`. Names that are already taken get a number.
+function pasteInto(items, target, parent, label) {
+  items = JSON.parse(JSON.stringify(items));
+  const missing = missingParams(items, target);
+  if (missing.length) {
+    toast(`Can't copy: ${target.name} has no parameter ${missing.join(', ')}.`, true);
+    return;
+  }
+  pushUndo();
+  const links = new Map();
+  const relink = (o) => {
+    if (o.gate?.type === 'quad') {
+      if (!links.has(o.gate.link)) links.set(o.gate.link, newId('q'));
+      o.gate.link = links.get(o.gate.link);
+    }
+    o.children.forEach(relink);
+  };
+  items.forEach(relink);
+  const made = items.map((o) => {
+    const p = deserialize({ ...o, name: uniqueName(parent, o.name) }, parent);
+    parent.children.push(p);
+    return p;
+  });
+  recompute(parent, ctxFor(target), target.n);
+  S.version++;
+  if (target === sample() && parent === viewedPop()) S.selId = made[0].id;
+  renderAll();
+  const what = label ?? (items.length === 4 && items[0].gate?.type === 'quad' ? 'the quadrant gate' : `"${items[0].name}"`);
+  toast(`Copied ${what} into ${parent.name}${target === sample() ? '' : ` in ${target.name}`}.`);
+}
+
+// Dropping on a sample puts the gate at the same place in that sample's tree,
+// updating a population of the same name if there is one (like "Copy to all").
+function dropOnSample(src, target) {
+  if (!target) return;
+  if (target === src.sample) {
+    toast('To copy within this sample, drop the gate onto a population instead.');
+    return;
+  }
+  const items = src.pops.map(serialize);
+  const missing = missingParams(items, target);
+  if (missing.length) {
+    toast(`Can't copy: ${target.name} has no parameter ${missing.join(', ')}.`, true);
+    return;
+  }
+  const parentPath = pathOf(src.pops[0].parent);
+  const parent = findByPath(target.root, parentPath);
+  if (!parent) {
+    toast(`${target.name} has no "${parentPath.join(' / ')}" population. Open that sample and drop the gate onto a population in its tree.`, true);
+    return;
+  }
+  pushUndo();
+  for (const p of src.pops) mergeInto(p, parent);
+  recompute(parent, ctxFor(target), target.n);
+  S.version++;
+  renderAll();
+  toast(`Copied ${setLabel(src.pops)} to ${target.name}.`);
+}
+
+function copyGate(pop) {
+  const pops = gateSet(pop);
+  S.clip = { items: pops.map(serialize), label: setLabel(pops) };
+  renderPopStats();
+  toast(`Copied ${S.clip.label}. Open any population (in any sample) and press Ctrl+V or ⌘V, or use Paste gate.`);
+}
+
+function pasteGate() {
+  const s = sample();
+  const parent = viewedPop();
+  if (!S.clip || !s || !parent) return;
+  pasteInto(S.clip.items, s, parent, S.clip.label);
 }
 
 // ---------------------------------------------------------------- undo
@@ -774,7 +868,8 @@ function renderTree() {
   const rows = [];
   walk(s.root, (p, depth) => {
     const par = p.parent ? fmtPct(pct(p.indices.length, p.parent.indices.length)) : '';
-    rows.push(`<li class="pop-row${p === viewed ? ' is-view' : ''}${p.id === S.selId ? ' is-sel' : ''}" style="--depth:${depth}" data-id="${p.id}">
+    const drag = p.gate ? ' draggable="true" title="Drag onto another population or sample to copy this gate"' : '';
+    rows.push(`<li class="pop-row${p === viewed ? ' is-view' : ''}${p.id === S.selId ? ' is-sel' : ''}" style="--depth:${depth}" data-id="${p.id}"${drag}>
       <button class="pop-pick" data-act="view">
         <span class="pop-name">${esc(p.name)}</span>
         <span class="pop-num">${fmtInt(p.indices.length)}</span>
@@ -897,6 +992,7 @@ function renderInspector() {
     </dl>
     <div class="btn-row">
       ${pop === viewedPop() ? '' : '<button class="btn" data-act="open-gate">Open population</button>'}
+      <button class="btn" data-act="clip-gate" title="Copy, then paste into any population (Ctrl+C)">Copy gate</button>
       <button class="btn" data-act="copy-gate" ${S.samples.length < 2 ? 'disabled' : ''}>Copy to all samples</button>
       <button class="btn btn-danger" data-act="delete-gate">Delete</button>
     </div>
@@ -915,6 +1011,7 @@ function renderPopStats() {
   }).join('');
   el.innerHTML = `<section class="card">
     <header class="card-head"><span class="eyebrow">Population</span><span class="chan">${esc(pop.name)}</span></header>
+    ${S.clip ? `<button class="btn" data-act="paste-gate" title="Ctrl+V">Paste ${esc(S.clip.label)} into ${esc(pop.name)}</button>` : ''}
     <dl class="kv">
       <div><dt>Events</dt><dd>${fmtInt(pop.indices.length)}</dd></div>
       <div><dt>Of parent</dt><dd>${pop.parent ? fmtPct(pct(pop.indices.length, pop.parent.indices.length)) : '—'}</dd></div>
@@ -1239,6 +1336,55 @@ function bind() {
     const pop = popById(row.dataset.id);
     if (pop) navigate(pop);
   });
+  $('popstats').addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="paste-gate"]')) pasteGate();
+  });
+
+  // Drag a gated population onto another population (copied there as a
+  // child) or onto a sample (copied to the same place in that sample).
+  let dragSrc = null;
+  const clearDrop = () => document.querySelectorAll('.is-drop').forEach((n) => n.classList.remove('is-drop'));
+  $('tree').addEventListener('dragstart', (e) => {
+    const row = e.target.closest?.('.pop-row');
+    const pop = row && popById(row.dataset.id);
+    if (!pop?.gate) { e.preventDefault(); return; }
+    dragSrc = { sample: sample(), pops: gateSet(pop) };
+    e.dataTransfer.setData('text/plain', pop.name);
+    e.dataTransfer.effectAllowed = 'copy';
+    row.classList.add('is-dragging');
+  });
+  document.addEventListener('dragend', () => {
+    dragSrc = null;
+    clearDrop();
+    document.querySelectorAll('.is-dragging').forEach((n) => n.classList.remove('is-dragging'));
+  });
+  for (const list of [$('tree'), $('samples')]) {
+    list.addEventListener('dragover', (e) => {
+      if (!dragSrc) return;
+      const row = e.target.closest?.('.pop-row, .sample-row');
+      if (!row) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      if (!row.classList.contains('is-drop')) { clearDrop(); row.classList.add('is-drop'); }
+    });
+    list.addEventListener('drop', (e) => {
+      if (!dragSrc) return;
+      e.preventDefault();
+      e.stopPropagation();
+      clearDrop();
+      const src = dragSrc;
+      dragSrc = null;
+      const row = e.target.closest?.('.pop-row, .sample-row');
+      if (!row) return;
+      if (row.classList.contains('pop-row')) {
+        const target = popById(row.dataset.id);
+        if (target) pasteInto(src.pops.map(serialize), sample(), target, setLabel(src.pops));
+      } else {
+        dropOnSample(src, S.samples.find((x) => x.id === row.dataset.id));
+      }
+    });
+  }
+
   $('copy-tree').addEventListener('click', () => {
     const s = sample();
     if (!s || !s.root.children.length) { toast('This sample has no gates to copy yet.'); return; }
@@ -1323,6 +1469,7 @@ function bind() {
     const pop = inspectorPop();
     if (!pop) return;
     if (act === 'open-gate') navigate(pop);
+    if (act === 'clip-gate') copyGate(pop);
     if (act === 'delete-gate') deleteGate(pop);
     if (act === 'copy-gate') {
       pushUndo();
@@ -1387,6 +1534,11 @@ function bind() {
     // edited, Ctrl+Z should undo the gate rather than the text.
     if (e.target.id === 'gate-name' && e.target.value === inspectorPop()?.name) typing = false;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && !typing && !e.shiftKey && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'c' && inspectorPop() && !String(getSelection())) { e.preventDefault(); copyGate(inspectorPop()); return; }
+      if (k === 'v' && S.clip) { e.preventDefault(); pasteGate(); return; }
+    }
     if (e.target.matches('input, textarea, select')) return;
     if (e.key === 'Escape') {
       if (S.draft) { S.draft = null; requestPlot(); } else if (!$('comp-panel').hidden) $('comp-panel').hidden = true;
