@@ -315,6 +315,8 @@ In author-initial styles: Misra PS (Vancouver) or Misra, P. S. (APA).
 
 GitHub's **Cite this repository** button (from `CITATION.cff`) gives APA and BibTeX.
 
+Developed by Paraish S. Misra with AI-assisted programming (Claude, Anthropic).
+
 ## License
 
 FreeFlow is free software under the GNU Affero General Public License v3 (`LICENSE`), with an
