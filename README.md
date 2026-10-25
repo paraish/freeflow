@@ -9,11 +9,37 @@ figures. Files are read locally in your browser and are never uploaded.
 
 **Status: Phase 1 (gating core).** Built for conventional (non-spectral) cytometers.
 
+## New: group gating
+
+**Gate many related samples at once, then fine-tune each one.** Open **Group gating**, pick a
+folder of samples (for example, every tube from one experiment), and draw your gates once on
+one sample. They are applied to every sample in the folder straight away, and every sample is
+tiled below so you can check them all at a glance.
+
+**Then adjust any single sample's gate in its own tile.** Where one sample's population has
+shifted, drag or reshape its gate right in the tile. Only that sample changes, it is marked
+"adjusted", and the gates beneath it stay in the folder and recalculate from it. Later changes
+made for the whole folder leave adjusted samples alone, and **Reset** gives a sample the
+folder's gates back.
+
+How it works:
+
+- Folders sit above the samples on the left. One sample is shown large; below it, every
+  sample in the folder shows the same population on the same axes. Click a tile (anywhere
+  but on a gate) or a sample on the left to show it large.
+- Gates drawn on the large plot are added to every sample in the folder, nested under the
+  population that is open. Moving, reshaping, renaming or deleting a gate there changes it
+  for the whole folder.
+- In a tile, gates can be moved and reshaped for that sample only; new gates are drawn on
+  the large plot. Double-click a gate to open that population on every sample.
+- The Samples pane shows every population. Gates that aren't the folder's are greyed: open
+  one to start folder gates under it.
+
 ## Use it
 
 Use it at **https://paraish.github.io/freeflow/**, or open `dist/freeflow.html` in any
 modern browser (download it, then double-click it); it is a single self-contained file.
-It opens on a welcome screen: open FCS files, open a folder with a .wsp workspace, or
+It opens on a welcome screen: open FCS files, open a folder (with its .wsp workspace, if it has one), or
 **Try sample data** (three synthetic samples with gates and an example figure, removable
 with one click).
 
@@ -113,24 +139,6 @@ with one click).
 | Ctrl/⌘ + C, Ctrl/⌘ + V | Copy the selected gate, paste it into the population being viewed |
 | Ctrl/⌘ + Z | Undo |
 | Ctrl/⌘ + Shift + Z, Ctrl + Y | Redo |
-
-## Group gating
-
-**Group gating** (between Gating and Layout) gates a whole folder at once. Folders sit above
-the samples on the left. One sample is shown large, and below it every sample in the folder
-is tiled, showing the same population on the same axes.
-
-- Gates drawn on the large plot become folder gates: they are added to every sample in the
-  folder, nested under a folder gate if one is open. Moving, reshaping, renaming or deleting
-  a gate there changes it for the whole folder.
-- In a tile, gates can be moved and reshaped for that sample alone; no new gates are drawn
-  there. That sample's gate is marked "adjusted", keeps its place in the tree, and later
-  changes on the large plot leave it alone. **Reset** on the tile gives it the folder's
-  gates again.
-- Click a tile (anywhere but on a gate) or a sample in the Samples pane to show it large. Double-click a gate
-  to open that population on every sample.
-- The Samples pane shows every population. Ordinary gates are greyed: open one to start
-  folder gates under it (they are not shown or edited on the plots here).
 
 ## Layouts and figures
 
