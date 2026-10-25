@@ -171,3 +171,14 @@ test('population tree recompute nests correctly', () => {
   assert.equal(a.indices.length, 50);
   assert.equal(b.indices.length, 10);
 });
+
+test('FlowJo biex matches FlowKit reference values', async () => {
+  const { Biex } = await import('../src/biex.js');
+  const fs = await import('node:fs');
+  const cases = JSON.parse(fs.readFileSync(new URL('./biex-fixtures.json', import.meta.url)));
+  for (const c of cases) {
+    const bx = new Biex({ width: c.width, pos: c.pos, neg: c.neg, max: c.max });
+    c.xs.forEach((x, i) => close(bx.channel(x), c.ys[i], 1e-6 * Math.max(1, c.ys[i]), `biex(${c.width},${c.pos},${c.neg}) at ${x}`));
+    [0, 500, 1000, 2000, 3000, 4096].forEach((ch, i) => close(bx.value(ch), c.inv[i], 1e-6 * Math.max(1, Math.abs(c.inv[i])), `inverse at ${ch}`));
+  }
+});

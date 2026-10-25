@@ -17,6 +17,8 @@
   --gate: #17212c;
   --gate-sel: #c4187c;
   --multi-soft: #f8e3ee;
+  --ok: #1d7a4c;
+  --ok-soft: #e1f3e9;
   --label-bg: rgba(255, 255, 255, 0.9);
   --dot: #17212c;
   --hist-fill: rgba(29, 95, 196, 0.22);
@@ -29,7 +31,7 @@
   :root:not([data-theme="light"]) {
     --bg: #0e1318; --surface: #151c23; --sunk: #11171d; --fg: #e3e9ef; --muted: #8e9bab; --line: #26313c;
     --accent: #6ea2ff; --accent-ink: #0b1220; --accent-soft: #1b2a42; --danger: #ff7b80;
-    --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --multi-soft: #3a1f30; --label-bg: rgba(10, 15, 20, 0.88);
+    --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --multi-soft: #3a1f30; --ok: #6fd6a0; --ok-soft: #173326; --label-bg: rgba(10, 15, 20, 0.88);
     --dot: #d6dee6; --hist-fill: rgba(110, 162, 255, 0.25); --hist-line: #6ea2ff;
     color-scheme: dark;
   }
@@ -37,7 +39,7 @@
 :root[data-theme="dark"] {
   --bg: #0e1318; --surface: #151c23; --sunk: #11171d; --fg: #e3e9ef; --muted: #8e9bab; --line: #26313c;
   --accent: #6ea2ff; --accent-ink: #0b1220; --accent-soft: #1b2a42; --danger: #ff7b80;
-  --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --multi-soft: #3a1f30; --label-bg: rgba(10, 15, 20, 0.88);
+  --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --multi-soft: #3a1f30; --ok: #6fd6a0; --ok-soft: #173326; --label-bg: rgba(10, 15, 20, 0.88);
   --dot: #d6dee6; --hist-fill: rgba(110, 162, 255, 0.25); --hist-line: #6ea2ff;
   color-scheme: dark;
 }
@@ -295,6 +297,24 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .matrix input:focus { border-color: var(--accent); }
 .matrix input.hot { color: var(--gate-sel); font-weight: 600; }
 .diag { font-family: var(--font-mono); color: var(--muted); }
+
+/* ---- save & share sheet */
+.sheet-section { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.sheet-section h3 { margin: 0; font-size: 13px; }
+.row-field { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.row-field .field { flex: 1 1 260px; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.pill { margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); font-size: 11px; font-weight: 600; }
+.pill.is-warn { background: var(--multi-soft); color: var(--gate-sel); }
+.ws-shared-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ws-shared { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); }
+.ws-shared.is-current { border-color: var(--accent); background: var(--accent-soft); }
+.ws-shared-name { font-weight: 600; }
+.ws-shared-meta { color: var(--muted); font-size: 12px; }
+.ws-shared .btn-row { margin-left: auto; }
+.status-line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.notice { margin: 0; padding: 8px 10px; border-radius: var(--r); background: var(--sunk); font-size: 12px; }
+.notice.is-warn { background: var(--multi-soft); }
+.missing-list { margin: 4px 0 0; padding-left: 18px; font-size: 12px; }
 
 /* ---- drop & toast */
 .drop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(29, 95, 196, 0.12); border: 3px dashed var(--accent); pointer-events: none; }

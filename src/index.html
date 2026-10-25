@@ -11,14 +11,19 @@
       <span class="brand-mark" aria-hidden="true"></span>
       <span class="brand-name">FreeFlow</span>
     </div>
-    <label class="btn btn-primary file-btn">
-      <input id="file-input" type="file" accept=".fcs,.lmd,application/octet-stream" multiple>
+    <label class="btn btn-primary file-btn" title="Open .fcs files, plus a FlowJo .wsp or a saved .zip">
+      <input id="file-input" type="file" accept=".fcs,.lmd,.wsp,.zip,application/octet-stream" multiple>
       Open FCS files
+    </label>
+    <label class="btn file-btn" title="Open a folder with FCS files and one FlowJo .wsp workspace">
+      <input id="folder-input" type="file" webkitdirectory multiple>
+      Open folder
     </label>
     <p id="example-note" class="example-note">Showing 3 synthetic example samples. Opening your own files replaces them.</p>
     <div class="topbar-actions">
       <button id="undo" class="btn" disabled title="Undo (Ctrl+Z)">Undo</button>
       <button id="comp-btn" class="btn">Compensation</button>
+      <button id="share-btn" class="btn">Save &amp; share<span id="share-pill" class="pill" hidden></span></button>
     </div>
   </header>
 
@@ -99,6 +104,27 @@
       <button id="comp-close" class="btn btn-quiet">Close</button>
     </header>
     <div id="comp-body"></div>
+  </div>
+</div>
+<div id="share-panel" class="overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="share-title">
+    <header class="sheet-head">
+      <h2 id="share-title">Save &amp; share</h2>
+      <button id="share-close" class="btn btn-quiet">Close</button>
+    </header>
+    <section class="sheet-section">
+      <h3>FlowJo workspace file</h3>
+      <p class="muted small">Saves every open sample's gates, axis settings and compensation as a FlowJo 10 workspace (.wsp). Open it in FlowJo, or open it here again together with the FCS files (Open folder, or Open FCS files and pick the .wsp too).</p>
+      <div class="row-field">
+        <label class="field"><span>Workspace name</span><input id="ws-name" type="text" autocomplete="off"></label>
+        <button id="save-wsp" class="btn btn-primary">Download .wsp</button>
+      </div>
+      <p id="save-note" class="muted small"></p>
+    </section>
+    <section class="sheet-section">
+      <h3>Work on it together</h3>
+      <div id="share-body"></div>
+    </section>
   </div>
 </div>
 <div id="drop" class="drop" hidden><p>Drop FCS files to open them</p></div>

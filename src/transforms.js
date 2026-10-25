@@ -2,11 +2,13 @@
 // [0, 1] and back, and knows how to place its own tick marks.
 
 import { Logicle } from './logicle.js';
+import { Biex } from './biex.js';
 
 export const TRANSFORM_TYPES = [
   { id: 'linear', label: 'Linear' },
   { id: 'log', label: 'Log' },
-  { id: 'logicle', label: 'Biexponential' },
+  { id: 'biex', label: 'Biex' },
+  { id: 'logicle', label: 'Logicle' },
   { id: 'arcsinh', label: 'Arcsinh' },
 ];
 
@@ -19,13 +21,14 @@ export function channelKind(name) {
 export function defaultTransform(name, range = 262144) {
   const kind = channelKind(name.replace(/^Comp-/, ''));
   if (kind !== 'fluor') return { type: 'linear', min: 0, max: range };
-  return { type: 'logicle', T: range, W: 0.5, M: 4.5, A: 0 };
+  return { type: 'biex', max: range, width: -10, pos: 4.42, neg: 0 };
 }
 
 // Convert a transform of any type into another, keeping its top of scale.
 export function convertTransform(t, type) {
   const top = t.T ?? t.max ?? 262144;
   switch (type) {
+    case 'biex': return { type, max: top, width: -10, pos: 4.42, neg: 0 };
     case 'linear': return { type, min: 0, max: top };
     case 'log': return { type, max: top, decades: 4.5 };
     case 'logicle': return { type, T: top, W: 0.5, M: 4.5, A: 0 };
@@ -39,6 +42,7 @@ export function transformKey(t) {
     case 'linear': return `lin:${t.min}:${t.max}`;
     case 'log': return `log:${t.max}:${t.decades}`;
     case 'logicle': return `lgc:${t.T}:${t.W}:${t.M}:${t.A}`;
+    case 'biex': return `biex:${t.max}:${t.width}:${t.pos}:${t.neg}`;
     case 'arcsinh': return `asinh:${t.cofactor}:${t.min}:${t.max}`;
     default: return 'unknown';
   }
@@ -50,6 +54,17 @@ export function validLogicle(t) {
   const W = Math.max(0, Math.min(t.W, M / 2));
   const A = Math.max(0, Math.min(t.A, M - 2 * W));
   return { ...t, M, W, A, T: Math.max(1, t.T) };
+}
+
+// Keep FlowJo biex parameters in the range FlowJo itself offers.
+export function validBiex(t) {
+  return {
+    ...t,
+    max: Math.max(1, t.max),
+    width: -Math.min(1000, Math.max(1, Math.abs(t.width))),
+    pos: Math.max(1, Math.min(7, t.pos)),
+    neg: Math.max(0, Math.min(3, t.neg)),
+  };
 }
 
 const scalerCache = new Map();
@@ -78,6 +93,11 @@ export function makeScaler(t) {
     case 'logicle': {
       const lg = new Logicle(t.T, t.W, t.M, t.A);
       s = { fwd: (v) => lg.scale(v), inv: (x) => lg.inverse(x) };
+      break;
+    }
+    case 'biex': {
+      const bx = new Biex({ width: t.width, pos: t.pos, neg: t.neg, max: t.max });
+      s = { fwd: (v) => bx.scale(v), inv: (x) => bx.inverse(x) };
       break;
     }
     case 'arcsinh': {

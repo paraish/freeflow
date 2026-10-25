@@ -24,12 +24,16 @@ replaces the examples.
 - **Axis scaling** per parameter:
   - linear (min/max)
   - log (decades)
-  - biexponential (Logicle): top of scale **T**, positive decades **M**, linear width **W**,
-    extra negative decades **A**
+  - **Biex** (FlowJo's biexponential, the default for fluorescence): top of scale, positive
+    decades, width basis (−1 to −1000), extra negative decades. This is a port of
+    FlowJo's own lookup-table algorithm, checked against FlowKit's implementation, so plots and
+    polygon gates match FlowJo.
+  - Logicle (Parks et al. 2006): T, W, M, A
   - arcsinh (cofactor, min, max)
 
-  Sliders redraw live. **Estimate width from this sample** sets W from the spread of the
-  negative events (Parks et al. 2006).
+  Sliders redraw live. **Estimate width from this sample** sets the width from the spread of
+  the negative events (Parks et al. 2006). A detector's raw and compensated channels share
+  one axis setting.
 - **Plots**: pseudocolor density, dot, and histogram.
 - **Gates**: rectangle, polygon, quadrant, range. Move gates, drag their corners, rename,
   delete, undo (Ctrl/⌘+Z). Rectangle edges drawn at the plot border stay open-ended, so
@@ -68,13 +72,46 @@ replaces the examples.
 | Ctrl/⌘ + C, Ctrl/⌘ + V | Copy the selected gate, paste it into the population being viewed |
 | Ctrl/⌘ + Z | Undo |
 
+## FlowJo workspaces (.wsp)
+
+- **Save & share → Download .wsp** writes a FlowJo 10 workspace with every open sample's
+  gates, axis settings, compensation matrix and keywords. On claude.ai the file is saved
+  inside a .zip (the hosted page can only save certain file types); unzip it before opening it
+  in FlowJo. Opened from `dist/freeflow.html`, it saves the .wsp directly.
+- **Open folder** opens a folder of FCS files containing exactly one .wsp, applies the
+  workspace and connects each of its samples to an FCS file by file name (then by `$FIL`),
+  checking event counts. A folder with no .wsp, or more than one, is refused with an
+  explanation. Dropping a folder on the page does the same. **Open FCS files** also accepts a
+  .wsp (or the saved .zip) picked together with FCS files.
+- Imported from FlowJo: rectangle, polygon, ellipse (converted to a polygon, as FlowJo does
+  internally), range and quadrant gates; linear, log, biex, Logicle and ArcSinh axes;
+  compensation matrices (any prefix); custom keywords; plot axes per population. Not yet
+  imported (reported by name when skipped): Boolean gates, exclusion ("outside") gates,
+  spectral unmixing matrices, derived parameters.
+- Checked with [FlowKit](https://github.com/whitews/FlowKit), an independent reader of
+  FlowJo 10 workspaces: `npm run check:flowjo` exports the example samples with every gate
+  and axis type, has FlowKit gate the FCS files from the .wsp, and compares counts. All 33
+  populations match exactly. (Needs Python with `pip install flowkit`.) FlowJo itself has
+  not been run on these files yet; please report anything it does differently.
+
+## Working together
+
+Share the FreeFlow page from its **Share** menu on claude.ai (as Contributor or Editor), then
+use **Save & share → Share** to publish the current analysis as a shared workspace. Anyone
+who opens the page can open it and sees changes live: gates, axis settings and compensation
+sync as people edit; each person keeps their own plot views. FCS data is not uploaded: each
+person opens their own copy of the files, matched by file name and event count, and the panel
+lists files they still need to open. Viewers with view-only access can see but not change a
+shared workspace. When two people change the same sample at the same moment, the later
+change wins.
+
 ## Roadmap
 
 - **Phase 2**: compute compensation from single-stain controls (auto-detected from
-  keywords and filenames), sample groups, gates linked across a group, save and reopen workspaces.
+  keywords and filenames), sample groups, gates linked across a group.
 - **Phase 3**: layout editor and batch reports, annotations built from file keywords and
   sample- or group-level values, table editor with CSV/Excel export.
-- **Phase 4**: FlowJo `.wsp` import, Boolean gates, derived parameters, contour/zebra plots,
+- **Phase 4**: Boolean and exclusion gates, derived parameters, contour/zebra plots,
   dimensionality reduction.
 
 ## Accuracy notes
@@ -92,7 +129,8 @@ replaces the examples.
 
 ```sh
 npm install
-npm test        # unit tests: Logicle, FCS parsing, compensation, gating
+npm test        # unit tests: transforms, FCS, compensation, gating, .wsp, zip, sync
+npm run check:flowjo   # .wsp round trip through FlowKit (needs Python + flowkit)
 npm run build   # writes dist/freeflow.html
 ```
 
@@ -107,4 +145,9 @@ Source is plain ES modules in `src/`, bundled into one HTML file by `scripts/bui
 | `src/gating.js` | Gate evaluation, population tree, statistics |
 | `src/plot.js` | Canvas rendering |
 | `src/synth.js` | Synthetic example data |
+| `src/biex.js` | FlowJo biex transform |
+| `src/model.js` | Samples: channels, compensation, gating context |
+| `src/wsp.js` | FlowJo workspace export and import |
+| `src/zip.js` | Zip reading and writing |
+| `src/share.js` | Live shared workspaces |
 | `src/app.js` | Interface and state |

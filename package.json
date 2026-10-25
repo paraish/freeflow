@@ -4,7 +4,8 @@
   "description": "Browser-based flow cytometry analysis: FCS files, compensation, gating and batch statistics.",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "check:flowjo": "node scripts/wsp-roundtrip.mjs wsp-check && python3 scripts/check_wsp_flowkit.py wsp-check"
   },
   "repository": {
     "type": "git",
@@ -16,6 +17,7 @@
   },
   "homepage": "https://github.com/paraish/freeflow#readme",
   "devDependencies": {
+    "@xmldom/xmldom": "^0.8.10",
     "esbuild": "^0.23.1"
   },
   "type": "module",

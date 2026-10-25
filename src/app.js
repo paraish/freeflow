@@ -1,8 +1,11 @@
 import { parseFCS } from './fcs.js';
+import { exportWSP, parseWSP } from './wsp.js';
+import { makeZip, readZip } from './zip.js';
+import { SharedWorkspaces, stableStringify } from './share.js';
 import { EXAMPLE_SAMPLES, makeSyntheticFCS } from './synth.js';
-import { compensate, identity } from './compensation.js';
+import { applyCompensation, buildChannels, createSample, gatingContext, sampleKey } from './model.js';
 import {
-  TRANSFORM_TYPES, channelKind, convertTransform, defaultTransform, formatNumber, makeScaler, validLogicle,
+  TRANSFORM_TYPES, channelKind, convertTransform, defaultTransform, formatNumber, makeScaler, validBiex, validLogicle,
 } from './transforms.js';
 import { suggestWidth } from './logicle.js';
 import {
@@ -43,41 +46,34 @@ function sample() {
 
 // ---------------------------------------------------------------- channels & transforms
 
+// A detector's raw and compensated channels share one axis setting, stored
+// under the compensated name (FlowJo readers look transforms up either way).
+function transformName(name) {
+  return !name.startsWith('Comp-') && S.samples.some((s) => s.comp?.names.includes(name)) ? `Comp-${name}` : name;
+}
+
 function getTransform(name) {
-  if (!S.transforms[name]) {
-    const base = name.replace(/^Comp-/, '');
+  const key = transformName(name);
+  if (!S.transforms[key]) {
+    const base = key.replace(/^Comp-/, '');
     const range = S.samples.find((s) => s.rangeOf[base])?.rangeOf[base] ?? 262144;
-    S.transforms[name] = S.transforms[base] && name !== base ? { ...S.transforms[base] } : defaultTransform(name, range);
+    S.transforms[key] = defaultTransform(key, range);
   }
-  return S.transforms[name];
+  return S.transforms[key];
+}
+
+function setTransform(name, t) {
+  S.transforms[transformName(name)] = t;
 }
 
 const scalerFor = (name) => makeScaler(getTransform(name));
 
 function scaled(s, name) {
-  const sc = scalerFor(name);
-  const key = `${name}|${sc.key}`;
-  let col = s.scaled.get(key);
-  if (!col) {
-    const raw = s.cols.get(name);
-    col = new Float32Array(raw.length);
-    for (let i = 0; i < raw.length; i++) col[i] = sc.fwd(raw[i]);
-    for (const k of s.scaled.keys()) if (k.startsWith(`${name}|`)) s.scaled.delete(k);
-    s.scaled.set(key, col);
-  }
-  return col;
+  return ctxFor(s).scaled(name);
 }
 
 function ctxFor(s) {
-  return {
-    raw: (n) => {
-      const c = s.cols.get(n);
-      if (!c) throw new Error(`Sample ${s.name} has no parameter ${n}`);
-      return c;
-    },
-    scaled: (n) => scaled(s, n),
-    scaler: (n) => scalerFor(n),
-  };
+  return gatingContext(s, getTransform);
 }
 
 function channelInfo(s, name) {
@@ -91,67 +87,8 @@ function shortLabel(s, name) {
 
 // ---------------------------------------------------------------- samples
 
-function buildChannels(s) {
-  const out = [];
-  const compNames = s.comp ? s.comp.names : [];
-  for (const p of s.params) {
-    if (!compNames.includes(p.name)) out.push({ name: p.name, stain: p.stain, range: p.range });
-  }
-  for (const nm of compNames) {
-    const p = s.params.find((q) => q.name === nm);
-    out.push({ name: `Comp-${nm}`, stain: p.stain, range: p.range });
-  }
-  for (const nm of compNames) {
-    const p = s.params.find((q) => q.name === nm);
-    out.push({ name: nm, stain: p.stain, range: p.range, uncomp: true });
-  }
-  for (const c of out) c.label = c.stain ? `${c.name} :: ${c.stain}` : c.name;
-  s.channels = out;
-}
-
-function applyCompensation(s) {
-  if (!s.comp) return;
-  const m = s.comp.enabled ? s.comp.matrix : identity(s.comp.names.length);
-  const out = compensate(s.raw, s.comp.names, m);
-  s.comp.names.forEach((nm, i) => {
-    const key = `Comp-${nm}`;
-    s.cols.set(key, out[i]);
-    for (const k of [...s.scaled.keys()]) if (k.startsWith(`${key}|`)) s.scaled.delete(k);
-  });
-}
-
 function addSample(fcs, isExample = false) {
-  const raw = new Map();
-  fcs.params.forEach((p, i) => raw.set(p.name, fcs.columns[i]));
-  const s = {
-    id: newId('s'),
-    name: fcs.fileName.replace(/\.(fcs|lmd)$/i, ''),
-    fileName: fcs.fileName,
-    version: fcs.version,
-    keywords: fcs.keywords,
-    n: fcs.nEvents,
-    params: fcs.params,
-    rangeOf: Object.fromEntries(fcs.params.map((p) => [p.name, p.range])),
-    raw,
-    cols: new Map(raw),
-    scaled: new Map(),
-    comp: fcs.spillover
-      ? {
-        names: fcs.spillover.names,
-        matrix: fcs.spillover.matrix.map((r) => [...r]),
-        fileMatrix: fcs.spillover.matrix.map((r) => [...r]),
-        enabled: true,
-      }
-      : null,
-    isExample,
-  };
-  buildChannels(s);
-  applyCompensation(s);
-  s.root = makePopulation('All Events', null, null);
-  const names = s.channels.map((c) => c.name);
-  const fsc = names.find((n) => /^FSC-A$/i.test(n)) || names.find((n) => /^FSC/i.test(n)) || names[0];
-  const ssc = names.find((n) => /^SSC-A$/i.test(n)) || names.find((n) => /^SSC/i.test(n)) || names[1] || names[0];
-  s.root.view = { x: fsc, y: ssc, type: 'pseudo' };
+  const s = createSample(fcs, isExample);
   recompute(s.root, ctxFor(s), s.n);
   S.samples.push(s);
   return s;
@@ -198,37 +135,315 @@ function buildExampleGates() {
   S.viewPath = ['Cells', 'Singlets'];
 }
 
-async function openFiles(files) {
-  const list = [...files].filter((f) => f.size > 0);
-  if (!list.length) return;
-  let ok = 0;
-  const errors = [];
-  for (const f of list) {
+// ---------------------------------------------------------------- opening files, folders and workspaces
+//
+// Every way of opening things (file picker, folder picker, drag and drop)
+// ends here with a flat list of { name, path, read() } entries. FCS files
+// become samples; a .zip is unpacked first; a FlowJo .wsp found among them
+// is applied to the samples. A folder must contain exactly one .wsp.
+
+const isFCS = (n) => /\.(fcs|lmd)$/i.test(n);
+const isWSP = (n) => /\.wsp$/i.test(n);
+const isZip = (n) => /\.zip$/i.test(n);
+const baseName = (p) => p.split(/[\\/]/).pop();
+
+function fileEntry(f) {
+  return { name: f.name, path: f.webkitRelativePath || f.name, read: () => f.arrayBuffer() };
+}
+
+async function expandZips(entries) {
+  const out = [];
+  for (const e of entries) {
+    if (!isZip(e.name)) { out.push(e); continue; }
     try {
-      const buf = await f.arrayBuffer();
-      const fcs = parseFCS(buf, f.name);
-      if (S.examples) {
-        S.samples = S.samples.filter((s) => !s.isExample);
-        S.examples = false;
-        S.undo = [];
+      for (const z of await readZip(await e.read())) {
+        if (baseName(z.name).startsWith('.') || z.name.startsWith('__MACOSX/')) continue;
+        out.push({ name: baseName(z.name), path: `${e.path}/${z.name}`, read: async () => z.data.buffer.slice(z.data.byteOffset, z.data.byteOffset + z.data.byteLength) });
       }
-      const s = addSample(fcs);
-      if (ok === 0) S.sampleId = s.id;
-      ok++;
+    } catch (err) {
+      out.push({ name: e.name, path: e.path, error: err.message });
+    }
+  }
+  return out;
+}
+
+// Files dropped as folders arrive as directory entries; walk them.
+async function entriesFromDrop(dt) {
+  const items = [...(dt.items || [])].map((i) => i.webkitGetAsEntry?.()).filter(Boolean);
+  if (!items.length || !items.some((i) => i.isDirectory)) return { entries: [...dt.files].map(fileEntry), folder: false };
+  const out = [];
+  const walkEntry = async (entry) => {
+    if (entry.isFile) {
+      const file = await new Promise((res, rej) => entry.file(res, rej));
+      out.push({ name: file.name, path: entry.fullPath.replace(/^\//, ''), read: () => file.arrayBuffer() });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      for (;;) {
+        const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+        if (!batch.length) break;
+        for (const child of batch) await walkEntry(child);
+      }
+    }
+  };
+  for (const i of items) await walkEntry(i);
+  return { entries: out, folder: true };
+}
+
+function dropExamples() {
+  if (!S.examples) return;
+  S.samples = S.samples.filter((s) => !s.isExample);
+  S.examples = false;
+  S.undo = [];
+}
+
+async function openEntries(rawEntries, { folder = false } = {}) {
+  const entries = (await expandZips(rawEntries)).filter((e) => !baseName(e.path).startsWith('.'));
+  const wsps = entries.filter((e) => isWSP(e.name));
+  const fcs = entries.filter((e) => isFCS(e.name));
+  const where = folder ? 'This folder' : 'These files';
+  if (folder && wsps.length === 0) {
+    toast(`${where} has no FlowJo workspace (.wsp) file${fcs.length ? `, only ${fcs.length} FCS file${fcs.length > 1 ? 's' : ''}` : ''}. Add the .wsp to the folder, or use Open FCS files to open the FCS files without gates.`, true);
+    return;
+  }
+  if (wsps.length > 1) {
+    toast(`${where} ${folder ? 'has' : 'include'} ${wsps.length} workspace files (${wsps.map((w) => w.path).join(', ')}). FreeFlow can only connect one workspace at a time: keep one .wsp and try again.`, true);
+    return;
+  }
+  if (!fcs.length && !wsps.length) {
+    const skipped = entries.map((e) => e.error ? `${e.name}: ${e.error}` : e.name);
+    toast(`Nothing to open. FreeFlow reads .fcs, .wsp and .zip files${skipped.length ? `; skipped ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? '…' : ''}` : ''}.`, true);
+    return;
+  }
+
+  // Parse the workspace first, so a bad one stops before anything changes.
+  let ws = null;
+  if (wsps.length) {
+    try {
+      ws = parseWSP(new TextDecoder().decode(await wsps[0].read()));
+    } catch (err) {
+      toast(`${wsps[0].name} could not be read: ${err.message}`, true);
+      return;
+    }
+  }
+
+  const errors = entries.filter((e) => e.error).map((e) => `${e.name}: ${e.error}`);
+  const added = [];
+  for (const f of fcs) {
+    try {
+      const parsed = parseFCS(await f.read(), f.name);
+      dropExamples();
+      added.push(addSample(parsed));
     } catch (err) {
       errors.push(err.message || String(err));
     }
   }
-  if (ok) {
-    if (!sample()) S.sampleId = S.samples[0]?.id ?? null;
-    S.viewPath = [];
-    S.selId = null;
-    S.version++;
-    renderAll();
+  if (!added.length && !ws) { toast(errors.join('\n'), true); return; }
+
+  let report = null;
+  if (ws) {
+    dropExamples();
+    report = applyWorkspace(ws, wsps[0].name);
   }
-  if (errors.length) toast(errors.join('\n'), true);
-  else if (ok) toast(`Opened ${ok} file${ok > 1 ? 's' : ''}.`);
+  for (const s of added) applyPendingShared(s);
+  if (added.length) S.sampleId = added[0].id;
+  if (!sample()) S.sampleId = S.samples[0]?.id ?? null;
+  S.viewPath = [];
+  S.selId = null;
+  S.undo = [];
+  S.version++;
+  renderAll();
+
+  const lines = [];
+  if (report) {
+    lines.push(`Loaded ${wsps[0].name}: ${report.connected.length} of ${report.total} sample${report.total === 1 ? '' : 's'} connected to FCS files.`);
+    if (report.missing.length) lines.push(`No FCS file found for: ${report.missing.slice(0, 6).join(', ')}${report.missing.length > 6 ? ` and ${report.missing.length - 6} more` : ''}. Open those files to connect them.`);
+    lines.push(...report.warnings.slice(0, 4));
+    if (report.warnings.length > 4) lines.push(`…and ${report.warnings.length - 4} more notes.`);
+  } else {
+    lines.push(`Opened ${added.length} FCS file${added.length > 1 ? 's' : ''}.`);
+  }
+  if (errors.length) lines.push(...errors);
+  toast(lines.join('\n'), errors.length > 0 || (report && (report.missing.length > 0 || report.warnings.length > 0)));
 }
+
+function openFiles(files) {
+  return openEntries([...files].filter((f) => f.size > 0).map(fileEntry));
+}
+
+// ---------------------------------------------------------------- FlowJo workspaces
+
+// Finds the open sample for a workspace sample: by file name, then by the
+// $FIL keyword, checking the event count when the workspace records one.
+function matchSample(w, used, warnings) {
+  const candidates = S.samples.filter((s) => !used.has(s));
+  const lc = (x) => (x || '').toLowerCase();
+  const byName = (n) => candidates.find((s) => lc(s.fileName) === lc(n));
+  const s = byName(w.fileName) || byName(w.nodeName) || byName(w.keywords.$FIL)
+    || candidates.find((c) => w.keywords.$FIL && lc(c.keywords.$FIL) === lc(w.keywords.$FIL));
+  if (s && w.keywords.$TOT && +w.keywords.$TOT !== s.n) {
+    warnings.push(`${s.fileName}: the workspace expects ${w.keywords.$TOT} events but the file has ${s.n}; the gates were applied anyway.`);
+  }
+  return s || null;
+}
+
+function applyWorkspace(ws, wspName) {
+  const warnings = [...ws.warnings];
+  const used = new Set();
+  const connected = [];
+  const missing = [];
+  // Axis settings are per channel in FreeFlow; take each from the first
+  // sample that defines it.
+  const seen = new Set();
+  for (const w of ws.samples) {
+    for (const [ch, t] of Object.entries(w.transforms)) {
+      const key = transformName(ch);
+      if (ch !== key && w.transforms[key]) continue; // the compensated channel's axis wins
+      if (!seen.has(key)) { S.transforms[key] = t; seen.add(key); }
+    }
+  }
+  for (const w of ws.samples) {
+    const s = matchSample(w, used, warnings);
+    if (!s) { missing.push(w.fileName || w.nodeName); continue; }
+    used.add(s);
+    if (w.comp) {
+      const ok = w.comp.names.every((n) => s.rangeOf[n] !== undefined);
+      if (ok) {
+        s.comp = { names: w.comp.names, matrix: w.comp.matrix.map((r) => [...r]), fileMatrix: s.comp?.fileMatrix ?? w.comp.matrix.map((r) => [...r]), enabled: true };
+        buildChannels(s);
+        applyCompensation(s);
+      } else {
+        warnings.push(`${s.fileName}: the workspace's compensation matrix names detectors this file does not have, so the file's own matrix was kept.`);
+      }
+    }
+    // Keywords FlowJo users add (annotations) come along; the file's own win.
+    for (const [k, v] of Object.entries(w.keywords)) if (!(k in s.keywords) && k !== 'FJ_FCS_VERSION') s.keywords[k] = v;
+    const have = new Set(s.channels.map((c) => c.name));
+    const root = makePopulation('All Events', null, null);
+    root.view = w.view && have.has(w.view.x) ? w.view : s.root.view;
+    const attach = (src, parent, path) => {
+      const need = gateParams(src.gate);
+      const lack = need.filter((n) => !have.has(n));
+      if (lack.length) {
+        warnings.push(`${s.fileName}: "${[...path, src.name].join(' / ')}" uses ${lack.join(', ')}, which this file does not have; it and its sub-gates were skipped.`);
+        return;
+      }
+      const p = makePopulation(uniqueName(parent, src.name), src.gate, parent);
+      p.view = src.view && have.has(src.view.x) && (src.view.type === 'histogram' || have.has(src.view.y)) ? src.view : null;
+      parent.children.push(p);
+      for (const c of src.children) attach(c, p, [...path, src.name]);
+    };
+    for (const c of w.children) attach(c, root, []);
+    s.root = root;
+    recompute(s.root, ctxFor(s), s.n);
+    connected.push(s.name);
+  }
+  S.wsName = wspName.replace(/\.wsp$/i, '');
+  return { connected, missing, warnings, total: ws.samples.length };
+}
+
+function safeFileName(name) {
+  return (name || 'FreeFlow workspace').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120) || 'FreeFlow workspace';
+}
+
+async function saveWorkspace() {
+  const real = S.samples;
+  if (!real.length) { toast('Open some FCS files first: there is nothing to save yet.'); return; }
+  const xmlText = exportWSP({ samples: real, transformOf: getTransform });
+  const name = safeFileName($('ws-name')?.value || S.wsName || (S.shared?.meta?.name) || 'FreeFlow workspace');
+  const claude = globalThis.claude;
+  const downloads = claude?.use ? await claude.use('downloads').catch(() => null) : null;
+  if (downloads) {
+    // Hosted pages may only save certain file types; .wsp is not one, so the
+    // workspace goes inside a .zip.
+    const zip = makeZip([{ name: `${name}.wsp`, data: xmlText }]);
+    try {
+      await downloads.save({ filename: `${name}.zip`, data: new Blob([zip]) });
+      toast(`Saved ${name}.zip. Unzip it to get ${name}.wsp, and keep it in the folder with the FCS files.`);
+    } catch (e) {
+      if (e?.code !== 'declined') toast(`The workspace could not be saved: ${e?.message || e}`, true);
+    }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([xmlText], { type: 'application/xml' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: `${name}.wsp` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast(`Saved ${name}.wsp. Keep it in the folder with the FCS files.`);
+}
+
+// ---------------------------------------------------------------- shared workspaces (live collaboration)
+
+const stripViews = (o) => ({ name: o.name, gate: o.gate, children: o.children.map(stripViews) });
+
+function sharedState(s) {
+  return {
+    key: sampleKey(s),
+    fileName: s.fileName,
+    n: s.n,
+    tree: stripViews(serialize(s.root)),
+    comp: s.comp ? { names: s.comp.names, matrix: s.comp.matrix, enabled: s.comp.enabled } : null,
+  };
+}
+
+// Replaces a sample's gates with a shared version, keeping this person's
+// own plot settings (axes, plot type) wherever the population still exists.
+function applySharedToSample(s, core) {
+  if (core.comp && core.comp.names.every((n) => s.rangeOf[n] !== undefined)) {
+    const changed = stableStringify(core.comp) !== stableStringify(s.comp && { names: s.comp.names, matrix: s.comp.matrix, enabled: s.comp.enabled });
+    if (changed) {
+      s.comp = { ...core.comp, matrix: core.comp.matrix.map((r) => [...r]), fileMatrix: s.comp?.fileMatrix ?? core.comp.matrix.map((r) => [...r]) };
+      buildChannels(s);
+      applyCompensation(s);
+    }
+  }
+  const views = new Map();
+  walk(s.root, (p) => { if (p.view) views.set(pathOf(p).join('\u0000'), p.view); });
+  const root = deserialize(core.tree, null);
+  walk(root, (p) => { const v = views.get(pathOf(p).join('\u0000')); if (v) p.view = v; });
+  if (!root.view) root.view = s.root.view;
+  s.root = root;
+  recompute(s.root, ctxFor(s), s.n);
+}
+
+const remoteQueue = new Map();
+
+function onRemoteSample(core) {
+  const s = S.samples.find((x) => sampleKey(x) === core.key);
+  if (!s) return; // kept by the sync engine until the file is opened
+  if (drag || S.draft) { remoteQueue.set(core.key, core); return; }
+  applySharedToSample(s, core);
+  S.undo = [];
+  S.version++;
+  if (s === sample()) { S.selId = null; }
+  scheduleRemoteRender();
+}
+
+function flushRemoteQueue() {
+  if (!remoteQueue.size) return;
+  const list = [...remoteQueue.values()];
+  remoteQueue.clear();
+  for (const core of list) onRemoteSample(core);
+}
+
+function onRemoteTransforms(transforms) {
+  S.transforms = { ...transforms };
+  recomputeAll();
+  scheduleRemoteRender();
+}
+
+let remoteRenderTimer = null;
+function scheduleRemoteRender() {
+  clearTimeout(remoteRenderTimer);
+  remoteRenderTimer = setTimeout(() => renderAll(), 60);
+}
+
+function applyPendingShared(s) {
+  const core = S.shared?.pendingFor(sampleKey(s));
+  if (core) applySharedToSample(s, core);
+}
+
 
 // ---------------------------------------------------------------- populations & views
 
@@ -796,6 +1011,7 @@ function onPointerUp() {
     const moved = drag.undoPushed;
     drag = null;
     if (moved) renderAll();
+    flushRemoteQueue();
     return;
   }
   const d = S.draft;
@@ -1008,13 +1224,22 @@ function axisCard(axis, name) {
   const t = getTransform(name);
   const num = (id, label, value, attrs) => `
     <label class="field"><span>${label}</span>
-      <input id="${id}" type="number" value="${value}" ${attrs} data-axis="${axis}"></label>`;
+      <input id="${id}" type="number" value="${+(+value).toPrecision(8)}" ${attrs} data-axis="${axis}"></label>`;
   const slider = (id, label, value, min, max, step) => `
     <label class="field field-slider"><span>${label}</span>
       <input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-axis="${axis}">
       <output id="${id}-out">${(+value).toFixed(2)}</output></label>`;
   let body = '';
-  if (t.type === 'logicle') {
+  if (t.type === 'biex') {
+    const wlog = Math.log10(Math.abs(t.width));
+    body = num(`${axis}-max`, 'Top of scale', t.max, 'min="1" step="1"')
+      + slider(`${axis}-pos`, 'Positive decades', t.pos, 2, 7, 0.01)
+      + `<label class="field field-slider"><span>Width basis</span>
+          <input id="${axis}-wlog" type="range" min="0" max="3" step="0.01" value="${wlog}" data-axis="${axis}" aria-valuetext="${Math.round(t.width)}">
+          <output id="${axis}-wlog-out">${Math.round(t.width)}</output></label>`
+      + slider(`${axis}-neg`, 'Extra negative decades', t.neg, 0, 3, 0.05)
+      + `<button class="btn btn-quiet" data-act="auto-w" data-axis="${axis}">Estimate width from this sample</button>`;
+  } else if (t.type === 'logicle') {
     body = num(`${axis}-T`, 'Top of scale (T)', t.T, 'min="1" step="1"')
       + slider(`${axis}-M`, 'Positive decades (M)', t.M, 2, 7, 0.05)
       + slider(`${axis}-W`, 'Linear width (W)', t.W, 0, Math.min(3, t.M / 2), 0.01)
@@ -1269,6 +1494,129 @@ function compChanged(s) {
   renderAll();
 }
 
+// ---------------------------------------------------------------- save & share panel
+
+const timeAgo = (iso) => {
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (!Number.isFinite(s)) return '';
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
+let shareRenderToken = 0;
+async function renderShare() {
+  const sh = S.shared;
+  const pill = $('share-pill');
+  if (sh?.wid) {
+    pill.hidden = false;
+    pill.textContent = sh.readOnly ? 'view only' : sh.ready ? 'live' : 'joining…';
+    pill.classList.toggle('is-warn', !!sh.readOnly || !!sh.error);
+  } else {
+    pill.hidden = true;
+  }
+  $('save-note').textContent = globalThis.claude?.use
+    ? 'On claude.ai the .wsp is saved inside a .zip; unzip it before opening it in FlowJo. FreeFlow opens the .zip directly.'
+    : '';
+  if ($('share-panel').hidden) return;
+  const el = $('share-body');
+  if (!sh?.available) {
+    el.innerHTML = `<p class="notice">Live shared workspaces work when FreeFlow is opened from its claude.ai link. Here, share your analysis as a .wsp file instead.</p>`;
+    return;
+  }
+  const token = ++shareRenderToken;
+  const ids = [...new Set(sh.list.map((w) => w.updatedBy).filter(Boolean))];
+  const people = await sh.profiles(ids);
+  if (token !== shareRenderToken) return;
+  const who = (id) => (id && people[id]?.name) || (id && id === sh.me ? 'you' : 'someone');
+  const current = sh.wid ? sh.list.find((w) => w.id === sh.wid) : null;
+  const openKeys = new Set(S.samples.map(sampleKey));
+  const missing = current ? (current.samples || []).filter((x) => !openKeys.has(x.key)) : [];
+  const canWrite = sh.canWrite !== false;
+
+  const status = current ? `
+    <div class="notice${sh.readOnly || sh.error ? ' is-warn' : ''}">
+      <div class="status-line"><strong>${esc(current.name)}</strong>
+        <span>${sh.readOnly ? 'View only: you can see this workspace but your changes stay on this computer.' : sh.ready ? 'Live: your changes are shared as you make them.' : 'Joining…'}</span></div>
+      <div class="muted">Last change by ${esc(who(current.updatedBy))} ${esc(timeAgo(current.updatedAt))}.</div>
+      ${sh.error ? `<div>Sync problem: ${esc(sh.error)}</div>` : ''}
+      ${missing.length ? `<div>Open these FCS files to see and edit their gates:</div><ul class="missing-list">${missing.slice(0, 12).map((m) => `<li>${esc(m.fileName)} (${fmtInt(m.n)} events)</li>`).join('')}${missing.length > 12 ? `<li>and ${missing.length - 12} more</li>` : ''}</ul>` : ''}
+      <div class="btn-row" style="margin-top:8px"><button class="btn" data-act="leave">Stop sharing on this computer</button></div>
+    </div>` : '';
+
+  const rows = sh.list.map((w) => `
+    <li class="ws-shared${w.id === sh.wid ? ' is-current' : ''}" data-id="${esc(w.id)}">
+      <div><div class="ws-shared-name">${esc(w.name || 'Untitled')}</div>
+        <div class="ws-shared-meta">${(w.samples || []).length} samples · last change by ${esc(who(w.updatedBy))} ${esc(timeAgo(w.updatedAt))}</div></div>
+      <div class="btn-row">
+        ${w.id === sh.wid ? '' : '<button class="btn" data-act="join">Open</button>'}
+        ${canWrite ? '<button class="btn btn-danger" data-act="delete">Delete</button>' : ''}
+      </div>
+    </li>`).join('');
+
+  const typing = $('share-new-name');
+  const typed = typing ? { value: typing.value, focused: document.activeElement === typing, start: typing.selectionStart } : null;
+  el.innerHTML = `
+    <p class="muted small">Everyone you share this page with (from its Share menu, as Contributor or Editor) can open a shared workspace and see changes live. Gates, axis settings and compensation are shared. FCS files are not: each person opens their own copy, matched by file name and event count.</p>
+    ${status}
+    ${canWrite ? `<div class="row-field">
+      <label class="field"><span>Share the current analysis as</span><input id="share-new-name" type="text" autocomplete="off" value="${esc(S.wsName || 'Shared workspace')}"></label>
+      <button id="share-create" class="btn btn-primary" data-act="create" ${S.samples.length ? '' : 'disabled'}>Share</button>
+    </div>` : '<p class="notice">You can view shared workspaces but not create them: ask the owner for Contributor access in the Share menu.</p>'}
+    ${sh.list.length ? `<ul class="ws-shared-list">${rows}</ul>` : '<p class="muted small">No shared workspaces yet.</p>'}`;
+  const input = $('share-new-name');
+  if (typed && input) {
+    input.value = typed.value;
+    if (typed.focused) { input.focus(); input.setSelectionRange(typed.start, typed.start); }
+  }
+}
+
+async function onShareClick(e) {
+  if (e.target === $('share-panel')) { $('share-panel').hidden = true; return; }
+  const b = e.target.closest('[data-act]');
+  const sh = S.shared;
+  if (!b || !sh?.available) return;
+  const act = b.dataset.act;
+  const id = b.closest('[data-id]')?.dataset.id;
+  try {
+    if (act === 'create') {
+      const name = $('share-new-name').value.trim() || 'Shared workspace';
+      b.disabled = true;
+      await sh.create(name);
+      S.wsName = name;
+      toast(`Shared "${name}". Others who open this page can now join it.`);
+    } else if (act === 'join') {
+      const w = sh.list.find((x) => x.id === id);
+      const keys = new Set((w?.samples || []).map((x) => x.key));
+      if (S.examples && !S.samples.some((x) => keys.has(sampleKey(x)))) {
+        dropExamples();
+        S.sampleId = S.samples[0]?.id ?? null;
+        S.viewPath = [];
+        renderAll();
+      }
+      await sh.join(id);
+      S.wsName = w?.name || S.wsName;
+      toast(`Opened "${w?.name}". Changes from others will appear as they make them.`);
+    } else if (act === 'leave') {
+      sh.leave();
+      toast('Stopped sharing. Your gates stay as they are on this computer.');
+    } else if (act === 'delete') {
+      if (b.dataset.confirm !== '1') {
+        b.dataset.confirm = '1';
+        b.textContent = 'Delete for everyone?';
+        setTimeout(() => { if (b.isConnected) { b.dataset.confirm = ''; b.textContent = 'Delete'; } }, 4000);
+        return;
+      }
+      await sh.remove(id);
+      toast('Deleted the shared workspace.');
+    }
+  } catch (err) {
+    toast(`That did not work: ${err?.message || err}`, true);
+  }
+  renderShare();
+}
+
 // ---------------------------------------------------------------- toast & layout
 
 let toastTimer = null;
@@ -1314,8 +1662,10 @@ function onTransformInput(target) {
   const field = target.id.slice(2);
   const val = parseFloat(target.value);
   if (!Number.isFinite(val)) return;
-  t[field] = val;
+  if (field === 'wlog') t.width = -Math.round(10 ** val);
+  else t[field] = val;
   let next = t;
+  if (t.type === 'biex') next = validBiex(t);
   if (t.type === 'logicle') {
     next = validLogicle(t);
     const wIn = $(`${axis}-W`);
@@ -1323,16 +1673,16 @@ function onTransformInput(target) {
   }
   if (t.type === 'linear' && !(next.max > next.min)) return;
   if (t.type === 'arcsinh' && (!(next.max > next.min) || !(next.cofactor > 0))) return;
-  S.transforms[name] = next;
+  setTransform(name, next);
   const out = $(`${target.id}-out`);
-  if (out) out.textContent = (+val).toFixed(2);
+  if (out) out.textContent = field === 'wlog' ? String(next.width) : (+val).toFixed(2);
   transformsChanged(name);
 }
 
 function transformsChanged(name) {
   // Polygon gates are defined in display space, so membership can change.
   let usesPolygon = false;
-  for (const s of S.samples) walk(s.root, (p) => { if (p.gate?.type === 'polygon' && gateParams(p.gate).includes(name)) usesPolygon = true; });
+  for (const s of S.samples) walk(s.root, (p) => { if (p.gate?.type === 'polygon' && gateParams(p.gate).some((n) => transformName(n) === transformName(name))) usesPolygon = true; });
   if (usesPolygon) { recomputeAll(); renderTrees(); scheduleStats(); }
   requestPlot();
 }
@@ -1353,6 +1703,25 @@ function bind() {
   plot.canvas.addEventListener('pointerleave', () => { if (S.draft?.kind === 'poly') { S.draft.cursor = null; requestPlot(); } });
 
   $('file-input').addEventListener('change', (e) => { openFiles(e.target.files); e.target.value = ''; });
+  $('folder-input').addEventListener('change', (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    openEntries(files.map(fileEntry), { folder: true });
+  });
+  $('share-btn').addEventListener('click', () => {
+    $('ws-name').value = S.wsName || S.shared?.meta?.name || 'FreeFlow workspace';
+    $('share-panel').hidden = false;
+    renderShare();
+  });
+  $('share-close').addEventListener('click', () => { $('share-panel').hidden = true; });
+  $('save-wsp').addEventListener('click', () => {
+    S.wsName = $('ws-name').value.trim() || S.wsName;
+    saveWorkspace();
+  });
+  $('share-panel').addEventListener('click', onShareClick);
+  $('share-panel').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.id === 'share-new-name') { e.preventDefault(); $('share-create')?.click(); }
+  });
   $('undo').addEventListener('click', undo);
   $('comp-btn').addEventListener('click', () => { $('comp-panel').hidden = false; renderComp(); });
   $('comp-close').addEventListener('click', () => { $('comp-panel').hidden = true; });
@@ -1596,23 +1965,29 @@ function bind() {
     const card = b.closest('.axis-card');
     const name = card.dataset.channel;
     if (b.dataset.act === 'ttype') {
-      S.transforms[name] = convertTransform(getTransform(name), b.dataset.type);
-      if (S.transforms[name].type === 'logicle' || S.transforms[name].type === 'linear') {
-        const range = sample()?.rangeOf[name.replace(/^Comp-/, '')];
-        if (range) S.transforms[name][S.transforms[name].type === 'logicle' ? 'T' : 'max'] = range;
-      }
+      const next = convertTransform(getTransform(name), b.dataset.type);
+      const range = sample()?.rangeOf[name.replace(/^Comp-/, '')];
+      if (range) next[next.type === 'logicle' ? 'T' : 'max'] = range;
+      setTransform(name, next);
       renderAxes();
       transformsChanged(name);
       scheduleStats();
     } else if (b.dataset.act === 'auto-w') {
       const s = sample();
       const t = getTransform(name);
-      const W = suggestWidth(s.cols.get(name), t.T, t.M);
-      S.transforms[name] = validLogicle({ ...t, W: +W.toFixed(2) });
+      if (t.type === 'biex') {
+        // Parks' linear width W corresponds to a width basis of -10^(2W).
+        const W = suggestWidth(s.cols.get(name), t.max, t.pos);
+        setTransform(name, validBiex({ ...t, width: -Math.round(10 ** (2 * W)) }));
+        toast(`Width basis set to ${getTransform(name).width} from the spread of negative events.`);
+      } else {
+        const W = suggestWidth(s.cols.get(name), t.T, t.M);
+        setTransform(name, validLogicle({ ...t, W: +W.toFixed(2) }));
+        toast(`Width set to ${W.toFixed(2)} from the spread of negative events.`);
+      }
       renderAxes();
       transformsChanged(name);
       scheduleStats();
-      toast(`Width set to ${W.toFixed(2)} from the spread of negative events.`);
     }
   });
 
@@ -1698,6 +2073,7 @@ function bind() {
     if (e.key === 'Escape') {
       if (S.multi.size) { S.multi.clear(); renderTrees(); return; }
       if (S.draft) { S.draft = null; requestPlot(); } else if (!$('comp-panel').hidden) $('comp-panel').hidden = true;
+      else if (!$('share-panel').hidden) $('share-panel').hidden = true;
       else if (S.selId) { S.selId = null; renderSide(); requestPlot(); }
       return;
     }
@@ -1724,7 +2100,9 @@ function bind() {
     e.preventDefault();
     depth = 0;
     $('drop').hidden = true;
-    if (e.dataTransfer?.files?.length) openFiles(e.dataTransfer.files);
+    if (!e.dataTransfer?.files?.length) return;
+    entriesFromDrop(e.dataTransfer).then(({ entries, folder }) => openEntries(entries, { folder }))
+      .catch((err) => toast(`The dropped files could not be read: ${err.message}`, true));
   });
 
   new ResizeObserver(sizePlot).observe($('plot-wrap'));
@@ -1734,6 +2112,15 @@ function bind() {
 
 export function start() {
   bind();
+  S.shared = new SharedWorkspaces({
+    localSamples: () => S.samples.map(sharedState),
+    localTransforms: () => ({ ...S.transforms }),
+    applySample: onRemoteSample,
+    applyTransforms: onRemoteTransforms,
+    isBusy: () => !!drag || !!S.draft,
+    onChange: renderShare,
+  });
+  S.shared.init();
   try {
     loadExamples();
   } catch (err) {
