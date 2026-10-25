@@ -183,3 +183,11 @@ test('compressed zip round trip', async () => {
   assert.deepEqual(files.map((f) => f.name), ['a/data.fcs', 'a/x.wsp']);
   assert.deepEqual([...files[0].data], [...big]);
 });
+
+test('sample groups survive export and import', () => {
+  const mk = (fileName) => ({ fileName, n: 1, keywords: {}, comp: null, channels: [{ name: 'FSC-A' }], root: { name: 'All Events', gate: null, view: null, children: [] } });
+  const a = mk('a.fcs'), b = mk('b.fcs'), c = mk('c.fcs');
+  const xml = exportWSP({ samples: [a, b, c], transformOf: () => ({ type: 'linear', min: 0, max: 1 }), groups: [{ name: 'Stim & co', members: [a, c] }, { name: 'Empty', members: [] }] });
+  const ws = parseWSP(xml, DOMParser);
+  assert.deepEqual(ws.groups, [{ name: 'Stim & co', files: ['a.fcs', 'c.fcs'] }, { name: 'Empty', files: [] }]);
+});

@@ -56,10 +56,22 @@
     <p class="welcome-foot">You can also drop files or a folder anywhere on this page.</p>
   </section>
   <main id="gating-work" class="work">
-    <aside class="ws sidebar" aria-label="All samples">
+    <aside class="groups sidebar" aria-label="Folders">
       <section class="panel">
         <header class="panel-head">
-          <h2>Samples</h2>
+          <h2>Folders</h2>
+          <button id="group-new" class="btn btn-quiet btn-small">New folder</button>
+        </header>
+        <div id="group-form" class="group-form" hidden></div>
+        <ul id="groups" class="group-list scroll"></ul>
+        <p class="tree-hint">A sample can be in several folders. Drag a sample onto a folder to add it; drag a gate onto a folder to copy it to every sample in it.</p>
+      </section>
+    </aside>
+
+    <aside class="ws sidebar" aria-label="Samples">
+      <section class="panel">
+        <header class="panel-head">
+          <h2 id="samples-title">Samples</h2>
           <span class="head-actions">
             <button id="ws-expand" class="btn btn-quiet btn-small">Expand all</button>
             <button id="ws-collapse" class="btn btn-quiet btn-small">Collapse all</button>

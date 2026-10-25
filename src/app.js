@@ -7,6 +7,7 @@ import { xhr } from './storage/http.js';
 import { PUBLIC_SITE, makeShareLink, sharedFileFrom } from './links.js';
 import { EXAMPLE_CONTROLS, EXAMPLE_SAMPLES, makeSyntheticControl, makeSyntheticFCS } from './synth.js';
 import { computeSpillover, detectControls } from './compcalc.js';
+import { ALL, CONTROLS, addMember, members, nameMatches, newGroup, removeMember, setRule } from './groups.js';
 import { applyCompensation, buildChannels, createSample, gatingContext, sampleKey } from './model.js';
 import {
   TRANSFORM_TYPES, channelKind, convertTransform, defaultTransform, formatNumber, makeScaler, validBiex, validLogicle,
@@ -36,6 +37,8 @@ const S = {
   clip: null, // copied gates: { items: [serialized populations], label }
   mode: 'gating', // or 'layout'
   layouts: [],
+  groups: [], // folders; see groups.js
+  groupId: ALL, // the folder shown in the Samples column
   multi: new Set(), // ids of gates selected together in the trees (any sample)
   anchor: null, // { id, list } of the last clicked tree row, for Shift-click ranges
   collapsed: new Set(), // "<list>:<population id>" and "sample:<sample id>" keys
@@ -284,6 +287,13 @@ async function openEntries(rawEntries, { folder = false } = {}) {
   for (const e of extras) {
     try {
       const info = JSON.parse(new TextDecoder().decode(await e.read()));
+      if (Array.isArray(info.groups)) {
+        // FreeFlow's own copy keeps folder rules, so it replaces the same
+        // folders read from the .wsp.
+        const ids = new Set(info.groups.map((g) => g.id));
+        const names = new Set(info.groups.map((g) => g.name));
+        S.groups = [...S.groups.filter((g) => !ids.has(g.id) && !names.has(g.name)), ...info.groups];
+      }
       if (Array.isArray(info.layouts)) {
         const ids = new Set(info.layouts.map((l) => l.id));
         S.layouts = [...S.layouts.filter((l) => !ids.has(l.id)), ...info.layouts];
@@ -385,6 +395,14 @@ function applyWorkspace(ws, wspName) {
     recompute(s.root, ctxFor(s), s.n);
     connected.push(s.name);
   }
+  // Sample groups become folders; a compensation group marks controls.
+  for (const wg of ws.groups || []) {
+    const found = wg.files.map((f) => S.samples.find((x) => x.fileName.toLowerCase() === f.toLowerCase())).filter(Boolean);
+    if (/compensation/i.test(wg.name)) { for (const x of found) { x.controlManual = true; x.isControl = true; } continue; }
+    let g = S.groups.find((x) => x.name === wg.name);
+    if (!g) { g = newGroup(wg.name, '', false); S.groups.push(g); }
+    for (const x of found) addMember(g, sampleKey(x));
+  }
   S.wsName = wspName.replace(/\.wsp$/i, '');
   return { connected, missing, warnings, total: ws.samples.length };
 }
@@ -393,10 +411,18 @@ function safeFileName(name) {
   return (name || 'FreeFlow workspace').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120) || 'FreeFlow workspace';
 }
 
+// Folders as .wsp sample groups, plus the compensation controls.
+function wspGroups(samples) {
+  const out = S.groups.map((g) => ({ name: g.name, members: members(g, samples, sampleKey) }));
+  const controls = members({ id: CONTROLS }, samples, sampleKey);
+  if (controls.length) out.unshift({ name: 'Compensation Controls', members: controls });
+  return out;
+}
+
 async function saveWorkspace() {
   const real = S.samples;
   if (!real.length) { toast('Open some FCS files first: there is nothing to save yet.'); return; }
-  const xmlText = exportWSP({ samples: real, transformOf: getTransform });
+  const xmlText = exportWSP({ samples: real, transformOf: getTransform, groups: wspGroups(real) });
   const name = safeFileName($('ws-name')?.value || S.wsName || (S.shared?.meta?.name) || 'FreeFlow workspace');
   const claude = globalThis.claude;
   const downloads = claude?.use ? await claude.use('downloads').catch(() => null) : null;
@@ -447,11 +473,13 @@ async function buildBundle(name) {
     bytes += data.length;
     files.push({ name: `${name}/${fn}`, data });
   }
-  const wspText = exportWSP({ samples: named.map(({ s, fn }) => ({ ...s, fileName: fn })), transformOf: getTransform });
+  const wrapped = named.map(({ s, fn }) => ({ ...s, fileName: fn }));
+  const wrap = new Map(named.map(({ s }, i) => [s, wrapped[i]]));
+  const wspText = exportWSP({ samples: wrapped, transformOf: getTransform, groups: wspGroups(samples).map((g) => ({ name: g.name, members: g.members.map((m) => wrap.get(m)).filter(Boolean) })) });
   files.push({ name: `${name}/${name}.wsp`, data: wspText });
   files.push({
     name: `${name}/${BUNDLE_JSON}`,
-    data: JSON.stringify({ app: 'FreeFlow', format: 1, created: new Date().toISOString(), layouts: S.layouts }, null, 1),
+    data: JSON.stringify({ app: 'FreeFlow', format: 1, created: new Date().toISOString(), layouts: S.layouts, groups: S.groups }, null, 1),
   });
   files.push({
     name: `${name}/README.txt`,
@@ -694,9 +722,11 @@ function flushRemoteQueue() {
   for (const core of list) onRemoteSample(core);
 }
 
-function onRemoteMeta({ transforms, layouts }) {
+function onRemoteMeta({ transforms, layouts, groups }) {
   S.transforms = { ...transforms };
   S.layouts = JSON.parse(JSON.stringify(layouts || []));
+  S.groups = JSON.parse(JSON.stringify(groups || []));
+  if (!groupById(S.groupId)) S.groupId = ALL;
   recomputeAll();
   scheduleRemoteRender();
 }
@@ -1414,23 +1444,145 @@ function keepScroll(el, fn) {
   el.scrollTop = top;
 }
 
+// ---------------------------------------------------------------- folders
+
+const BUILT_IN = [{ id: ALL, name: 'All samples' }, { id: CONTROLS, name: 'Compensation controls' }];
+const groupById = (id) => BUILT_IN.find((g) => g.id === id) || S.groups.find((g) => g.id === id) || null;
+const groupMembers = (g) => members(g, S.samples, sampleKey);
+const currentGroup = () => groupById(S.groupId) || BUILT_IN[0];
+const visibleSamples = () => groupMembers(currentGroup());
+const isUserGroup = (g) => !!g && g.id !== ALL && g.id !== CONTROLS;
+
+const GF = { editing: null, open: false }; // the new/edit folder form
+
+function renderGroups() {
+  const el = $('groups');
+  const row = (g) => {
+    const n = groupMembers(g).length;
+    const edit = isUserGroup(g) ? `<button class="icon-btn" data-act="edit-group" aria-label="Edit ${esc(g.name)}" title="Rename or change the rule">✎</button>` : '';
+    return `<li class="group-row${g.id === S.groupId ? ' is-sel' : ''}" data-group="${esc(g.id)}">
+      <button class="group-pick" data-act="pick-group"><span class="group-icon" aria-hidden="true"></span><span class="group-name">${esc(g.name)}</span><span class="group-count">${n}</span></button>${edit}</li>`;
+  };
+  keepScroll(el, () => {
+    el.innerHTML = BUILT_IN.map(row).join('') + (S.groups.length ? '<li class="group-sep" aria-hidden="true"></li>' : '') + S.groups.map(row).join('');
+  });
+  renderGroupForm();
+}
+
+function renderGroupForm() {
+  const el = $('group-form');
+  el.hidden = !GF.open;
+  if (!GF.open) { el.innerHTML = ''; return; }
+  const g = GF.editing ? groupById(GF.editing) : null;
+  const typed = (id, dflt) => ($(id) ? $(id).value : dflt);
+  const name = typed('gf-name', g?.name ?? '');
+  const contains = typed('gf-contains', g?.contains ?? '');
+  const auto = $('gf-auto') ? $('gf-auto').checked : (g ? g.auto : true);
+  const focus = document.activeElement?.id;
+  const pos = document.activeElement?.selectionStart;
+  const matches = contains.trim() ? S.samples.filter((x) => nameMatches(contains, x)) : [];
+  el.innerHTML = `
+    <label class="field"><span class="small muted">Folder name</span><input id="gf-name" type="text" value="${esc(name)}" placeholder="e.g. Stimulated" autocomplete="off"></label>
+    <label class="field"><span class="small muted">Include files whose names contain</span><input id="gf-contains" type="text" value="${esc(contains)}" placeholder="optional, e.g. PMA" autocomplete="off"></label>
+    <p class="group-preview">${contains.trim() ? `Matches ${matches.length} of ${S.samples.length} files${matches.length ? `: ${esc(matches.slice(0, 4).map((x) => x.name).join(', '))}${matches.length > 4 ? '…' : ''}` : ''}.` : 'Leave empty to start with an empty folder and drag samples in.'}</p>
+    <label class="check check-small"><input id="gf-auto" type="checkbox" ${auto ? 'checked' : ''}> Also add files opened later whose names match</label>
+    <div class="btn-row">
+      <button class="btn btn-primary btn-small" data-act="gf-save">${g ? 'Save' : 'Create folder'}</button>
+      <button class="btn btn-small" data-act="gf-cancel">Cancel</button>
+      ${g ? '<button class="btn btn-small btn-danger" data-act="gf-delete">Delete folder</button>' : ''}
+    </div>`;
+  if (focus && $(focus)) { $(focus).focus(); try { $(focus).setSelectionRange(pos, pos); } catch { /* checkbox */ } }
+}
+
+function saveGroupForm() {
+  const name = $('gf-name').value.trim();
+  const contains = $('gf-contains').value.trim();
+  const auto = $('gf-auto').checked;
+  if (!name) { toast('Give the folder a name.', true); $('gf-name').focus(); return; }
+  if ([...BUILT_IN, ...S.groups].some((g) => g.name.toLowerCase() === name.toLowerCase() && g.id !== GF.editing)) {
+    toast(`There is already a folder called "${name}".`, true);
+    return;
+  }
+  let g = GF.editing ? groupById(GF.editing) : null;
+  if (!g) { g = newGroup(name); S.groups.push(g); }
+  g.name = name;
+  setRule(g, contains, auto, S.samples, sampleKey);
+  S.groupId = g.id;
+  GF.open = false;
+  GF.editing = null;
+  renderAll();
+  const n = groupMembers(g).length;
+  toast(`${name}: ${n} sample${n === 1 ? '' : 's'}.`);
+}
+
+// Copies gates (with their sub-gates) into every sample of a folder, at the
+// same place in each sample's tree, like dropping them on each sample.
+function copyGatesToSamples(items, targets, folderName) {
+  const sources = new Set(items.map((i) => i.sample));
+  const list = targets.filter((t) => !sources.has(t));
+  if (!list.length) { toast(`There are no other samples in ${folderName} to copy to.`); return; }
+  pushUndo();
+  let done = 0;
+  const skipped = [];
+  for (const t of list) {
+    if (missingParams(items.map((i) => serialize(i.pop)), t).length) { skipped.push(t.name); continue; }
+    let placed = 0;
+    for (const { pop } of items) {
+      const parent = findByPath(t.root, pathOf(pop.parent));
+      if (parent) { mergeInto(pop, parent); placed++; }
+    }
+    if (placed) { recompute(t.root, ctxFor(t), t.n); done++; } else skipped.push(t.name);
+  }
+  S.version++;
+  renderAll();
+  toast(`Copied ${itemsLabel(items)} to ${done} sample${done === 1 ? '' : 's'} in ${folderName}.${skipped.length ? ` Skipped ${skipped.join(', ')}: missing the parent population or a parameter.` : ''}`, skipped.length > 0);
+}
+
+function dropOnGroup(src, gid) {
+  const g = groupById(gid);
+  if (!g) return;
+  if (src.sampleDrag) {
+    const s = src.sampleDrag;
+    if (g.id === ALL) return;
+    if (g.id === CONTROLS) { s.controlManual = true; s.isControl = true; } else addMember(g, sampleKey(s));
+    renderAll();
+    toast(`Added ${s.name} to ${g.name}.`);
+    return;
+  }
+  copyGatesToSamples(src.items, groupMembers(g), g.name);
+}
+
 function renderSamples() {
   const el = $('samples');
+  const g = currentGroup();
+  const shown = visibleSamples();
+  $('samples-title').textContent = g.id === ALL ? 'Samples' : g.name;
   if (!S.samples.length) {
     el.innerHTML = '<li class="empty">No samples yet. Open FCS files or drop them anywhere on the page.</li>';
     return;
   }
+  if (!shown.length) {
+    el.innerHTML = `<li class="empty">${g.id === CONTROLS
+      ? 'No compensation controls found. Controls are recognised by names like “Stained Control” or “Unstained”; you can also drag samples here.'
+      : 'No samples in this folder yet. Drag samples here from All samples, or edit the folder’s rule.'}</li>`;
+    return;
+  }
+  const inFolder = isUserGroup(g);
   keepScroll(el, () => {
-    el.innerHTML = S.samples.map((s) => {
+    el.innerHTML = shown.map((s) => {
       const collapsed = S.collapsed.has(`sample:${s.id}`);
       return `<li class="ws-sample${s.id === S.sampleId ? ' is-active' : ''}">
-        <div class="sample-row" data-id="${s.id}">
+        <div class="sample-row" data-id="${s.id}" draggable="true" title="Drag onto a folder to add it there">
           <button class="twisty" data-act="twisty-sample" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Show' : 'Hide'} gates of ${esc(s.name)}">${collapsed ? '▸' : '▾'}</button>
           <button class="sample-pick" data-act="pick" title="${esc(s.fileName)}">
             <span class="sample-name">${esc(s.name)}</span>
             <span class="sample-meta">${fmtInt(s.n)} events${s.comp ? ` · ${s.comp.enabled ? 'comp' : 'comp off'}` : ''}${s.isControl ? ' · control' : ''}</span>
           </button>
-          <button class="icon-btn" data-act="remove" aria-label="Remove ${esc(s.name)}" title="Remove sample">×</button>
+          ${inFolder
+    ? `<button class="icon-btn" data-act="unfolder" aria-label="Remove ${esc(s.name)} from ${esc(g.name)}" title="Remove from this folder (the sample stays open)">−</button>`
+    : g.id === CONTROLS && s.controlManual
+      ? '<button class="icon-btn" data-act="uncontrol" aria-label="Not a control" title="Not a compensation control">−</button>'
+      : `<button class="icon-btn" data-act="remove" aria-label="Remove ${esc(s.name)}" title="Remove sample">×</button>`}
         </div>
         ${collapsed ? '' : `<ul class="tree">${treeRows(s, `ws-${s.id}`)}</ul>`}
       </li>`;
@@ -1448,6 +1600,7 @@ function renderTree() {
 }
 
 function renderTrees() {
+  renderGroups();
   renderSamples();
   renderTree();
 }
@@ -1753,7 +1906,7 @@ function autoDetectControls(s) {
 
 function markControls() {
   const ids = new Set([CC.unstainedId, ...Object.values(CC.assign)].filter(Boolean));
-  for (const x of S.samples) x.isControl = ids.has(x.id);
+  for (const x of S.samples) x.isControl = ids.has(x.id) || !!x.controlManual;
 }
 
 function renderComp() {
@@ -1910,7 +2063,13 @@ let layoutEditor = null;
 function layoutEnv() {
   return {
     samples: () => S.samples,
-    batchSamples: () => S.samples.filter((x) => !x.isControl),
+    batchSamples: (layout) => {
+      const g = layout?.batchGroup && groupById(layout.batchGroup);
+      if (g) return groupMembers(g);
+      const controls = new Set(groupMembers({ id: CONTROLS }));
+      return S.samples.filter((x) => !controls.has(x));
+    },
+    folders: () => [...S.groups.map((g) => ({ id: g.id, name: g.name })), { id: CONTROLS, name: 'Compensation controls' }],
     activeSample: () => sample(),
     sampleKey,
     findByPath,
@@ -2111,6 +2270,7 @@ function renderAll() {
   $('gating-work').hidden = empty;
   $('stats-section').hidden = empty;
   if (empty) return;
+  renderGroups();
   renderSamples();
   renderTree();
   renderToolbar();
@@ -2296,6 +2456,21 @@ function bind() {
       renderSamples();
       return;
     }
+    if (btn?.dataset.act === 'unfolder') {
+      const g = currentGroup();
+      const s = S.samples.find((x) => x.id === row.dataset.id);
+      removeMember(g, sampleKey(s));
+      renderAll();
+      toast(`Removed ${s.name} from ${g.name}. It is still open in All samples.`);
+      return;
+    }
+    if (btn?.dataset.act === 'uncontrol') {
+      const s = S.samples.find((x) => x.id === row.dataset.id);
+      s.controlManual = false;
+      markControls();
+      renderAll();
+      return;
+    }
     if (btn?.dataset.act === 'remove') {
       if (btn.dataset.confirm !== '1') {
         btn.dataset.confirm = '1';
@@ -2383,6 +2558,17 @@ function bind() {
   let dragSrc = null;
   const clearDrop = () => document.querySelectorAll('.is-drop').forEach((n) => n.classList.remove('is-drop'));
   const onDragStart = (e) => {
+    const srow = e.target.closest?.('.sample-row');
+    if (srow && !e.target.closest('.pop-row')) {
+      const s = S.samples.find((x) => x.id === srow.dataset.id);
+      if (!s) { e.preventDefault(); return; }
+      dragSrc = { sampleDrag: s, ids: new Set() };
+      e.dataTransfer.setData('text/plain', s.name);
+      e.dataTransfer.effectAllowed = 'copy';
+      $('drag-ghost').textContent = s.name;
+      e.dataTransfer.setDragImage($('drag-ghost'), 12, 12);
+      return;
+    }
     const row = e.target.closest?.('.pop-row');
     const found = row && findPop(row.dataset.id);
     if (!found?.pop.gate) { e.preventDefault(); return; }
@@ -2402,12 +2588,15 @@ function bind() {
     clearDrop();
     document.querySelectorAll('.is-dragging').forEach((n) => n.classList.remove('is-dragging'));
   });
-  for (const list of [$('tree'), $('samples')]) {
+  for (const list of [$('tree'), $('samples'), $('groups')]) {
     list.addEventListener('dragstart', onDragStart);
     list.addEventListener('dragover', (e) => {
       if (!dragSrc) return;
-      const row = e.target.closest?.('.pop-row, .sample-row');
-      if (!row || (row.classList.contains('pop-row') && dragSrc.ids.has(row.dataset.id))) { clearDrop(); return; }
+      const row = e.target.closest?.('.pop-row, .sample-row, .group-row');
+      const bad = !row
+        || (row.classList.contains('pop-row') && dragSrc.ids.has(row.dataset.id))
+        || (dragSrc.sampleDrag && (!row.classList.contains('group-row') || row.dataset.group === ALL));
+      if (bad) { clearDrop(); return; }
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
       if (!row.classList.contains('is-drop')) { clearDrop(); row.classList.add('is-drop'); }
@@ -2419,8 +2608,10 @@ function bind() {
       clearDrop();
       const src = dragSrc;
       dragSrc = null;
-      const row = e.target.closest?.('.pop-row, .sample-row');
+      const row = e.target.closest?.('.pop-row, .sample-row, .group-row');
       if (!row) return;
+      if (row.classList.contains('group-row')) { dropOnGroup(src, row.dataset.group); return; }
+      if (src.sampleDrag) return;
       if (row.classList.contains('pop-row')) {
         if (src.ids.has(row.dataset.id)) return;
         const target = findPop(row.dataset.id);
@@ -2430,6 +2621,51 @@ function bind() {
       }
     });
   }
+
+  $('groups').addEventListener('click', (e) => {
+    const row = e.target.closest('.group-row');
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (!row) return;
+    if (act === 'edit-group') { GF.open = true; GF.editing = row.dataset.group; renderGroupForm(); $('gf-name')?.focus(); return; }
+    S.groupId = row.dataset.group;
+    const shown = visibleSamples();
+    if (shown.length && !shown.some((x) => x.id === S.sampleId)) { S.sampleId = shown[0].id; S.selId = null; S.draft = null; }
+    renderAll();
+  });
+  $('group-new').addEventListener('click', () => {
+    GF.open = true;
+    GF.editing = null;
+    $('group-form').innerHTML = '';
+    renderGroupForm();
+    $('gf-name').focus();
+  });
+  $('group-form').addEventListener('input', () => renderGroupForm());
+  $('group-form').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.matches('input[type="text"]')) { e.preventDefault(); saveGroupForm(); }
+    if (e.key === 'Escape') { GF.open = false; renderGroupForm(); }
+  });
+  $('group-form').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    if (b.dataset.act === 'gf-save') saveGroupForm();
+    if (b.dataset.act === 'gf-cancel') { GF.open = false; GF.editing = null; renderGroupForm(); }
+    if (b.dataset.act === 'gf-delete') {
+      if (b.dataset.confirm !== '1') {
+        b.dataset.confirm = '1';
+        b.textContent = 'Delete? Samples stay';
+        setTimeout(() => { if (b.isConnected) { b.dataset.confirm = ''; b.textContent = 'Delete folder'; } }, 3000);
+        return;
+      }
+      const g = groupById(GF.editing);
+      S.groups = S.groups.filter((x) => x !== g);
+      for (const l of S.layouts) if (l.batchGroup === g.id) l.batchGroup = null;
+      if (S.groupId === g.id) S.groupId = ALL;
+      GF.open = false;
+      GF.editing = null;
+      renderAll();
+      toast(`Deleted the folder ${g.name}. Its samples are still open.`);
+    }
+  });
 
   $('copy-tree').addEventListener('click', () => {
     const s = sample();
@@ -2640,7 +2876,7 @@ export function start() {
   bind();
   S.shared = new SharedWorkspaces({
     localSamples: () => S.samples.map(sharedState),
-    localMeta: () => ({ transforms: { ...S.transforms }, layouts: JSON.parse(JSON.stringify(S.layouts)) }),
+    localMeta: () => ({ transforms: { ...S.transforms }, layouts: JSON.parse(JSON.stringify(S.layouts)), groups: JSON.parse(JSON.stringify(S.groups)) }),
     applySample: onRemoteSample,
     applyMeta: onRemoteMeta,
     isBusy: () => !!drag || !!S.draft,

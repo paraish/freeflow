@@ -111,7 +111,9 @@ function gateXML(g, id, parentId) {
  * samples: [{ fileName, n, version, keywords, comp, channels, root }]
  * transformOf(channelName) -> transform object
  */
-export function exportWSP({ samples, transformOf, now = new Date() }) {
+// groups: [{ name, members: [samples from `samples`] }], written as extra
+// sample groups after "All Samples".
+export function exportWSP({ samples, transformOf, groups = [], now = new Date() }) {
   let nextId = 1000;
   const newId = () => `ID${nextId++}`;
   const matrices = [];
@@ -154,12 +156,17 @@ export function exportWSP({ samples, transformOf, now = new Date() }) {
   samples.forEach((s) => { delete s._matrix; });
 
   const refs = samples.map((_, i) => `<SampleRef sampleID="${i + 1}"/>`).join('');
+  const groupNode = (name, ids) => `<GroupNode name="${xml(name)}" annotation="" owningGroup="${xml(name)}" expanded="0" sortPriority="10" count="${ids.length}"><Group name="${xml(name)}"><Criteria/><SampleRefs>${ids.map((id) => `<SampleRef sampleID="${id}"/>`).join('')}</SampleRefs></Group></GroupNode>`;
+  const extraGroups = groups
+    .filter((g) => g.name && g.name !== 'All Samples')
+    .map((g) => groupNode(g.name, g.members.map((m) => samples.indexOf(m) + 1).filter((id) => id > 0)))
+    .join('');
   const date = now.toString().replace(/ \(.*\)$/, '');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!-- Written by FreeFlow (https://github.com/paraish/freeflow). If FreeFlow contributed to your work, please cite it: see CITATION.cff in that repository. -->
 <Workspace version="20.0" modDate="${xml(date)}" flowJoVersion="10.7.1" curGroup="All Samples" xmlns:xsi="${NS.xsi}" xmlns:gating="${NS.gating}" xmlns:transforms="${NS.transforms}" xmlns:data-type="${NS['data-type']}">
 <Matrices>${matrices.map((m) => matrixXML(m.comp, m.id, m.name)).join('')}</Matrices>
-<Groups><GroupNode name="All Samples" annotation="" owningGroup="All Samples" expanded="0" sortPriority="10" count="${samples.length}"><Group name="All Samples"><Criteria/><SampleRefs>${refs}</SampleRefs></Group></GroupNode></Groups>
+<Groups><GroupNode name="All Samples" annotation="" owningGroup="All Samples" expanded="0" sortPriority="10" count="${samples.length}"><Group name="All Samples"><Criteria/><SampleRefs>${refs}</SampleRefs></Group></GroupNode>${extraGroups}</Groups>
 <SampleList>
 ${sampleXML}
 </SampleList>
@@ -431,5 +438,19 @@ export function parseWSP(text, DOMParserImpl = globalThis.DOMParser) {
       children: node ? subs(node, []) : [],
     };
   });
-  return { samples, warnings };
+  // Sample groups other than "All Samples", by member file name.
+  const groups = [];
+  const groupsEl = kid(root, 'Groups');
+  const nameById = new Map(samples.map((x) => [x.sampleID, x.fileName]));
+  if (groupsEl) {
+    for (const gn of kids(groupsEl, 'GroupNode')) {
+      const name = attr(gn, 'name');
+      if (!name || name === 'All Samples') continue;
+      const g = kid(gn, 'Group');
+      const refsEl = g && kid(g, 'SampleRefs');
+      const files = refsEl ? kids(refsEl, 'SampleRef').map((r) => nameById.get(attr(r, 'sampleID'))).filter(Boolean) : [];
+      groups.push({ name, files });
+    }
+  }
+  return { samples, warnings, groups };
 }

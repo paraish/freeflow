@@ -57,6 +57,15 @@ with one click).
   delete, undo (Ctrl/⌘+Z). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
 - **Population tree** with counts and % of parent.
+- **Folders** (leftmost column): non-exclusive groups of samples. **All samples** and
+  **Compensation controls** (recognised from names like "Stained Control" or "Unstained", plus
+  controls picked in the compensation calculator) are built in. **New folder** takes a name and,
+  optionally, text that file names must contain, with a live count of matches; it can keep
+  adding matching files opened later. Clicking a folder shows its samples in the Samples
+  column. Drag a sample onto a folder to add it, use − to take it out (the sample stays open),
+  drag a gate onto a folder to copy it to every sample in it, and repeat a batch layout over one
+  folder. Folders are saved in analysis bundles, shared workspaces and .wsp files (as sample
+  groups), and .wsp sample groups open as folders.
 - **Samples column**: every sample with its own gating tree, each collapsible (per sample,
   per population, or **Expand all** / **Collapse all**). It scrolls separately from the
   active sample's **Populations** column, so you can drag between any two trees. Clicking a

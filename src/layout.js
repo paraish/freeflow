@@ -116,7 +116,7 @@ export function createLayoutEditor(root, env) {
   function sheet(layout) {
     if (!layout) return { width: 800, height: 600, svg: pageSVG({ width: 800, height: 600, parts: [] }), blocks: [] };
     // Batch copies skip compensation controls.
-    const samples = layout.batch ? env.batchSamples() : [pageSampleOf(layout)];
+    const samples = layout.batch ? env.batchSamples(layout) : [pageSampleOf(layout)];
     const cols = layout.batch ? Math.max(1, Math.min(layout.columns || 1, samples.length || 1)) : 1;
     const rows = Math.max(1, Math.ceil(samples.length / cols));
     const width = layout.width * cols;
@@ -304,7 +304,8 @@ export function createLayoutEditor(root, env) {
           ${field('', 'Size', `<select id="lpg-size">${pageOptions(l)}</select>`)}
           ${l.size === 'custom' ? `<div class="field-pair">${field('', 'Width', num('lpg-w', l.width, 'min="200" step="8"'))}${field('', 'Height', num('lpg-h', l.height, 'min="200" step="8"'))}</div>` : ''}
           ${l.batch ? '' : field('', 'Sample', `<select id="lpg-sample"><option value="">Sample open in gating</option>${samples.map((x) => `<option value="${escH(env.sampleKey(x))}" ${l.sampleKey === env.sampleKey(x) ? 'selected' : ''}>${escH(x.name)}</option>`).join('')}</select>`)}
-          ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${env.batchSamples().length})`)}
+          ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${env.batchSamples(l).length})`)}
+          ${l.batch ? field('', 'Repeat for', `<select id="lpg-group"><option value="">All samples (not controls)</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`) : ''}
           ${l.batch ? field('', 'Copies per row', num('lpg-cols', l.columns, 'min="1" max="12" step="1"')) : ''}
         </div>
       </section>
@@ -482,6 +483,7 @@ export function createLayoutEditor(root, env) {
       case 'lpg-h': if (n >= 200) { l.height = n; changed(); } return;
       case 'lpg-sample': l.sampleKey = val || null; return changed({ props: true });
       case 'lpg-batch': l.batch = val; return changed({ props: true });
+      case 'lpg-group': l.batchGroup = val || null; return changed({ props: true });
       case 'lpg-cols': if (n >= 1) { l.columns = Math.round(n); changed(); } return;
       default: break;
     }
