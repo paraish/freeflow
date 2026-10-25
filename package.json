@@ -1,0 +1,23 @@
+{
+  "name": "freeflow",
+  "version": "1.0.0",
+  "description": "Browser-based flow cytometry analysis: FCS files, compensation, gating and batch statistics.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paraish/freeflow.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/paraish/freeflow/issues"
+  },
+  "homepage": "https://github.com/paraish/freeflow#readme",
+  "devDependencies": {
+    "esbuild": "^0.23.1"
+  },
+  "type": "module",
+  "private": true
+}

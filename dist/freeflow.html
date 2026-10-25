@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>FreeFlow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>/* Layout: a bench instrument — sample/population rail on the left, the plot
+   as the working surface in the middle, axis and gate controls on the right,
+   and the batch statistics table across the bottom. */
+:root {
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --sunk: #f6f8fa;
+  --fg: #17212c;
+  --muted: #5b6977;
+  --line: #d6dde4;
+  --accent: #1d5fc4;
+  --accent-ink: #ffffff;
+  --accent-soft: #e3ecfa;
+  --danger: #b4232a;
+  --plot: #ffffff;
+  --axis: #8995a2;
+  --gate: #17212c;
+  --gate-sel: #c4187c;
+  --label-bg: rgba(255, 255, 255, 0.9);
+  --dot: #17212c;
+  --hist-fill: rgba(29, 95, 196, 0.22);
+  --hist-line: #1d5fc4;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1318; --surface: #151c23; --sunk: #11171d; --fg: #e3e9ef; --muted: #8e9bab; --line: #26313c;
+    --accent: #6ea2ff; --accent-ink: #0b1220; --accent-soft: #1b2a42; --danger: #ff7b80;
+    --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --label-bg: rgba(10, 15, 20, 0.88);
+    --dot: #d6dee6; --hist-fill: rgba(110, 162, 255, 0.25); --hist-line: #6ea2ff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1318; --surface: #151c23; --sunk: #11171d; --fg: #e3e9ef; --muted: #8e9bab; --line: #26313c;
+  --accent: #6ea2ff; --accent-ink: #0b1220; --accent-soft: #1b2a42; --danger: #ff7b80;
+  --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --label-bg: rgba(10, 15, 20, 0.88);
+  --dot: #d6dee6; --hist-fill: rgba(110, 162, 255, 0.25); --hist-line: #6ea2ff;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-block: 12px 20px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  max-width: 1680px;
+  margin: 0 auto;
+}
+
+/* ---- top bar */
+.topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 8px; margin-right: 6px; }
+.brand-mark {
+  width: 20px; height: 20px; border-radius: 4px;
+  background:
+    linear-gradient(var(--gate), var(--gate)) 50% 0 / 1.5px 100% no-repeat,
+    linear-gradient(var(--gate), var(--gate)) 0 50% / 100% 1.5px no-repeat,
+    conic-gradient(from 90deg, #e0331e 0 25%, #f2c500 0 50%, #11a35b 0 75%, #1c62e6 0);
+}
+.brand-name { font-weight: 700; font-size: 17px; letter-spacing: -0.01em; }
+.example-note { margin: 0; color: var(--muted); font-size: 12px; flex: 1 1 260px; min-width: 0; }
+.topbar-actions { display: flex; gap: 8px; margin-left: auto; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; padding: 0 12px; border-radius: var(--r);
+  border: 1px solid var(--line); background: var(--surface); cursor: pointer; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--axis); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn-primary:hover:not(:disabled) { border-color: var(--accent); filter: brightness(1.08); }
+.btn-quiet { background: transparent; border-color: transparent; color: var(--accent); }
+.btn-quiet:hover:not(:disabled) { border-color: var(--line); }
+.btn-small { height: 24px; padding: 0 8px; font-size: 12px; }
+.btn-danger { color: var(--danger); }
+.file-btn { position: relative; overflow: hidden; }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.file-btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- main grid */
+.work {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 320px;
+  grid-template-areas: "left center right";
+  gap: 12px;
+  align-items: start;
+}
+.left { grid-area: left; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.center { grid-area: center; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.right { grid-area: right; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+@media (max-width: 1240px) {
+  .work { grid-template-columns: 240px minmax(0, 1fr); grid-template-areas: "left center" "right right"; }
+  .right { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
+  .right > #axes { display: contents; }
+}
+@media (max-width: 760px) {
+  .work { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "left" "right"; }
+}
+
+.panel, .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.panel { padding: 10px 0 6px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px 8px; }
+.empty { color: var(--muted); padding: 4px 12px 8px; margin: 0; }
+
+/* ---- samples */
+.sample-list, .tree { list-style: none; margin: 0; padding: 0; }
+.sample-row { display: flex; align-items: stretch; }
+.sample-pick {
+  flex: 1; min-width: 0; text-align: left; border: 0; background: none; cursor: pointer;
+  padding: 6px 12px; display: flex; flex-direction: column; border-left: 3px solid transparent;
+}
+.sample-row:hover .sample-pick { background: var(--sunk); }
+.sample-row.is-sel .sample-pick { background: var(--accent-soft); border-left-color: var(--accent); }
+.sample-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sample-meta { color: var(--muted); font-size: 11px; font-family: var(--font-mono); }
+.icon-btn { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 10px; font-size: 16px; }
+.icon-btn:hover { color: var(--danger); }
+.icon-btn.is-confirm { color: var(--danger); font-size: 11px; font-weight: 600; }
+
+/* ---- population tree */
+.pop-pick {
+  width: 100%; border: 0; background: none; cursor: pointer; text-align: left;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto 52px; gap: 6px; align-items: baseline;
+  padding: 4px 12px 4px calc(12px + var(--depth) * 14px);
+  border-left: 3px solid transparent;
+}
+.pop-row:hover .pop-pick { background: var(--sunk); }
+.pop-row.is-view .pop-pick { background: var(--accent-soft); border-left-color: var(--accent); font-weight: 600; }
+.pop-row.is-sel .pop-name { color: var(--gate-sel); }
+.pop-name { overflow-wrap: anywhere; }
+.pop-name::before { content: ""; display: inline-block; width: 6px; height: 6px; border: 1.5px solid currentColor; border-radius: 1px; margin-right: 6px; vertical-align: 1px; opacity: 0.55; }
+.pop-num, .pop-pct { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.pop-pct { color: var(--fg); }
+
+/* ---- toolbar */
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.seg-group { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--sunk); }
+.seg { border: 0; border-right: 1px solid var(--line); background: none; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+.seg:last-child { border-right: 0; }
+.seg:hover:not(:disabled) { background: var(--surface); }
+.seg.is-on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.seg:disabled { opacity: 0.35; cursor: default; }
+.seg-small .seg { padding: 3px 8px; font-size: 12px; }
+.axis-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.axis-y-wrap { display: inline-flex; gap: 6px; align-items: center; }
+.axis-pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.axis-pick > span { font-weight: 600; color: var(--muted); font-size: 12px; }
+.axis-pick select { height: 28px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 0 6px; max-width: 260px; min-width: 0; }
+.plot-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.breadcrumb { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.breadcrumb strong { color: var(--fg); }
+.crumb-sep { margin: 0 6px; opacity: 0.6; }
+.plot-count { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plot-wrap { width: 100%; max-width: 620px; align-self: center; }
+.plot-wrap canvas { display: block; touch-action: none; border-radius: 4px; }
+.hint { margin: 0; color: var(--muted); font-size: 12px; text-align: center; }
+
+/* ---- cards (right) */
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.card { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.card-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+summary.card-head { cursor: pointer; list-style: none; }
+summary.card-head::-webkit-details-marker { display: none; }
+summary.card-head::before { content: "▸"; color: var(--muted); font-size: 10px; }
+details[open] > summary.card-head::before { content: "▾"; }
+details.card:not([open]) { gap: 0; }
+.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.chan { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.fields { display: flex; flex-direction: column; gap: 8px; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 8px; align-items: center; }
+.field > span { color: var(--muted); font-size: 12px; }
+.field input[type="number"], .field input[type="text"], .field input[type="search"] {
+  height: 28px; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunk); padding: 0 8px; width: 100%;
+  font-family: var(--font-mono); font-size: 12px;
+}
+.field input[type="text"] { font-family: var(--font-sans); font-size: 13px; }
+.field-slider { grid-template-columns: minmax(0, 1fr) 90px 40px; }
+.field-slider input { width: 100%; accent-color: var(--accent); }
+.field-slider output { font-family: var(--font-mono); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.kv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.kv div { background: var(--sunk); border-radius: 4px; padding: 6px 8px; }
+.kv dt { font-size: 11px; color: var(--muted); }
+.kv dd { margin: 0; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; margin: 0; }
+
+.table-scroll { overflow-x: auto; min-width: 0; }
+table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.mini { width: 100%; font-size: 12px; }
+.mini th, .mini td { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.mini th[scope="row"], .mini thead th:first-child { text-align: left; font-weight: 600; }
+.mini thead th { color: var(--muted); font-weight: 500; font-size: 11px; }
+.mini td { font-family: var(--font-mono); }
+.kw-scroll { max-height: 280px; overflow-y: auto; }
+.kw th { font-family: var(--font-mono); font-weight: 500 !important; color: var(--muted); }
+.kw td { text-align: left; white-space: normal; overflow-wrap: anywhere; font-size: 11px; }
+
+/* ---- statistics */
+.stats { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 0 0; min-width: 0; }
+.stats-head { justify-content: flex-start; flex-wrap: wrap; }
+.stats-head h2 { margin-right: 8px; }
+.stats-head #copy-stats { margin-left: auto; }
+.stats-table { width: 100%; font-size: 12px; }
+.stats-table th, .stats-table td { padding: 6px 12px; border-top: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.stats-table thead th { vertical-align: bottom; font-weight: 600; }
+.stats-table td { font-family: var(--font-mono); }
+.stats-table th[scope="row"] { text-align: left; }
+.stats-table .sticky { position: sticky; left: 0; background: var(--surface); text-align: left; z-index: 1; }
+.stats-table tr.is-sel th, .stats-table tr.is-sel td { background: var(--accent-soft); }
+.col-parent { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
+.col-leaf { display: block; }
+.stats-table .empty { text-align: left; font-family: var(--font-sans); }
+.copy-fallback { width: calc(100% - 24px); margin: 8px 12px 12px; height: 120px; font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunk); }
+
+/* ---- compensation sheet */
+.overlay { position: fixed; inset: 0; background: rgba(8, 12, 16, 0.45); display: grid; place-items: center; z-index: 20; padding: 16px; }
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; width: min(820px, 100%); max-height: calc(100% - 32px); overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; }
+.sheet-head h2 { font-size: 15px; letter-spacing: 0; text-transform: none; color: var(--fg); }
+#comp-body { display: flex; flex-direction: column; gap: 12px; }
+#comp-body p { margin: 0; }
+.check { display: inline-flex; gap: 8px; align-items: center; font-weight: 600; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+.matrix th, .matrix td { padding: 4px; border: 1px solid var(--line); text-align: center; font-size: 12px; }
+.matrix thead th { font-weight: 600; font-size: 11px; white-space: normal; min-width: 88px; }
+.matrix th[scope="row"] { text-align: left; white-space: nowrap; }
+.matrix input { width: 80px; height: 26px; border: 1px solid transparent; border-radius: 4px; background: var(--sunk); text-align: right; font-family: var(--font-mono); font-size: 12px; padding: 0 6px; }
+.matrix input:focus { border-color: var(--accent); }
+.matrix input.hot { color: var(--gate-sel); font-weight: 600; }
+.diag { font-family: var(--font-mono); color: var(--muted); }
+
+/* ---- drop & toast */
+.drop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(29, 95, 196, 0.12); border: 3px dashed var(--accent); pointer-events: none; }
+.drop p { background: var(--surface); padding: 12px 18px; border-radius: var(--r); font-weight: 600; font-size: 15px; }
+.toast {
+  position: fixed; z-index: 40; left: 50%; transform: translateX(-50%);
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  max-width: min(560px, calc(100% - 32px)); padding: 10px 14px; border-radius: var(--r);
+  background: var(--fg); color: var(--surface); white-space: pre-line; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+}
+.toast.is-error { background: var(--danger); color: #fff; }
+@media (prefers-reduced-motion: no-preference) {
+  .toast { animation: rise 160ms ease-out; }
+  @keyframes rise { from { transform: translate(-50%, 6px); opacity: 0; } }
+}
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">FreeFlow</span>
+    </div>
+    <label class="btn btn-primary file-btn">
+      <input id="file-input" type="file" accept=".fcs,.lmd,application/octet-stream" multiple>
+      Open FCS files
+    </label>
+    <p id="example-note" class="example-note">Showing 3 synthetic example samples. Opening your own files replaces them.</p>
+    <div class="topbar-actions">
+      <button id="undo" class="btn" disabled title="Undo (Ctrl+Z)">Undo</button>
+      <button id="comp-btn" class="btn">Compensation</button>
+    </div>
+  </header>
+
+  <main class="work">
+    <aside class="left">
+      <section class="panel">
+        <header class="panel-head"><h2>Samples</h2></header>
+        <ul id="samples" class="sample-list"></ul>
+      </section>
+      <section class="panel">
+        <header class="panel-head">
+          <h2>Populations</h2>
+          <button id="copy-tree" class="btn btn-quiet btn-small" title="Copy this sample's whole gating tree to every other sample">Copy tree to all</button>
+        </header>
+        <ul id="tree" class="tree"></ul>
+      </section>
+    </aside>
+
+    <section class="center">
+      <div class="toolbar">
+        <div id="tools" class="seg-group" role="group" aria-label="Gate tools"></div>
+        <div id="plot-types" class="seg-group" role="group" aria-label="Plot type">
+          <button class="seg" data-type="pseudo">Pseudocolor</button>
+          <button class="seg" data-type="dot">Dot</button>
+          <button class="seg" data-type="histogram">Histogram</button>
+        </div>
+      </div>
+      <div class="axis-row">
+        <label class="axis-pick"><span>X</span><select id="axis-x"></select></label>
+        <span id="axis-y-wrap" class="axis-y-wrap">
+          <label class="axis-pick"><span>Y</span><select id="axis-y"></select></label>
+          <button id="swap-axes" class="btn btn-quiet btn-small" title="Swap X and Y">Swap</button>
+        </span>
+      </div>
+      <div class="plot-head">
+        <nav id="breadcrumb" class="breadcrumb" aria-label="Population being viewed"></nav>
+        <span id="plot-count" class="plot-count"></span>
+      </div>
+      <div id="plot-wrap" class="plot-wrap"><canvas id="plot" aria-label="Flow cytometry plot"></canvas></div>
+      <p id="hint" class="hint"></p>
+    </section>
+
+    <aside class="right">
+      <div id="axes" class="stack"></div>
+      <div id="inspector"></div>
+      <div id="popstats"></div>
+      <div id="keywords"></div>
+    </aside>
+  </main>
+
+  <section class="stats">
+    <header class="panel-head stats-head">
+      <h2>Statistics</h2>
+      <label class="axis-pick"><span>Show</span><select id="stat-metric"></select></label>
+      <label id="stat-channel-wrap" class="axis-pick" hidden><span>of</span><select id="stat-channel"></select></label>
+      <button id="copy-stats" class="btn btn-small">Copy table</button>
+    </header>
+    <div class="table-scroll"><table id="stats-table" class="stats-table"></table></div>
+    <textarea id="copy-fallback" class="copy-fallback" hidden readonly aria-label="Statistics table as tab-separated text"></textarea>
+  </section>
+</div>
+
+<div id="comp-panel" class="overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="comp-title">
+    <header class="sheet-head">
+      <h2 id="comp-title">Compensation matrix</h2>
+      <button id="comp-close" class="btn btn-quiet">Close</button>
+    </header>
+    <div id="comp-body"></div>
+  </div>
+</div>
+<div id="drop" class="drop" hidden><p>Drop FCS files to open them</p></div>
+<div id="toast" class="toast" role="status" hidden></div>
+<script>(()=>{var Ae=["$SPILLOVER","SPILL","$SPILL","SPILLOVER","$COMP"],H=class extends Error{};function _t(t,n,e){let o="";for(let s=n;s<e;s++)o+=String.fromCharCode(t[s]);return o}function Jt(t,n,e){let o=t.subarray(n,e+1);try{return new TextDecoder("utf-8",{fatal:!0}).decode(o)}catch{return new TextDecoder("latin1").decode(o)}}function Zt(t){let n=t[0],e=[],o=[];for(let a=1;a<t.length;a++){let r=t[a];r===n?t[a+1]===n?(o.push(n),a++):(e.push(o.join("")),o=[]):o.push(r)}o.length&&e.push(o.join(""));let s={};for(let a=0;a+1<e.length;a+=2){let r=e[a].trim().toUpperCase();r&&(s[r]=e[a+1].trim())}return s}function Ie(t,n){let e=Ae.find(l=>t[l]);if(!e)return null;let o=t[e].split(",").map(l=>l.trim()),s=parseInt(o[0],10);if(!(s>0)||o.length<1+s+s*s)return null;let a=o.slice(1,1+s);a.every(l=>/^\d+$/.test(l))&&(a=a.map(l=>n[parseInt(l,10)-1]??l));let r=o.slice(1+s,1+s+s*s).map(Number);if(r.some(l=>!Number.isFinite(l)))return null;let i=[];for(let l=0;l<s;l++)i.push(r.slice(l*s,l*s+s));return a.every(l=>n.includes(l))?{names:a,matrix:i,keyword:e}:null}function kt(t,n="file.fcs"){let e=new Uint8Array(t);if(e.length<58)throw new H(`${n} is too short to be an FCS file.`);let o=_t(e,0,6);if(!/^FCS[23]\.\d/.test(o))throw new H(`${n} is not an FCS file (its header starts with "${o.replace(/[^\x20-\x7e]/g,"?")}").`);let s=b=>parseInt(_t(e,b,b+8).trim()||"0",10),a=s(10),r=s(18),i=s(26),l=s(34),c=Zt(Jt(e,a,r)),f=parseInt(c.$BEGINSTEXT||"0",10),p=parseInt(c.$ENDSTEXT||"0",10);if(f>0&&p>f&&p<e.length){let b=Zt(Jt(e,f,p));for(let T of Object.keys(b))T in c||(c[T]=b[T])}i===0&&l===0&&(i=parseInt(c.$BEGINDATA||"0",10),l=parseInt(c.$ENDDATA||"0",10));let m=parseInt(c.$PAR,10),h=parseInt(c.$TOT,10);if(!(m>0))throw new H(`${n} has no $PAR keyword.`);if(!(h>=0))throw new H(`${n} has no $TOT keyword.`);let x=(c.$MODE||"L").toUpperCase();if(x!=="L")throw new H(`${n} uses $MODE ${x}; only list-mode files are supported.`);let g=(c.$DATATYPE||"").toUpperCase(),P=(c.$BYTEORD||"1,2,3,4").trim().startsWith("1"),y=[];for(let b=1;b<=m;b++){let T=c[`$P${b}N`]||`P${b}`,[L,A]=(c[`$P${b}E`]||"0,0").split(",").map(Number);y.push({index:b,name:T,stain:c[`$P${b}S`]||"",bits:parseInt(c[`$P${b}B`]||"32",10),range:parseFloat(c[`$P${b}R`]||"262144"),logDecades:L||0,logOffset:A||0})}let D=y.map(()=>new Float32Array(h)),v=new DataView(t,0);if(g==="F"||g==="D"){let b=g==="F"?4:8,T=b*m;if(i+T*h>e.length)throw new H(`${n} is truncated: it declares ${h} events but the data segment is too short.`);for(let L=0;L<h;L++){let A=i+L*T;for(let k=0;k<m;k++,A+=b)D[k][L]=b===4?v.getFloat32(A,P):v.getFloat64(A,P)}}else if(g==="I"){let b=y.map(k=>{if(![8,16,32,64].includes(k.bits))throw new H(`${n}: parameter ${k.name} has ${k.bits}-bit integers, which are not supported.`);return k.bits/8}),T=b.reduce((k,F)=>k+F,0);if(i+T*h>e.length)throw new H(`${n} is truncated: it declares ${h} events but the data segment is too short.`);let L=y.map(k=>{let F=k.range;return F>0&&(F&F-1)===0&&F<=2**Math.min(k.bits,31)?F-1:0}),A=i;for(let k=0;k<h;k++)for(let F=0;F<m;F++){let Y;switch(b[F]){case 1:Y=v.getUint8(A);break;case 2:Y=v.getUint16(A,P);break;case 4:Y=v.getUint32(A,P);break;default:Y=Number(v.getBigUint64(A,P))}A+=b[F],L[F]&&(Y&=L[F]),D[F][k]=Y}y.forEach((k,F)=>{if(k.logDecades>0){let Y=k.logOffset>0?k.logOffset:1,Qt=D[F];for(let ct=0;ct<h;ct++)Qt[ct]=Y*Math.pow(10,k.logDecades*Qt[ct]/k.range)}})}else throw g==="A"?new H(`${n} stores data as ASCII text ($DATATYPE A), which is not supported yet.`):new H(`${n} has an unknown $DATATYPE "${g}".`);let O=Ie(c,y.map(b=>b.name));return{fileName:n,version:o,keywords:c,params:y,nEvents:h,columns:D,spillover:O,dataEnd:l}}function te({params:t,columns:n,keywords:e={}}){let o=n[0].length,s=t.length,a=v=>String(v).padStart(20,"0"),r=v=>String(v).replace(/\//g,"//"),i=(v,O)=>{let b={$BEGINANALYSIS:"0",$ENDANALYSIS:"0",$BEGINSTEXT:"0",$ENDSTEXT:"0",$BEGINDATA:a(v),$ENDDATA:a(O),$BYTEORD:"1,2,3,4",$DATATYPE:"F",$MODE:"L",$NEXTDATA:"0",$PAR:String(s),$TOT:String(o)};t.forEach((L,A)=>{let k=A+1;b[`$P${k}N`]=L.name,L.stain&&(b[`$P${k}S`]=L.stain),b[`$P${k}B`]="32",b[`$P${k}E`]="0,0",b[`$P${k}R`]=String(L.range)}),Object.assign(b,e);let T="/";for(let[L,A]of Object.entries(b))T+=`${r(L)}/${r(A)}/`;return new TextEncoder().encode(T)},l=58,c=i(0,0),f=l+c.length,p=o*s*4,m=f+p-1,h=i(f,m),x=new ArrayBuffer(f+p),g=new Uint8Array(x),w=v=>(v>99999999?0:v).toString().padStart(8," "),P="FCS3.1    "+w(l)+w(l+h.length-1)+w(f)+w(m)+w(0)+w(0);for(let v=0;v<P.length;v++)g[v]=P.charCodeAt(v);g.set(h,l);let y=new DataView(x),D=f;for(let v=0;v<o;v++)for(let O=0;O<s;O++,D+=4)y.setFloat32(D,n[O][v],!0);return x}function Fe(t){let n=t>>>0,e=()=>{n=n+1831565813>>>0;let a=n;return a=Math.imul(a^a>>>15,a|1),a^=a+Math.imul(a^a>>>7,a|61),((a^a>>>14)>>>0)/4294967296},o=null;return{uniform:e,normal:()=>{if(o!==null){let c=o;return o=null,c}let a,r,i;do a=e()*2-1,r=e()*2-1,i=a*a+r*r;while(i>=1||i===0);let l=Math.sqrt(-2*Math.log(i)/i);return o=r*l,a*l}}}var St=[{name:"FITC-A",stain:"CD3"},{name:"PE-A",stain:"CD4"},{name:"PerCP-Cy5.5-A",stain:"CD19"},{name:"APC-A",stain:"CD8"}],ee=[[1,.24,.035,0],[.012,1,.16,.004],[0,.02,1,.11],[0,.002,.075,1]],V=262144;function De(t){let n=t==="PMA/Iono",e=n?.5:.62,o=n?.42:.3;return[{f:.08,fsc:[14e3,6e3],ssc:[9e3,5e3],mfi:[0,0,0,0],debris:!0},{f:.04,fsc:[14e4,14e3],ssc:[3e4,8e3],mfi:[3e3,3e3,0,0],doublet:!0},{f:.55*.68*e,fsc:[72e3,7e3],ssc:[24e3,5e3],mfi:[9e3,16e3,0,0]},{f:.55*.68*o,fsc:[7e4,7e3],ssc:[23e3,5e3],mfi:[8e3,0,0,22e3]},{f:.55*.68*(1-e-o),fsc:[7e4,7e3],ssc:[24e3,5e3],mfi:[8500,0,0,0]},{f:.55*.14,fsc:[68e3,7e3],ssc:[22e3,5e3],mfi:[0,0,6e3,0]},{f:.55*.18,fsc:[74e3,8e3],ssc:[28e3,6e3],mfi:[0,0,0,1800]},{f:.2,fsc:[112e3,12e3],ssc:[68e3,13e3],mfi:[0,2500,0,0]},{f:.13,fsc:[125e3,13e3],ssc:[15e4,22e3],mfi:[0,0,0,0]}]}function ne({name:t,donor:n,condition:e,events:o,seed:s}){let a=Fe(s),r=De(e),i=r.reduce((y,D)=>y+D.f,0),l=[];r.reduce((y,D)=>(l.push((y+D.f)/i),y+D.f),0);let c=Array.from({length:8},()=>new Float32Array(o)),[f,p,m,,,,,h]=c,x=new Float64Array(4);for(let y=0;y<o;y++){let D=a.uniform(),v=0;for(;v<l.length-1&&D>l[v];)v++;let O=r[v],b=Math.max(200,O.fsc[0]+a.normal()*O.fsc[1]);f[y]=Math.min(V-1,b),p[y]=Math.min(V-1,(O.doublet?b*.52:b*.86)*(1+a.normal()*.04)),m[y]=Math.min(V-1,Math.max(100,O.ssc[0]+a.normal()*O.ssc[1]));for(let T=0;T<4;T++){let L=60*Math.exp(a.normal()*.6)*(O.ssc[0]/3e4);x[T]=O.mfi[T]>0?O.mfi[T]*Math.exp(a.normal()*.45)+L:L}for(let T=0;T<4;T++){let L=0;for(let A=0;A<4;A++)L+=x[A]*ee[A][T];L+=a.normal()*(90+Math.sqrt(Math.max(0,L))*1.8),c[3+T][y]=Math.min(V-1,L)}h[y]=y/o*6e4}let g=[{name:"FSC-A",range:V},{name:"FSC-H",range:V},{name:"SSC-A",range:V},...St.map(y=>({...y,range:V})),{name:"Time",range:6e4}],w=[St.length,...St.map(y=>y.name),...ee.flat()].join(","),P={$FIL:`${t}.fcs`,$DATE:"25-OCT-2026",$CYT:"Example cytometer (synthetic data)",$SRC:n,"TUBE NAME":t,$SPILLOVER:w,DONOR:n,CONDITION:e};return te({params:g,columns:c,keywords:P})}var oe=[{name:"D01_Unstim",donor:"D01",condition:"Unstim",events:6e4,seed:11},{name:"D01_PMA",donor:"D01",condition:"PMA/Iono",events:6e4,seed:12},{name:"D02_Unstim",donor:"D02",condition:"Unstim",events:6e4,seed:13}];function Oe(t){let n=t.length,e=t.map((o,s)=>[...o,...Array.from({length:n},(a,r)=>s===r?1:0)]);for(let o=0;o<n;o++){let s=o;for(let r=o+1;r<n;r++)Math.abs(e[r][o])>Math.abs(e[s][o])&&(s=r);if(Math.abs(e[s][o])<1e-12)throw new Error("The spillover matrix cannot be inverted.");[e[o],e[s]]=[e[s],e[o]];let a=e[o][o];for(let r=0;r<2*n;r++)e[o][r]/=a;for(let r=0;r<n;r++){if(r===o)continue;let i=e[r][o];if(i!==0)for(let l=0;l<2*n;l++)e[r][l]-=i*e[o][l]}}return e.map(o=>o.slice(n))}function se(t){return Array.from({length:t},(n,e)=>Array.from({length:t},(o,s)=>e===s?1:0))}function ae(t,n,e){let o=n.length,s=Oe(e),a=n.map(c=>t.get(c)),r=a[0].length,i=n.map(()=>new Float32Array(r)),l=new Float64Array(o);for(let c=0;c<r;c++){for(let f=0;f<o;f++)l[f]=a[f][c];for(let f=0;f<o;f++){let p=0;for(let m=0;m<o;m++)p+=l[m]*s[m][f];i[f][c]=p}}return i}var Re=Math.log(10),dt=16;function qe(t,n){if(n===0)return t;let e=2*Number.EPSILON,o=0,s=t,a=(o+s)/2,r=s-o,i=-2*Math.log(t)+n*t,l=2*Math.log(a)+n*a+i,c=NaN;for(let f=1;f<40;f++){let p=2/a+n,m;if(((a-s)*p-l)*((a-o)*p-l)>=0||Math.abs(1.9*l)>Math.abs(r*p)){if(m=(s-o)/2,a=o+m,a===o)return a}else{m=l/p;let h=a;if(a-=m,a===h)return a}if(Math.abs(m)<e||(r=m,l=2*Math.log(a)+n*a+i,l===0||l===c))return a;c=l,l<0?o=a:s=a}return a}var ft=class{constructor(n,e,o,s=0){if(!(n>0))throw new Error("Logicle: top of scale must be positive");if(!(e>=0))throw new Error("Logicle: width must be zero or positive");if(!(o>0))throw new Error("Logicle: decades must be positive");if(2*e>o)throw new Error("Logicle: width cannot exceed half the decades");if(-s>e||s+e>o-e)throw new Error("Logicle: extra negative decades out of range");this.T=n,this.W=e,this.M=o,this.A=s;let a=e/(o+s),r=s/(o+s),i=r+a,l=r+2*a,c=(o+s)*Re,f=qe(c,a),p=Math.exp(l*(c+f)),m=Math.exp(c*i)-p/Math.exp(f*i),h=n/(Math.exp(c)-m-p/Math.exp(f)),x=p*h,g=-m*h;Object.assign(this,{w:a,x0:l,x1:i,x2:r,a:h,b:c,c:x,d:f,f:g}),this.xTaylor=i+a/4;let w=h*Math.exp(c*i),P=-x/Math.exp(f*i);this.taylor=new Float64Array(dt);for(let y=0;y<dt;y++)w*=c/(y+1),P*=-f/(y+1),this.taylor[y]=w+P;this.taylor[1]=0}seriesBiexponential(n){let e=n-this.x1,o=this.taylor,s=o[dt-1]*e;for(let a=dt-2;a>=2;a--)s=(s+o[a])*e;return(s*e+o[0])*e}scale(n){if(n===0)return this.x1;let e=n<0;e&&(n=-n);let{a:o,b:s,c:a,d:r,f:i,x1:l,xTaylor:c}=this,f=n<i?l+n/this.taylor[0]:Math.log(n/o)/s,p=f>1?3*f*Number.EPSILON:3*Number.EPSILON;for(let m=0;m<20;m++){let h=o*Math.exp(s*f),x=a/Math.exp(r*f),g=f<c?this.seriesBiexponential(f)-n:h+i-(x+n),w=s*h,P=r*x,y=w+P,D=s*w-r*P,v=g/(y*(1-g*D/(2*y*y)));if(f-=v,Math.abs(v)<p)return e?2*l-f:f}return e?2*l-f:f}inverse(n){let e=n<this.x1;e&&(n=2*this.x1-n);let o=n<this.xTaylor?this.seriesBiexponential(n):this.a*Math.exp(this.b*n)+this.f-this.c/Math.exp(this.d*n);return e?-o:o}};function re(t,n,e){let o=[];for(let r=0;r<t.length;r++)t[r]<0&&o.push(t[r]);if(o.length<20)return .5;o.sort((r,i)=>r-i);let s=o[Math.floor(o.length*.05)],a=(e-Math.log10(n/Math.abs(s)))/2;return Math.max(0,Math.min(e/2,a))}var le=[{id:"linear",label:"Linear"},{id:"log",label:"Log"},{id:"logicle",label:"Biexponential"},{id:"arcsinh",label:"Arcsinh"}];function pt(t){return/^(FSC|SSC)/i.test(t)?"scatter":/time/i.test(t)?"time":"fluor"}function ce(t,n=262144){return pt(t.replace(/^Comp-/,""))!=="fluor"?{type:"linear",min:0,max:n}:{type:"logicle",T:n,W:.5,M:4.5,A:0}}function de(t,n){let e=t.T??t.max??262144;switch(n){case"linear":return{type:n,min:0,max:e};case"log":return{type:n,max:e,decades:4.5};case"logicle":return{type:n,T:e,W:.5,M:4.5,A:0};case"arcsinh":return{type:n,cofactor:150,min:-500,max:e};default:return t}}function Ne(t){switch(t.type){case"linear":return`lin:${t.min}:${t.max}`;case"log":return`log:${t.max}:${t.decades}`;case"logicle":return`lgc:${t.T}:${t.W}:${t.M}:${t.A}`;case"arcsinh":return`asinh:${t.cofactor}:${t.min}:${t.max}`;default:return"unknown"}}function Tt(t){let n=Math.max(1,t.M),e=Math.max(0,Math.min(t.W,n/2)),o=Math.max(0,Math.min(t.A,n-2*e));return{...t,M:n,W:e,A:o,T:Math.max(1,t.T)}}var ie=new Map;function fe(t){let n=Ne(t),e=ie.get(n);if(e)return e;switch(t.type){case"linear":{let{min:o,max:s}=t,a=s-o||1;e={fwd:r=>(r-o)/a,inv:r=>o+r*a};break}case"log":{let s=Math.log10(t.max)-t.decades,a=t.decades;e={fwd:r=>r>0?(Math.log10(r)-s)/a:-.01,inv:r=>Math.pow(10,s+r*a)};break}case"logicle":{let o=new ft(t.T,t.W,t.M,t.A);e={fwd:s=>o.scale(s),inv:s=>o.inverse(s)};break}case"arcsinh":{let o=t.cofactor,s=Math.asinh(t.min/o),r=Math.asinh(t.max/o)-s;e={fwd:i=>(Math.asinh(i/o)-s)/r,inv:i=>o*Math.sinh(s+i*r)};break}default:throw new Error(`Unknown transform ${t.type}`)}return e.key=n,e.t=t,e.ticks=()=>He(t,e),ie.set(n,e),e}var je={"-":"\u207B",0:"\u2070",1:"\xB9",2:"\xB2",3:"\xB3",4:"\u2074",5:"\u2075",6:"\u2076",7:"\u2077",8:"\u2078",9:"\u2079"},Be=t=>String(t).split("").map(n=>je[n]??n).join("");function at(t){let n=Math.abs(t);return n>=1e6?`${+(t/1e6).toFixed(1)}M`:n>=1e3?`${+(t/1e3).toFixed(1)}K`:n>=100||Number.isInteger(t)?String(Math.round(t)):t.toPrecision(3)}function Ue(t,n){let e=t/n,o=Math.pow(10,Math.floor(Math.log10(e))),s=e/o;return(s<1.5?1:s<3?2:s<7?5:10)*o}function He(t,n){let e=[],o=n.inv(0),s=n.inv(1);if(t.type==="linear"){let i=Ue(s-o,5);for(let l=Math.ceil(o/i)*i;l<=s+i*1e-6;l+=i)e.push({v:l,s:n.fwd(l),major:!0,label:at(l)});return e}let a=(i,l,c)=>{let f=n.fwd(i);f>=-1e-6&&f<=1+1e-6&&e.push({v:i,s:f,major:l,label:c})};t.type!=="log"&&o<0&&a(0,!0,"0");let r=Math.ceil(Math.log10(Math.max(Math.abs(s),Math.abs(o),10)));for(let i=0;i<=r;i++){let l=Math.pow(10,i),c=Math.abs(n.fwd(l*10)-n.fwd(l));if(!(t.type!=="log"&&c<.035))for(let f of t.type==="log"?[1]:[1,-1]){let p=f*l;p>=o&&p<=s&&a(p,!0,`${f<0?"-":""}10${Be(i)}`);for(let m=2;m<=9;m++){let h=f*m*l;h>=o&&h<=s&&a(h,!1,"")}}}return t.type!=="log"&&o>=0&&a(0,!0,"0"),e}var Ge=1,rt=t=>`${t}${Ge++}`;function G(t,n,e){return{id:rt("p"),name:t,gate:n,parent:e,children:[],indices:null,view:null}}function We(t){let n=new Uint32Array(t);for(let e=0;e<t;e++)n[e]=e;return n}function mt(t){return t.type==="range"?[t.x]:[t.x,t.y]}function ut(t,n){let e=new Uint32Array(t.length),o=0;for(let s=0;s<t.length;s++){let a=t[s];n(a)&&(e[o++]=a)}return e.slice(0,o)}function Lt(t,n,e){let o=!1;for(let s=0,a=e.length-1;s<e.length;a=s++){let[r,i]=e[s],[l,c]=e[a];i>n!=c>n&&t<(l-r)*(n-i)/(c-i)+r&&(o=!o)}return o}function Ye(t,n,e){switch(t.type){case"rect":{let o=e.raw(t.x),s=e.raw(t.y),a=Math.min(t.x1,t.x2),r=Math.max(t.x1,t.x2),i=Math.min(t.y1,t.y2),l=Math.max(t.y1,t.y2);return ut(n,c=>o[c]>=a&&o[c]<=r&&s[c]>=i&&s[c]<=l)}case"range":{let o=e.raw(t.x),s=Math.min(t.lo,t.hi),a=Math.max(t.lo,t.hi);return ut(n,r=>o[r]>=s&&o[r]<=a)}case"quad":{let o=e.raw(t.x),s=e.raw(t.y),{cx:a,cy:r}=t;return ut(n,{UL:l=>o[l]<a&&s[l]>=r,UR:l=>o[l]>=a&&s[l]>=r,LR:l=>o[l]>=a&&s[l]<r,LL:l=>o[l]<a&&s[l]<r}[t.quadrant])}case"polygon":{let o=e.scaler(t.x),s=e.scaler(t.y),a=e.scaled(t.x),r=e.scaled(t.y),i=t.points.map(([h,x])=>[o.fwd(h),s.fwd(x)]),l=1/0,c=-1/0,f=1/0,p=-1/0;for(let[h,x]of i)l=Math.min(l,h),c=Math.max(c,h),f=Math.min(f,x),p=Math.max(p,x);let m=h=>h<0?0:h>1?1:h;return ut(n,h=>{let x=m(a[h]),g=m(r[h]);return x>=l&&x<=c&&g>=f&&g<=p&&Lt(x,g,i)})}default:throw new Error(`Unknown gate type ${t.type}`)}}function q(t,n,e){t.indices=t.gate?Ye(t.gate,t.parent.indices,n):We(e);for(let o of t.children)q(o,n,e)}function X(t,n,e=0){n(t,e);for(let o of t.children)X(o,n,e+1)}function K(t){let n=[];for(let e=t;e&&e.parent;e=e.parent)n.unshift(e.name);return n}function Et(t,n){let e=t;for(let o of n)if(e=e.children.find(s=>s.name===o),!e)return null;return e}function J(t){return JSON.parse(JSON.stringify(t))}function Pt(t){return{name:t.name,gate:t.gate?J(t.gate):null,view:t.view?{...t.view}:null,children:t.children.map(Pt)}}function Ct(t,n){let e=G(t.name,t.gate?J(t.gate):null,n);return e.view=t.view?{...t.view}:null,e.children=t.children.map(o=>Ct(o,e)),e}function Z(t){return!t.gate||t.gate.type!=="quad"||!t.parent?[t]:t.parent.children.filter(n=>n.gate&&n.gate.type==="quad"&&n.gate.link===t.gate.link)}function At(t,n){let e=new Set(t.children.map(o=>o.name));if(!e.has(n))return n;for(let o=2;;o++)if(!e.has(`${n} ${o}`))return`${n} ${o}`}function It(t,n){let e=n.length;if(e===0)return{median:NaN,mean:NaN,sd:NaN,cv:NaN};let o=new Float32Array(e),s=0;for(let c=0;c<e;c++)o[c]=t[n[c]],s+=o[c];let a=s/e,r=0;for(let c=0;c<e;c++)r+=(o[c]-a)**2;let i=e>1?Math.sqrt(r/(e-1)):0;return o.sort(),{median:e%2?o[(e-1)/2]:(o[e/2-1]+o[e/2])/2,mean:a,sd:i,cv:a!==0?i/Math.abs(a)*100:NaN}}var ht={l:62,r:14,t:14,b:52};function ze(t,n){let e=ht.l,o=ht.t,s=t-ht.r,a=n-ht.b;return{l:e,t:o,r:s,b:a,pw:s-e,ph:a-o,toPx:(r,i)=>[e+r*(s-e),a-i*(a-o)],toScale:(r,i)=>[(r-e)/(s-e),(a-i)/(a-o)]}}var xt=[[0,20,40,200],[.22,0,150,255],[.42,0,200,90],[.62,235,220,0],[.8,255,125,0],[1,215,0,0]],Ft=(()=>{let t=new Uint8ClampedArray(768);for(let n=0;n<256;n++){let e=n/255,o=0;for(;o<xt.length-2&&e>xt[o+1][0];)o++;let[s,...a]=xt[o],[r,...i]=xt[o+1],l=(e-s)/(r-s);for(let c=0;c<3;c++)t[n*3+c]=a[c]+(i[c]-a[c])*l}return t})();function pe(t,n,e,o){let s=new Float32Array(n*e),a=new Float32Array(n*e);for(let r=0;r<e;r++){let i=0,l=r*n;for(let c=-o;c<n;c++)c+o<n&&(i+=t[l+c+o]),c-o-1>=0&&(i-=t[l+c-o-1]),c>=0&&(s[l+c]=i)}for(let r=0;r<n;r++){let i=0;for(let l=-o;l<e;l++)l+o<e&&(i+=s[(l+o)*n+r]),l-o-1>=0&&(i-=s[(l-o-1)*n+r]),l>=0&&(a[l*n+r]=i)}return a}var Ot=(t,n)=>{let e=Math.floor(t*n);return e<0?0:e>=n?n-1:e};function Ve(t,n,e){let o=Math.max(1,Math.round(n.pw)),s=Math.max(1,Math.round(n.ph)),a=new Float32Array(o*s),{xs:r,ys:i,idx:l}=e;for(let m=0;m<l.length;m++){let h=l[m],x=Ot(r[h],o),g=s-1-Ot(i[h],s);a[g*o+x]++}let c=new ImageData(o,s),f=c.data;if(e.type==="dot"){let[m,h,x]=e.colors.dotRGB;for(let g=0;g<a.length;g++)a[g]>0&&(f[g*4]=m,f[g*4+1]=h,f[g*4+2]=x,f[g*4+3]=255)}else{let m=pe(pe(a,o,s,2),o,s,2),h=0;for(let w=0;w<a.length;w++)a[w]>0&&m[w]>h&&(h=m[w]);let x=40,g=Math.log1p(x);for(let w=0;w<a.length;w++){if(a[w]===0)continue;let P=Math.log1p(x*m[w]/h)/g,y=Math.min(255,Math.round(P*255))*3;f[w*4]=Ft[y],f[w*4+1]=Ft[y+1],f[w*4+2]=Ft[y+2],f[w*4+3]=255}}let p=new Ke(o,s);p.ctx.putImageData(c,0,0),t.imageSmoothingEnabled=!1,t.drawImage(p.canvas,n.l,n.t,n.pw,n.ph)}function Ke(t,n){let e=typeof OffscreenCanvas<"u"?new OffscreenCanvas(t,n):Object.assign(document.createElement("canvas"),{width:t,height:n});return{canvas:e,ctx:e.getContext("2d")}}function Xe(t,n,e=256){let o=new Float32Array(e);for(let r=0;r<n.length;r++)o[Ot(t[n[r]],e)]++;let s=new Float32Array(e),a=[1,3,5,3,1];for(let r=0;r<e;r++){let i=0,l=0;for(let c=-2;c<=2;c++){let f=r+c;f>=0&&f<e&&(i+=o[f]*a[c+2],l+=a[c+2])}s[r]=i/l}return s}function Qe(t,n,e){let s=Xe(e.xs,e.idx,256),a=0;for(let r=0;r<256;r++)a=Math.max(a,s[r]);if(a!==0){t.beginPath(),t.moveTo(n.l,n.b);for(let r=0;r<256;r++){let[i,l]=n.toPx((r+.5)/256,s[r]/a*.95);t.lineTo(i,l)}t.lineTo(n.r,n.b),t.closePath(),t.fillStyle=e.colors.histFill,t.fill(),t.strokeStyle=e.colors.histLine,t.lineWidth=1.25,t.stroke()}}function _e(t,n,e){let o=e.colors;t.font=`11px ${e.fontMono}`,t.fillStyle=o.muted,t.strokeStyle=o.axis,t.lineWidth=1,t.strokeRect(n.l+.5,n.t+.5,n.pw-1,n.ph-1);let s=(a,r)=>{let i=[],l=a.filter(c=>c.major&&c.label).sort((c,f)=>Math.abs(c.v)-Math.abs(f.v));for(let c of l){let f=r(c.s);i.every(p=>Math.abs(p.p-f)>=22)&&i.push({...c,p:f})}return i};t.textAlign="center",t.textBaseline="top";for(let a of e.xTicks){let r=Math.round(n.l+a.s*n.pw)+.5;t.beginPath(),t.moveTo(r,n.b),t.lineTo(r,n.b+(a.major?6:3)),t.stroke()}for(let a of s(e.xTicks,r=>n.l+r*n.pw))t.fillText(a.label,a.p,n.b+8);t.textAlign="right",t.textBaseline="middle";for(let a of e.yTicks){let r=Math.round(n.b-a.s*n.ph)+.5;t.beginPath(),t.moveTo(n.l,r),t.lineTo(n.l-(a.major?6:3),r),t.stroke()}for(let a of s(e.yTicks,r=>n.b-r*n.ph))t.fillText(a.label,n.l-8,a.p);t.fillStyle=o.fg,t.font=`600 12px ${e.fontSans}`,t.textAlign="center",t.textBaseline="alphabetic",t.fillText(e.xLabel,n.l+n.pw/2,n.b+42),t.save(),t.translate(16,n.t+n.ph/2),t.rotate(-Math.PI/2),t.textBaseline="middle",t.fillText(e.yLabel,0,0),t.restore()}function Dt(t,n,e,o,s,a){t.font=`600 11px ${n.fontSans}`;let r=Math.max(...s.map(p=>t.measureText(p).width))+10,i=s.length*14+4,l=n.geo,c=Math.max(l.l+2,Math.min(l.r-r-2,e-r/2)),f=Math.max(l.t+2,Math.min(l.b-i-2,o-i/2));t.fillStyle=n.colors.labelBg,t.strokeStyle=a?n.colors.gateSel:n.colors.gate,t.lineWidth=1,t.beginPath(),t.roundRect(c+.5,f+.5,r,i,3),t.fill(),t.stroke(),t.fillStyle=n.colors.fg,t.textAlign="left",t.textBaseline="top",s.forEach((p,m)=>{m===1&&(t.font=`11px ${n.fontMono}`),t.fillText(p,c+5,f+3+m*14)})}function Je(t,n,e){let o=s=>Math.max(0,Math.min(1,s));for(let s of e.gates){let a=s.selected?e.colors.gateSel:e.colors.gate;if(t.strokeStyle=a,t.lineWidth=s.selected?2:1.5,s.kind==="poly"){if(t.beginPath(),s.pts.forEach(([f,p],m)=>{let[h,x]=n.toPx(o(f),o(p));m===0?t.moveTo(h,x):t.lineTo(h,x)}),t.closePath(),t.stroke(),s.selected){t.fillStyle=a;for(let[f,p]of s.handles??s.pts){let[m,h]=n.toPx(o(f),o(p));t.fillRect(m-3.5,h-3.5,7,7)}}let r=s.pts[0];for(let f of s.pts)f[1]>r[1]&&(r=f);let i=s.pts.reduce((f,p)=>f+o(p[0]),0)/s.pts.length,[l,c]=n.toPx(i,o(r[1]));Dt(t,e,l,c-14,[s.label,s.sub],s.selected)}else if(s.kind==="quad"){let[r,i]=n.toPx(o(s.cx),o(s.cy));t.beginPath(),t.moveTo(n.l,i),t.lineTo(n.r,i),t.moveTo(r,n.t),t.lineTo(r,n.b),t.stroke(),s.selected&&(t.fillStyle=a,t.fillRect(r-4,i-4,8,8));let l={UL:[n.l+4,n.t+4],UR:[n.r-4,n.t+4],LR:[n.r-4,n.b-4],LL:[n.l+4,n.b-4]};for(let c of s.quads){let[f,p]=l[c.quadrant];t.font=`600 11px ${e.fontSans}`;let m=[c.label,c.sub],h=Math.max(...m.map(w=>t.measureText(w).width))+10,x=c.quadrant==="UL"||c.quadrant==="LL"?f+h/2:f-h/2,g=c.quadrant==="UL"||c.quadrant==="UR"?p+16:p-16;Dt(t,e,x,g,m,c.selected)}}else if(s.kind==="range"){let[r]=n.toPx(o(s.lo),0),[i]=n.toPx(o(s.hi),0),l=n.b-s.level*n.ph;t.beginPath(),t.moveTo(r,l),t.lineTo(i,l),t.moveTo(r,l-7),t.lineTo(r,l+7),t.moveTo(i,l-7),t.lineTo(i,l+7),t.stroke(),s.selected&&(t.fillStyle=a,t.fillRect(r-3.5,l-3.5,7,7),t.fillRect(i-3.5,l-3.5,7,7)),Dt(t,e,(r+i)/2,l-22,[s.label,s.sub],s.selected)}}}function Ze(t,n,e){let o=e.draft;if(o){if(t.strokeStyle=e.colors.gateSel,t.lineWidth=1.5,t.setLineDash([5,4]),o.kind==="poly"){t.beginPath(),o.pts.forEach(([s,a],r)=>{let[i,l]=n.toPx(s,a);r===0?t.moveTo(i,l):t.lineTo(i,l)}),o.cursor&&t.lineTo(...n.toPx(...o.cursor)),o.closed&&t.closePath(),t.stroke(),t.setLineDash([]),t.fillStyle=e.colors.gateSel;for(let[s,a]of o.pts){let[r,i]=n.toPx(s,a);t.fillRect(r-3,i-3,6,6)}}else if(o.kind==="range"){let[s]=n.toPx(o.lo,0),[a]=n.toPx(o.hi,0),r=n.b-o.level*n.ph;t.beginPath(),t.moveTo(s,r),t.lineTo(a,r),t.moveTo(s,r-7),t.lineTo(s,r+7),t.moveTo(a,r-7),t.lineTo(a,r+7),t.stroke()}t.setLineDash([])}}function Rt(t,n){let{w:e,h:o,dpr:s}=n;(t.width!==Math.round(e*s)||t.height!==Math.round(o*s))&&(t.width=Math.round(e*s),t.height=Math.round(o*s),t.style.width=`${e}px`,t.style.height=`${o}px`);let a=t.getContext("2d");a.setTransform(s,0,0,s,0,0);let r=ze(e,o);return n.geo=r,a.fillStyle=n.colors.surface,a.fillRect(0,0,e,o),a.fillStyle=n.colors.plotBg,a.fillRect(r.l,r.t,r.pw,r.ph),n.idx&&n.xs&&(n.type==="histogram"?Qe(a,r,n):n.ys&&Ve(a,r,n)),_e(a,r,n),a.save(),a.beginPath(),a.rect(r.l,r.t,r.pw,r.ph),a.clip(),Je(a,r,n),Ze(a,r,n),a.restore(),r}var d={samples:[],sampleId:null,viewPath:[],selId:null,tool:"select",transforms:{},undo:[],draft:null,examples:!1,version:0,stat:{metric:"freqParent",channel:null}},u=t=>document.getElementById(t),M=t=>String(t).replace(/[&<>"']/g,n=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[n]),z=(t,n)=>n>0?t/n*100:0,_=t=>Number.isFinite(t)?`${t<10?t.toFixed(2):t.toFixed(1)}%`:"\u2014",st=t=>t.toLocaleString("en-US");function S(){return d.samples.find(t=>t.id===d.sampleId)||null}function lt(t){if(!d.transforms[t]){let n=t.replace(/^Comp-/,""),e=d.samples.find(o=>o.rangeOf[n])?.rangeOf[n]??262144;d.transforms[t]=d.transforms[n]&&t!==n?{...d.transforms[n]}:ce(t,e)}return d.transforms[t]}var B=t=>fe(lt(t));function Nt(t,n){let e=B(n),o=`${n}|${e.key}`,s=t.scaled.get(o);if(!s){let a=t.cols.get(n);s=new Float32Array(a.length);for(let r=0;r<a.length;r++)s[r]=e.fwd(a[r]);for(let r of t.scaled.keys())r.startsWith(`${n}|`)&&t.scaled.delete(r);t.scaled.set(o,s)}return s}function W(t){return{raw:n=>{let e=t.cols.get(n);if(!e)throw new Error(`Sample ${t.name} has no parameter ${n}`);return e},scaled:n=>Nt(t,n),scaler:n=>B(n)}}function ot(t,n){return t.channels.find(e=>e.name===n)||{name:n,stain:"",label:n}}function wt(t,n){return ot(t,n).stain||n.replace(/^Comp-/,"")}function tn(t){let n=[],e=t.comp?t.comp.names:[];for(let o of t.params)e.includes(o.name)||n.push({name:o.name,stain:o.stain,range:o.range});for(let o of e){let s=t.params.find(a=>a.name===o);n.push({name:`Comp-${o}`,stain:s.stain,range:s.range})}for(let o of e){let s=t.params.find(a=>a.name===o);n.push({name:o,stain:s.stain,range:s.range,uncomp:!0})}for(let o of n)o.label=o.stain?`${o.name} :: ${o.stain}`:o.name;t.channels=n}function vt(t){if(!t.comp)return;let n=t.comp.enabled?t.comp.matrix:se(t.comp.names.length),e=ae(t.raw,t.comp.names,n);t.comp.names.forEach((o,s)=>{let a=`Comp-${o}`;t.cols.set(a,e[s]);for(let r of[...t.scaled.keys()])r.startsWith(`${a}|`)&&t.scaled.delete(r)})}function we(t,n=!1){let e=new Map;t.params.forEach((i,l)=>e.set(i.name,t.columns[l]));let o={id:rt("s"),name:t.fileName.replace(/\.(fcs|lmd)$/i,""),fileName:t.fileName,version:t.version,keywords:t.keywords,n:t.nEvents,params:t.params,rangeOf:Object.fromEntries(t.params.map(i=>[i.name,i.range])),raw:e,cols:new Map(e),scaled:new Map,comp:t.spillover?{names:t.spillover.names,matrix:t.spillover.matrix.map(i=>[...i]),fileMatrix:t.spillover.matrix.map(i=>[...i]),enabled:!0}:null,isExample:n};tn(o),vt(o),o.root=G("All Events",null,null);let s=o.channels.map(i=>i.name),a=s.find(i=>/^FSC-A$/i.test(i))||s.find(i=>/^FSC/i.test(i))||s[0],r=s.find(i=>/^SSC-A$/i.test(i))||s.find(i=>/^SSC/i.test(i))||s[1]||s[0];return o.root.view={x:a,y:r,type:"pseudo"},q(o.root,W(o),o.n),d.samples.push(o),o}function en(){for(let t of oe){let n=ne(t);we(kt(n,`${t.name}.fcs`),!0)}d.examples=!0,d.sampleId=d.samples[0].id,nn()}function nn(){let t=d.samples[0],n=G("Cells",{type:"polygon",x:"FSC-A",y:"SSC-A",points:[[38e3,3e3],[98e3,3e3],[15e4,6e4],[15e4,105e3],[9e4,105e3],[38e3,45e3]]},t.root);n.view={x:"FSC-A",y:"FSC-H",type:"pseudo"},t.root.children.push(n);let e=G("Singlets",{type:"polygon",x:"FSC-A",y:"FSC-H",points:[[3e4,22e3],[16e4,125e3],[16e4,15e4],[3e4,34e3]]},n);e.view={x:"Comp-FITC-A",y:"Comp-PerCP-Cy5.5-A",type:"pseudo"},n.children.push(e);let o=G("T cells",{type:"rect",x:"Comp-FITC-A",y:"Comp-PerCP-Cy5.5-A",x1:2200,x2:1e30,y1:-1e30,y2:1200},e);o.view={x:"Comp-PE-A",y:"Comp-APC-A",type:"pseudo"};let s=G("B cells",{type:"rect",x:"Comp-FITC-A",y:"Comp-PerCP-Cy5.5-A",x1:-1e30,x2:1100,y1:1500,y2:1e30},e);e.children.push(o,s);let a=rt("q"),r=(i,l)=>G(l,{type:"quad",x:"Comp-PE-A",y:"Comp-APC-A",cx:1500,cy:2500,quadrant:i,link:a},o);o.children.push(r("UL","Q1: CD4\u2212, CD8+"),r("UR","Q2: CD4+, CD8+"),r("LR","Q3: CD4+, CD8\u2212"),r("LL","Q4: CD4\u2212, CD8\u2212")),q(t.root,W(t),t.n);for(let i of d.samples.slice(1)){for(let l of t.root.children)Wt(l,i.root);q(i.root,W(i),i.n)}d.viewPath=["Cells","Singlets"]}async function ue(t){let n=[...t].filter(s=>s.size>0);if(!n.length)return;let e=0,o=[];for(let s of n)try{let a=await s.arrayBuffer(),r=kt(a,s.name);d.examples&&(d.samples=d.samples.filter(l=>!l.isExample),d.examples=!1,d.undo=[]);let i=we(r);e===0&&(d.sampleId=i.id),e++}catch(a){o.push(a.message||String(a))}e&&(S()||(d.sampleId=d.samples[0]?.id??null),d.viewPath=[],d.selId=null,d.version++,R()),o.length?j(o.join(`
+`),!0):e&&j(`Opened ${e} file${e>1?"s":""}.`)}function I(){let t=S();if(!t)return null;let n=t.root;for(let e of d.viewPath){let o=n.children.find(s=>s.name===e);if(!o)break;n=o}return n}function U(t){if(!t.view){let o=t.parent;for(;o&&!o.view;)o=o.parent;t.view=o?{...o.view}:{...S().root.view}}let e=S().channels.map(o=>o.name);return e.includes(t.view.x)||(t.view.x=e[0]),e.includes(t.view.y)||(t.view.y=e[Math.min(1,e.length-1)]),t.view}function jt(t){d.viewPath=K(t),d.selId=null,d.draft=null;let n=U(t);n.type==="histogram"&&d.tool!=="range"&&(d.tool="select"),n.type!=="histogram"&&d.tool==="range"&&(d.tool="select"),R()}function Bt(t){let n=S(),e=null;return n&&X(n.root,o=>{o.id===t&&(e=o)}),e}function on(t){let n=S();q(t,W(n),n.n),d.version++}function sn(){for(let t of d.samples)q(t.root,W(t),t.n);d.version++}function Wt(t,n){let e=n.children.find(o=>o.name===t.name);e?(e.gate=t.gate?J(t.gate):null,t.view&&(e.view={...t.view})):(e=G(t.name,t.gate?J(t.gate):null,n),e.view=t.view?{...t.view}:null,n.children.push(e));for(let o of t.children)Wt(o,e)}function me(t){let n=S(),e=K(t[0].parent),o=0,s=[];for(let a of d.samples){if(a===n)continue;let r=new Set(a.channels.map(f=>f.name)),i=new Set;for(let f of t)X(f,p=>{p.gate&&mt(p.gate).forEach(m=>i.add(m))});let l=[...i].filter(f=>!r.has(f)),c=Et(a.root,e);if(!c||l.length){s.push(a.name);continue}for(let f of t)Wt(f,c);q(c,W(a),a.n),o++}d.version++,R(),s.length?j(`Copied to ${o} sample${o===1?"":"s"}. Skipped ${s.join(", ")}: missing the parent population or a parameter.`,!0):j(`Copied to ${o} sample${o===1?"":"s"}.`)}function ve(){return{trees:new Map(d.samples.map(t=>[t.id,Pt(t.root)])),viewPath:[...d.viewPath]}}function nt(){d.undo.push(ve()),d.undo.length>60&&d.undo.shift(),u("undo").disabled=!1}function he(){let t=d.undo.pop();if(t){for(let n of d.samples){let e=t.trees.get(n.id);e&&(n.root=Ct(e,null),q(n.root,W(n),n.n))}d.viewPath=t.viewPath,d.selId=null,d.draft=null,d.version++,R()}}function C(t,n,e=!1){if(e){if(n<=.002)return-1e30;if(n>=.998)return 1e30}return B(t).inv(Math.max(0,Math.min(1,n)))}function an(t){let n=B(t.x).fwd,e=B(t.y).fwd;return[[n(t.x1),e(t.y1)],[n(t.x2),e(t.y1)],[n(t.x2),e(t.y2)],[n(t.x1),e(t.y2)]]}function $e(){let t=I();if(!t)return[];let n=U(t),e=n.type==="histogram",o=[],s=new Set;for(let a of t.children){let r=a.gate;if(!r)continue;let i=_(z(a.indices.length,t.indices.length));if(e){if(r.type!=="range"||r.x!==n.x)continue;let l=B(r.x).fwd;o.push({kind:"range",pop:a,lo:l(r.lo),hi:l(r.hi),level:r.level??.82,label:a.name,sub:i,selected:a.id===d.selId});continue}if(!(r.type==="range"||r.x!==n.x||r.y!==n.y)){if(r.type==="rect")o.push({kind:"poly",pop:a,pts:an(r),label:a.name,sub:i,selected:a.id===d.selId});else if(r.type==="polygon"){let l=B(r.x).fwd,c=B(r.y).fwd;o.push({kind:"poly",pop:a,pts:r.points.map(([f,p])=>[l(f),c(p)]),label:a.name,sub:i,selected:a.id===d.selId})}else if(r.type==="quad"){if(s.has(r.link))continue;s.add(r.link);let l=Z(a);o.push({kind:"quad",pop:a,cx:B(r.x).fwd(r.cx),cy:B(r.y).fwd(r.cy),selected:l.some(c=>c.id===d.selId),quads:l.map(c=>({pop:c,quadrant:c.gate.quadrant,label:c.name,selected:c.id===d.selId,sub:_(z(c.indices.length,t.indices.length))}))})}}}return o}var $={canvas:null,geo:null,size:480,pending:!1};function N(t){return getComputedStyle(document.documentElement).getPropertyValue(t).trim()}function rn(t){let n=t.match(/^#([0-9a-f]{6})$/i);if(!n)return[20,30,40];let e=parseInt(n[1],16);return[e>>16&255,e>>8&255,e&255]}function E(){$.pending||($.pending=!0,requestAnimationFrame(()=>{$.pending=!1,ln()}))}function ln(){let t=S(),n=I(),e=$.canvas,o=$.size,s=$.size,a={surface:N("--surface"),plotBg:N("--plot"),fg:N("--fg"),muted:N("--muted"),axis:N("--axis"),gate:N("--gate"),gateSel:N("--gate-sel"),labelBg:N("--label-bg"),histFill:N("--hist-fill"),histLine:N("--hist-line"),dotRGB:rn(N("--dot"))},r=N("--font-sans"),i=N("--font-mono");if(!t||!n){$.geo=Rt(e,{w:o,h:s,dpr:devicePixelRatio||1,colors:a,fontSans:r,fontMono:i,xTicks:[],yTicks:[],xLabel:"",yLabel:"",gates:[]});return}let l=U(n),c=l.type==="histogram",f=B(l.x),p=c?null:B(l.y),m=c?[0,25,50,75,100].map(x=>({s:x/100*.95,major:!0,label:String(x),v:x})):p.ticks(),h=d.draft;if(h&&h.kind==="rect"){let[x,g]=h.start,[w,P]=h.cur;h={kind:"poly",pts:[[x,g],[w,g],[w,P],[x,P]],closed:!0}}$.geo=Rt(e,{w:o,h:s,dpr:devicePixelRatio||1,colors:a,fontSans:r,fontMono:i,type:l.type,xs:Nt(t,l.x),ys:c?null:Nt(t,l.y),idx:n.indices,xTicks:f.ticks(),yTicks:m,xLabel:ot(t,l.x).label,yLabel:c?"% of max":ot(t,l.y).label,gates:$e(),draft:h}),u("plot-count").textContent=`${st(n.indices.length)} events`}function Yt(t){let n=$.canvas.getBoundingClientRect(),e=t.clientX-n.left,o=t.clientY-n.top,[s,a]=$.geo.toScale(e,o);return{px:e,py:o,sx:s,sy:a}}var et=(t,n,e,o,s,a)=>{let[r,i]=t.toPx(n,e);return Math.hypot(r-o,i-s)<=a};function zt(t,n){let e=$.geo,[o,s]=e.toScale(t,n),a=$e(),r=i=>Math.max(0,Math.min(1,i));for(let i of a)if(i.selected){if(i.kind==="poly"){let l=i.pts.findIndex(([c,f])=>et(e,r(c),r(f),t,n,7));if(l>=0)return{shape:i,pop:i.pop,mode:"vertex",index:l}}if(i.kind==="range"){let l=i.level;if(et(e,r(i.lo),l,t,n,8))return{shape:i,pop:i.pop,mode:"rangeEdge",index:0};if(et(e,r(i.hi),l,t,n,8))return{shape:i,pop:i.pop,mode:"rangeEdge",index:1}}}for(let i=a.length-1;i>=0;i--){let l=a[i];if(l.kind==="quad"&&et(e,r(l.cx),r(l.cy),t,n,9))return{shape:l,pop:l.pop,mode:"quad"}}for(let i=a.length-1;i>=0;i--){let l=a[i];if(l.kind==="poly"&&Lt(o,s,l.pts.map(([c,f])=>[r(c),r(f)])))return{shape:l,pop:l.pop,mode:"move"};if(l.kind==="range"){let[c,f]=e.toPx(r(l.lo),l.level),[p]=e.toPx(r(l.hi),l.level);if(t>=Math.min(c,p)-4&&t<=Math.max(c,p)+4&&Math.abs(n-f)<=9)return{shape:l,pop:l.pop,mode:"move"}}}for(let i of a){if(i.kind!=="quad")continue;let l=o>=i.cx,f=s>=i.cy?l?"UR":"UL":l?"LR":"LL",p=i.quads.find(m=>m.quadrant===f);if(p)return{shape:i,pop:p.pop,mode:"select"}}return null}var Q=null;function cn(t,n){let e=Q,o=e.pop.gate,s=e.orig,a=t-e.start[0],r=n-e.start[1];if(!e.undoPushed&&(Math.abs(a)>.002||Math.abs(r)>.002)&&(d.undo.push(e.undoSnap),u("undo").disabled=!1,e.undoPushed=!0),!e.undoPushed)return;let i=l=>B(l).fwd;if(e.mode==="quad"){let l=C(o.x,Math.max(.002,Math.min(.998,t))),c=C(o.y,Math.max(.002,Math.min(.998,n)));for(let f of Z(e.pop))f.gate.cx=l,f.gate.cy=c}else if(o.type==="polygon")e.mode==="vertex"?o.points[e.index]=[C(o.x,t),C(o.y,n)]:o.points=s.points.map(([l,c])=>[C(o.x,i(o.x)(l)+a),C(o.y,i(o.y)(c)+r)]);else if(o.type==="rect")if(e.mode==="vertex"){let l=e.index===0||e.index===3?"x1":"x2",c=e.index===0||e.index===1?"y1":"y2";o[l]=C(o.x,t,!0),o[c]=C(o.y,n,!0)}else{let l=(c,f,p)=>Math.abs(f)>=1e29?f:C(c,i(c)(f)+p,!0);o.x1=l(o.x,s.x1,a),o.x2=l(o.x,s.x2,a),o.y1=l(o.y,s.y1,r),o.y2=l(o.y,s.y2,r)}else if(o.type==="range")if(e.mode==="rangeEdge")o[e.index===0?"lo":"hi"]=C(o.x,t,!0);else{let l=c=>Math.abs(c)>=1e29?c:C(o.x,i(o.x)(c)+a,!0);o.lo=l(s.lo),o.hi=l(s.hi),o.level=Math.max(.05,Math.min(.95,(s.level??.82)+r))}for(let l of e.mode==="quad"?Z(e.pop):[e.pop])q(l,W(S()),S().n);d.version++,E(),Kt()}function dn(t){if(!S()||t.button!==0)return;let{px:n,py:e,sx:o,sy:s}=Yt(t),r=U(I()).type==="histogram";if(o<-.02||o>1.02||s<-.02||s>1.02)return;let i=Math.max(0,Math.min(1,o)),l=Math.max(0,Math.min(1,s));if(d.tool==="polygon"&&!r){let f=d.draft&&d.draft.kind==="poly"?d.draft:d.draft={kind:"poly",pts:[]};if(f.pts.length>=3&&et($.geo,f.pts[0][0],f.pts[0][1],n,e,8)){Vt();return}let p=f.pts[f.pts.length-1];(!p||!et($.geo,p[0],p[1],n,e,3))&&f.pts.push([i,l]),E();return}if(d.tool==="rect"&&!r){d.draft={kind:"rect",start:[i,l],cur:[i,l]},$.canvas.setPointerCapture(t.pointerId);return}if(d.tool==="range"&&r){d.draft={kind:"range",lo:i,hi:i,level:Math.max(.05,Math.min(.95,l))},$.canvas.setPointerCapture(t.pointerId);return}if(d.tool==="quad"&&!r){mn(i,l);return}let c=zt(n,e);if(!c){d.selId&&(d.selId=null,$t(),E());return}d.selId=c.pop.id,c.mode!=="select"&&(Q={mode:c.mode,index:c.index,pop:c.pop,start:[o,s],orig:J(c.pop.gate),undoSnap:ve(),undoPushed:!1},$.canvas.setPointerCapture(t.pointerId)),$t(),E()}function fn(t){if(!S()||!$.geo)return;let{px:n,py:e,sx:o,sy:s}=Yt(t),a=Math.max(0,Math.min(1,o)),r=Math.max(0,Math.min(1,s));if(Q){cn(a,r);return}let i=d.draft;if(i?.kind==="rect"){i.cur=[a,r],E();return}if(i?.kind==="range"){i.hi=a,E();return}if(i?.kind==="poly"){i.cursor=[a,r],E();return}if(d.tool==="select"){let l=zt(n,e);$.canvas.style.cursor=l?l.mode==="vertex"||l.mode==="quad"||l.mode==="rangeEdge"?"crosshair":l.mode==="move"?"move":"pointer":"default"}else $.canvas.style.cursor="crosshair"}function pn(){if(Q){let n=Q.undoPushed;Q=null,n&&R();return}let t=d.draft;if(t?.kind==="rect"){let[n,e]=t.start,[o,s]=t.cur;if(d.draft=null,Math.abs(n-o)*$.geo.pw<4||Math.abs(e-s)*$.geo.ph<4){E();return}let a=U(I());Ut({type:"rect",x:a.x,y:a.y,x1:C(a.x,Math.min(n,o),!0),x2:C(a.x,Math.max(n,o),!0),y1:C(a.y,Math.min(e,s),!0),y2:C(a.y,Math.max(e,s),!0)})}else if(t?.kind==="range"){if(d.draft=null,Math.abs(t.hi-t.lo)*$.geo.pw<4){E();return}let n=U(I()),e=S();Ut({type:"range",x:n.x,lo:C(n.x,Math.min(t.lo,t.hi),!0),hi:C(n.x,Math.max(t.lo,t.hi),!0),level:t.level},`${wt(e,n.x)}+`)}}function un(t){if(!S())return;if(d.tool==="polygon"&&d.draft?.kind==="poly"){Vt();return}if(d.tool!=="select")return;let{px:n,py:e}=Yt(t),o=zt(n,e);o&&jt(o.pop)}function Vt(){let t=d.draft;if(d.draft=null,!t||t.pts.length<3){E();return}let n=U(I());Ut({type:"polygon",x:n.x,y:n.y,points:t.pts.map(([e,o])=>[C(n.x,e),C(n.y,o)])})}function Ut(t,n){let e=I();nt();let o=At(e,n||`Gate ${e.children.length+1}`),s=G(o,t,e);e.children.push(s),on(s),d.selId=s.id,R(),wn()}function mn(t,n){let e=I(),o=S(),s=U(e);nt();let a=rt("q"),r=C(s.x,Math.max(.002,Math.min(.998,t))),i=C(s.y,Math.max(.002,Math.min(.998,n))),l=wt(o,s.x),c=wt(o,s.y),p=[["UL",`Q1: ${l}\u2212, ${c}+`],["UR",`Q2: ${l}+, ${c}+`],["LR",`Q3: ${l}+, ${c}\u2212`],["LL",`Q4: ${l}\u2212, ${c}\u2212`]].map(([m,h])=>{let x=G(At(e,h),{type:"quad",x:s.x,y:s.y,cx:r,cy:i,quadrant:m,link:a},e);return e.children.push(x),x});p.forEach(m=>q(m,W(o),o.n)),d.version++,d.selId=p[1].id,d.tool="select",R()}function xe(t){let n=t.gate?.type==="quad"?Z(t):[t];nt();let e=t.parent;e.children=e.children.filter(o=>!n.includes(o)),d.viewPath=K(I()),d.selId=null,d.version++,R()}function hn(){u("example-note").hidden=!d.examples,u("undo").disabled=d.undo.length===0;let t=S();u("comp-btn").disabled=!t,u("comp-btn").textContent=t?.comp?`Compensation${t.comp.enabled?"":" (off)"}`:"Compensation"}function xn(){let t=u("samples");if(!d.samples.length){t.innerHTML='<p class="empty">No samples yet. Open FCS files or drop them anywhere on the page.</p>';return}t.innerHTML=d.samples.map(n=>`
+    <li class="sample-row${n.id===d.sampleId?" is-sel":""}" data-id="${n.id}">
+      <button class="sample-pick" data-act="pick" title="${M(n.fileName)}">
+        <span class="sample-name">${M(n.name)}</span>
+        <span class="sample-meta">${st(n.n)} events${n.comp?` \xB7 ${n.comp.enabled?"comp":"comp off"}`:""}</span>
+      </button>
+      <button class="icon-btn" data-act="remove" aria-label="Remove ${M(n.name)}" title="Remove sample">\xD7</button>
+    </li>`).join("")}function Kt(){let t=u("tree"),n=S();if(!n){t.innerHTML="";return}let e=I(),o=[];X(n.root,(s,a)=>{let r=s.parent?_(z(s.indices.length,s.parent.indices.length)):"";o.push(`<li class="pop-row${s===e?" is-view":""}${s.id===d.selId?" is-sel":""}" style="--depth:${a}" data-id="${s.id}">
+      <button class="pop-pick" data-act="view">
+        <span class="pop-name">${M(s.name)}</span>
+        <span class="pop-num">${st(s.indices.length)}</span>
+        <span class="pop-pct">${r}</span>
+      </button></li>`)}),t.innerHTML=o.join(""),u("breadcrumb").innerHTML=[n.name,"All Events",...K(e)].map((s,a,r)=>a===r.length-1?`<strong>${M(s)}</strong>`:M(s)).join('<span class="crumb-sep">\u203A</span>')}var Ht=[{id:"select",label:"Select",key:"V",hint:"Click a gate to select it, drag to move it or its corners. Double-click a gate to open that population."},{id:"rect",label:"Rectangle",key:"R",hint:"Drag to draw a rectangle. Edges drawn at the plot border stay open-ended."},{id:"polygon",label:"Polygon",key:"P",hint:"Click to add points. Click the first point or double-click to close the gate. Esc cancels."},{id:"quad",label:"Quadrant",key:"Q",hint:"Click where the four quadrants should meet."},{id:"range",label:"Range",key:"G",hint:"Drag across the histogram to set the range."}];function it(){let t=I(),n=S(),e=t?U(t):null,o=e?.type==="histogram";u("tools").innerHTML=Ht.map(i=>{let l=!n||(o?["rect","polygon","quad"].includes(i.id):i.id==="range");return`<button class="seg${d.tool===i.id?" is-on":""}" data-tool="${i.id}" ${l?"disabled":""} title="${i.label} (${i.key})">${i.label}</button>`}).join(""),u("plot-types").querySelectorAll("[data-type]").forEach(i=>{i.classList.toggle("is-on",e?.type===i.dataset.type),i.disabled=!n});let s=n?n.channels.map(i=>`<option value="${M(i.name)}">${M(i.label)}${i.uncomp?" (uncomp.)":""}</option>`).join(""):"",a=u("axis-x"),r=u("axis-y");a.innerHTML=s,r.innerHTML=s,e&&(a.value=e.x,r.value=e.y),a.disabled=r.disabled=!n,u("axis-y-wrap").hidden=o,u("hint").textContent=Ht.find(i=>i.id===d.tool)?.hint??""}function ye(t,n){let e=S(),o=lt(n),s=(i,l,c,f)=>`
+    <label class="field"><span>${l}</span>
+      <input id="${i}" type="number" value="${c}" ${f} data-axis="${t}"></label>`,a=(i,l,c,f,p,m)=>`
+    <label class="field field-slider"><span>${l}</span>
+      <input id="${i}" type="range" min="${f}" max="${p}" step="${m}" value="${c}" data-axis="${t}">
+      <output id="${i}-out">${(+c).toFixed(2)}</output></label>`,r="";return o.type==="logicle"?r=s(`${t}-T`,"Top of scale (T)",o.T,'min="1" step="1"')+a(`${t}-M`,"Positive decades (M)",o.M,2,7,.05)+a(`${t}-W`,"Linear width (W)",o.W,0,Math.min(3,o.M/2),.01)+a(`${t}-A`,"Extra negative decades (A)",o.A,0,2,.05)+`<button class="btn btn-quiet" data-act="auto-w" data-axis="${t}">Estimate width from this sample</button>`:o.type==="log"?r=s(`${t}-max`,"Top of scale",o.max,'min="1" step="1"')+a(`${t}-decades`,"Decades",o.decades,1,7,.05):o.type==="linear"?r=s(`${t}-min`,"Minimum",o.min,'step="any"')+s(`${t}-max`,"Maximum",o.max,'step="any"'):o.type==="arcsinh"&&(r=s(`${t}-cofactor`,"Cofactor",o.cofactor,'min="0.1" step="any"')+s(`${t}-min`,"Minimum",o.min,'step="any"')+s(`${t}-max`,"Maximum",o.max,'step="any"')),`<section class="card axis-card" data-axis="${t}" data-channel="${M(n)}">
+    <header class="card-head"><span class="eyebrow">${t.toUpperCase()} axis</span><span class="chan">${M(ot(e,n).label)}</span></header>
+    <div class="seg-group seg-small" role="group" aria-label="${t} axis scale">
+      ${le.map(i=>`<button class="seg${o.type===i.id?" is-on":""}" data-act="ttype" data-axis="${t}" data-type="${i.id}">${i.label}</button>`).join("")}
+    </div>
+    <div class="fields">${r}</div>
+  </section>`}function tt(){let t=I(),n=u("axes");if(!t){n.innerHTML="";return}let e=U(t);n.innerHTML=ye("x",e.x)+(e.type==="histogram"?"":ye("y",e.y))}function yn(t){return{rect:"Rectangle",polygon:"Polygon",range:"Range",quad:"Quadrant"}[t.type]}function gt(){let t=d.selId?Bt(d.selId):null;if(t?.gate)return t;let n=I();return n?.gate?n:null}function Me(){let t=u("inspector"),n=gt();if(!n){t.innerHTML=`<section class="card"><header class="card-head"><span class="eyebrow">Gate</span></header>
+      <p class="muted small">Select a gate on the plot to rename, copy or delete it. Pick a drawing tool above the plot to add one.</p></section>`;return}let e=n.gate,o=S(),s=mt(e).map(a=>wt(o,a)).join(" vs ");t.innerHTML=`<section class="card">
+    <header class="card-head"><span class="eyebrow">Gate</span><span class="chan">${yn(e)} \xB7 ${M(s)}</span></header>
+    <label class="field"><span>Name</span><input id="gate-name" type="text" value="${M(n.name)}" autocomplete="off"></label>
+    <dl class="kv">
+      <div><dt>Events</dt><dd>${st(n.indices.length)}</dd></div>
+      <div><dt>Of parent</dt><dd>${_(z(n.indices.length,n.parent.indices.length))}</dd></div>
+      <div><dt>Of total</dt><dd>${_(z(n.indices.length,o.n))}</dd></div>
+    </dl>
+    <div class="btn-row">
+      ${n===I()?"":'<button class="btn" data-act="open-gate">Open population</button>'}
+      <button class="btn" data-act="copy-gate" ${d.samples.length<2?"disabled":""}>Copy to all samples</button>
+      <button class="btn btn-danger" data-act="delete-gate">Delete</button>
+    </div>
+  </section>`}function ke(){let t=u("popstats"),n=S(),e=I();if(!n||!e){t.innerHTML="";return}let s=n.channels.filter(a=>!a.uncomp&&pt(a.name)!=="time").map(a=>{let r=It(n.cols.get(a.name),e.indices);return`<tr><th scope="row">${M(a.stain||a.name)}</th><td>${at(r.median)}</td><td>${at(r.mean)}</td><td>${Number.isFinite(r.cv)?r.cv.toFixed(1):"\u2014"}</td></tr>`}).join("");t.innerHTML=`<section class="card">
+    <header class="card-head"><span class="eyebrow">Population</span><span class="chan">${M(e.name)}</span></header>
+    <dl class="kv">
+      <div><dt>Events</dt><dd>${st(e.indices.length)}</dd></div>
+      <div><dt>Of parent</dt><dd>${e.parent?_(z(e.indices.length,e.parent.indices.length)):"\u2014"}</dd></div>
+      <div><dt>Of total</dt><dd>${_(z(e.indices.length,n.n))}</dd></div>
+    </dl>
+    <div class="table-scroll"><table class="mini">
+      <thead><tr><th scope="col">Channel</th><th scope="col">Median</th><th scope="col">Mean</th><th scope="col">CV %</th></tr></thead>
+      <tbody>${s}</tbody></table></div>
+  </section>`}function Se(){let t=S(),n=u("keywords");if(!t){n.innerHTML="";return}let e=(u("kw-filter")?.value||"").toLowerCase(),o=u("kw-details")?.open??!1,s=Object.entries(t.keywords).filter(([a,r])=>!/^\$P\d+[BEGRN]$/.test(a)||e).filter(([a,r])=>!e||a.toLowerCase().includes(e)||r.toLowerCase().includes(e)).map(([a,r])=>`<tr><th scope="row">${M(a)}</th><td>${M(r.length>160?`${r.slice(0,160)}\u2026`:r)}</td></tr>`).join("");n.innerHTML=`<details id="kw-details" class="card" ${o?"open":""}>
+    <summary class="card-head"><span class="eyebrow">Keywords</span><span class="chan">${M(t.fileName)} \xB7 ${M(t.version)}</span></summary>
+    <label class="field"><span>Filter</span><input id="kw-filter" type="search" value="${M(e)}" placeholder="e.g. DATE or TUBE"></label>
+    <div class="table-scroll kw-scroll"><table class="mini kw"><tbody>${s}</tbody></table></div>
+  </details>`}function $t(){tt(),Me(),ke(),Se()}var Te=[{id:"freqParent",label:"Freq. of parent (%)"},{id:"freqTotal",label:"Freq. of total (%)"},{id:"count",label:"Count"},{id:"median",label:"Median"},{id:"mean",label:"Mean"}];function Le(){let t=new Map;for(let e of d.samples)X(e.root,o=>{let s=K(o),a=s.join(" / ")||"All Events";t.has(a)||t.set(a,s)});let n=d.stat.metric;return[...t.entries()].filter(([,e])=>e.length>0||n!=="freqParent")}var yt=new Map;function Ee(t,n){let e=Et(t.root,n);if(!e)return null;let o=d.stat.metric;if(o==="count")return e.indices.length;if(o==="freqParent")return e.parent?z(e.indices.length,e.parent.indices.length):100;if(o==="freqTotal")return z(e.indices.length,t.n);let s=d.stat.channel;if(!t.cols.has(s))return null;let a=`${d.version}|${t.id}|${e.id}|${s}`,r=yt.get(a);return r||(yt.size>2e3&&yt.clear(),r=It(t.cols.get(s),e.indices),yt.set(a,r)),r[o]}function gn(t){if(t===null||!Number.isFinite(t))return"\u2014";let n=d.stat.metric;return n==="count"?st(t):n==="freqParent"||n==="freqTotal"?t.toFixed(2):at(t)}function Mt(){let t=u("stat-metric");t.options.length||(t.innerHTML=Te.map(l=>`<option value="${l.id}">${l.label}</option>`).join("")),t.value=d.stat.metric;let n=u("stat-channel"),e=S()||d.samples[0],o=d.stat.metric==="median"||d.stat.metric==="mean";if(u("stat-channel-wrap").hidden=!o,e){let l=e.channels.filter(c=>pt(c.name)!=="time");n.innerHTML=l.map(c=>`<option value="${M(c.name)}">${M(c.label)}${c.uncomp?" (uncomp.)":""}</option>`).join(""),(!d.stat.channel||!l.some(c=>c.name===d.stat.channel))&&(d.stat.channel=(l.find(c=>c.name.startsWith("Comp-"))||l[0])?.name??null),n.value=d.stat.channel}let s=Le(),a=u("stats-table");if(!d.samples.length||!s.length){a.innerHTML='<tbody><tr><td class="empty">Draw a gate to see statistics for every sample here.</td></tr></tbody>';return}let r=`<thead><tr><th scope="col" class="sticky">Sample</th>${s.map(([l,c])=>{let f=c[c.length-1]||"All Events",p=c.slice(0,-1).join(" / ");return`<th scope="col" title="${M(l)}"><span class="col-parent">${M(p||"")}</span><span class="col-leaf">${M(f)}</span></th>`}).join("")}</tr></thead>`,i=d.samples.map(l=>`<tr class="${l.id===d.sampleId?"is-sel":""}"><th scope="row" class="sticky">${M(l.name)}</th>${s.map(([,c])=>`<td>${gn(Ee(l,c))}</td>`).join("")}</tr>`).join("");a.innerHTML=r+`<tbody>${i}</tbody>`}function bn(){let t=Le(),n=Te.find(s=>s.id===d.stat.metric).label,e=d.stat.metric==="median"||d.stat.metric==="mean"?` \xB7 ${d.stat.channel}`:"",o=[["Sample",...t.map(([s])=>`${s} | ${n}${e}`)].join("	")];for(let s of d.samples)o.push([s.name,...t.map(([,a])=>{let r=Ee(s,a);return r===null||!Number.isFinite(r)?"":String(+r.toFixed(4))})].join("	"));return o.join(`
+`)}function Pe(){let t=S(),n=u("comp-body");if(!t)return;if(!t.comp){n.innerHTML=`<p>${M(t.name)} has no spillover matrix in its keywords ($SPILLOVER or SPILL). Calculating a matrix from single-stain controls is coming in the next version.</p>`;return}let{names:e,matrix:o,enabled:s}=t.comp,a=r=>M(ot(t,r).stain?`${r} (${ot(t,r).stain})`:r);n.innerHTML=`
+    <p class="muted small">Spillover values in percent. Each row is a fluorochrome; each column is the detector it spills into. Read from the file's ${M(t.keywords.$SPILLOVER?"$SPILLOVER":"SPILL")} keyword.</p>
+    <label class="check"><input id="comp-enabled" type="checkbox" ${s?"checked":""}> Apply compensation to ${M(t.name)}</label>
+    <div class="table-scroll"><table class="matrix">
+      <thead><tr><th scope="col">Fluorochrome \u2192 detector</th>${e.map(r=>`<th scope="col">${a(r)}</th>`).join("")}</tr></thead>
+      <tbody>${e.map((r,i)=>`<tr><th scope="row">${a(r)}</th>${e.map((l,c)=>`<td>${i===c?'<span class="diag">100</span>':`<input type="number" step="0.01" class="${o[i][c]*100>10?"hot":""}" data-i="${i}" data-j="${c}" value="${+(o[i][c]*100).toFixed(3)}" aria-label="Spillover of ${M(r)} into ${M(l)}">`}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table></div>
+    <div class="btn-row">
+      <button class="btn" data-act="comp-reset">Reset to file values</button>
+      <button class="btn" data-act="comp-all" ${d.samples.length<2?"disabled":""}>Use this matrix for all samples</button>
+    </div>`}function qt(t){try{vt(t)}catch(n){j(n.message,!0);return}q(t.root,W(t),t.n),d.version++,R()}var ge=null;function j(t,n=!1){let e=u("toast");e.textContent=t,e.classList.toggle("is-error",n),e.hidden=!1,clearTimeout(ge),ge=setTimeout(()=>{e.hidden=!0},n?7e3:2600)}function wn(){let t=u("gate-name");t&&(t.focus(),t.select())}function R(){hn(),xn(),Kt(),it(),$t(),Mt(),u("comp-panel").hidden||Pe(),E()}function Ce(){let t=u("plot-wrap"),n=Math.floor(t.clientWidth),e=Math.max(280,Math.min(620,n));e!==$.size&&($.size=e,E())}function vn(t){let n=t.dataset.axis,o=t.closest(".axis-card").dataset.channel,s={...lt(o)},a=t.id.slice(2),r=parseFloat(t.value);if(!Number.isFinite(r))return;s[a]=r;let i=s;if(s.type==="logicle"){i=Tt(s);let c=u(`${n}-W`);c&&(c.max=String(Math.min(3,i.M/2)))}if(s.type==="linear"&&!(i.max>i.min)||s.type==="arcsinh"&&(!(i.max>i.min)||!(i.cofactor>0)))return;d.transforms[o]=i;let l=u(`${t.id}-out`);l&&(l.textContent=(+r).toFixed(2)),Gt(o)}function Gt(t){let n=!1;for(let e of d.samples)X(e.root,o=>{o.gate?.type==="polygon"&&mt(o.gate).includes(t)&&(n=!0)});n&&(sn(),Kt(),bt()),E()}var be=null;function bt(){clearTimeout(be),be=setTimeout(()=>{Mt(),Me(),ke()},200)}function $n(){$.canvas=u("plot"),$.canvas.addEventListener("pointerdown",dn),$.canvas.addEventListener("pointermove",fn),$.canvas.addEventListener("pointerup",pn),$.canvas.addEventListener("pointercancel",()=>{Q=null,d.draft=null,E()}),$.canvas.addEventListener("dblclick",un),$.canvas.addEventListener("pointerleave",()=>{d.draft?.kind==="poly"&&(d.draft.cursor=null,E())}),u("file-input").addEventListener("change",e=>{ue(e.target.files),e.target.value=""}),u("undo").addEventListener("click",he),u("comp-btn").addEventListener("click",()=>{u("comp-panel").hidden=!1,Pe()}),u("comp-close").addEventListener("click",()=>{u("comp-panel").hidden=!0}),u("comp-panel").addEventListener("click",e=>{e.target===u("comp-panel")&&(u("comp-panel").hidden=!0);let o=e.target.closest("[data-act]")?.dataset.act,s=S();if(s?.comp&&(o==="comp-reset"&&(s.comp.matrix=s.comp.fileMatrix.map(a=>[...a]),qt(s)),o==="comp-all")){let a=0;for(let r of d.samples)r===s||!r.comp||r.comp.names.join()===s.comp.names.join()&&(r.comp.matrix=s.comp.matrix.map(i=>[...i]),r.comp.enabled=s.comp.enabled,vt(r),q(r.root,W(r),r.n),a++);d.version++,R(),j(`Matrix applied to ${a} other sample${a===1?"":"s"}.`)}}),u("comp-panel").addEventListener("change",e=>{let o=S();if(o?.comp){if(e.target.id==="comp-enabled"){o.comp.enabled=e.target.checked,qt(o);return}if(e.target.dataset.i!==void 0){let s=parseFloat(e.target.value);if(!Number.isFinite(s))return;let a=o.comp.matrix[e.target.dataset.i][e.target.dataset.j];o.comp.matrix[e.target.dataset.i][e.target.dataset.j]=s/100;try{vt(o)}catch(r){o.comp.matrix[e.target.dataset.i][e.target.dataset.j]=a,j(r.message,!0);return}qt(o)}}}),u("samples").addEventListener("click",e=>{let o=e.target.closest(".sample-row");if(!o)return;let s=e.target.closest("[data-act]");if(s?.dataset.act==="remove"){if(s.dataset.confirm!=="1"){s.dataset.confirm="1",s.textContent="Remove?",s.classList.add("is-confirm"),setTimeout(()=>{s.isConnected&&(s.dataset.confirm="",s.textContent="\xD7",s.classList.remove("is-confirm"))},3e3);return}d.samples=d.samples.filter(a=>a.id!==o.dataset.id),d.undo=[],d.sampleId===o.dataset.id&&(d.sampleId=d.samples[0]?.id??null),d.samples.some(a=>a.isExample)||(d.examples=!1),d.selId=null,R();return}d.sampleId=o.dataset.id,d.selId=null,d.draft=null,R()}),u("tree").addEventListener("click",e=>{let o=e.target.closest(".pop-row");if(!o)return;let s=Bt(o.dataset.id);s&&jt(s)}),u("copy-tree").addEventListener("click",()=>{let e=S();if(!e||!e.root.children.length){j("This sample has no gates to copy yet.");return}nt(),me(e.root.children)}),u("tools").addEventListener("click",e=>{let o=e.target.closest("[data-tool]");o&&(d.tool=o.dataset.tool,d.draft=null,it(),E())}),u("plot-types").addEventListener("click",e=>{let o=e.target.closest("[data-type]"),s=I();if(!o||!s)return;let a=U(s);a.type=o.dataset.type,a.type==="histogram"&&["rect","polygon","quad"].includes(d.tool)&&(d.tool="select"),a.type!=="histogram"&&d.tool==="range"&&(d.tool="select"),d.draft=null,d.selId=null,it(),tt(),E()});let t=e=>o=>{let s=I();s&&(U(s)[e]=o.target.value,d.draft=null,tt(),E())};u("axis-x").addEventListener("change",t("x")),u("axis-y").addEventListener("change",t("y")),u("swap-axes").addEventListener("click",()=>{let e=I();if(!e)return;let o=U(e);[o.x,o.y]=[o.y,o.x],it(),tt(),E()}),u("axes").addEventListener("input",e=>{e.target.matches("input[data-axis]")&&vn(e.target)}),u("axes").addEventListener("change",()=>bt()),u("axes").addEventListener("click",e=>{let o=e.target.closest("[data-act]");if(!o)return;let a=o.closest(".axis-card").dataset.channel;if(o.dataset.act==="ttype"){if(d.transforms[a]=de(lt(a),o.dataset.type),d.transforms[a].type==="logicle"||d.transforms[a].type==="linear"){let r=S()?.rangeOf[a.replace(/^Comp-/,"")];r&&(d.transforms[a][d.transforms[a].type==="logicle"?"T":"max"]=r)}tt(),Gt(a),bt()}else if(o.dataset.act==="auto-w"){let r=S(),i=lt(a),l=re(r.cols.get(a),i.T,i.M);d.transforms[a]=Tt({...i,W:+l.toFixed(2)}),tt(),Gt(a),bt(),j(`Width set to ${l.toFixed(2)} from the spread of negative events.`)}}),u("inspector").addEventListener("click",e=>{let o=e.target.closest("[data-act]")?.dataset.act,s=gt();s&&(o==="open-gate"&&jt(s),o==="delete-gate"&&xe(s),o==="copy-gate"&&(nt(),me(s.gate.type==="quad"?Z(s):[s])))}),u("inspector").addEventListener("change",e=>{if(e.target.id!=="gate-name")return;let o=gt(),s=e.target.value.trim();if(!o||!s||s===o.name){e.target.value=o?.name??"";return}if(o.parent.children.some(l=>l!==o&&l.name===s)){j(`Another population under ${o.parent.name} is already called "${s}".`,!0),e.target.value=o.name;return}nt();let a=I(),r=K(a),i=K(o);o.name=s,r.slice(0,i.length).join("\0")===i.join("\0")&&(r[i.length-1]=s,d.viewPath=r),R()}),u("inspector").addEventListener("keydown",e=>{e.target.id==="gate-name"&&e.key==="Enter"&&e.target.blur()}),u("keywords").addEventListener("input",e=>{if(e.target.id!=="kw-filter")return;let o=e.target.selectionStart;Se();let s=u("kw-filter");s.focus(),s.setSelectionRange(o,o)}),u("stat-metric").addEventListener("change",e=>{d.stat.metric=e.target.value,Mt()}),u("stat-channel").addEventListener("change",e=>{d.stat.channel=e.target.value,Mt()}),u("copy-stats").addEventListener("click",()=>{let e=bn(),o=()=>{let s=u("copy-fallback");s.hidden=!1,s.value=e,s.focus(),s.select(),j("Copying is blocked here. The table is selected below; press Ctrl+C or \u2318C.")};try{navigator.clipboard.writeText(e).then(()=>j("Table copied. Paste it into Excel or Sheets."),o)}catch{o()}}),document.addEventListener("keydown",e=>{let o=e.target.matches("input, textarea, select");if(e.target.id==="gate-name"&&e.target.value===gt()?.name&&(o=!1),(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"&&!o){e.preventDefault(),he();return}if(e.target.matches("input, textarea, select"))return;if(e.key==="Escape"){d.draft?(d.draft=null,E()):u("comp-panel").hidden?d.selId&&(d.selId=null,$t(),E()):u("comp-panel").hidden=!0;return}if((e.key==="Delete"||e.key==="Backspace")&&d.selId){let a=Bt(d.selId);a?.gate&&(e.preventDefault(),xe(a));return}if(e.key==="Enter"&&d.draft?.kind==="poly"){Vt();return}if(e.metaKey||e.ctrlKey||e.altKey)return;let s=Ht.find(a=>a.key.toLowerCase()===e.key.toLowerCase());if(s){let a=u("tools").querySelector(`[data-tool="${s.id}"]`);a&&!a.disabled&&(d.tool=s.id,d.draft=null,it(),E())}});let n=0;window.addEventListener("dragenter",e=>{e.dataTransfer?.types?.includes("Files")&&(n++,u("drop").hidden=!1)}),window.addEventListener("dragleave",()=>{n=Math.max(0,n-1),n||(u("drop").hidden=!0)}),window.addEventListener("dragover",e=>e.preventDefault()),window.addEventListener("drop",e=>{e.preventDefault(),n=0,u("drop").hidden=!0,e.dataTransfer?.files?.length&&ue(e.dataTransfer.files)}),new ResizeObserver(Ce).observe(u("plot-wrap")),matchMedia("(prefers-color-scheme: dark)").addEventListener("change",E),new MutationObserver(E).observe(document.documentElement,{attributes:!0,attributeFilter:["data-theme"]})}function Xt(){$n();try{en()}catch(t){j(`Example data failed to load: ${t.message}`,!0)}Ce(),R()}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",Xt):Xt();})();
+</script>
+
+</body>
+</html>

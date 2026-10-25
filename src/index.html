@@ -1,0 +1,95 @@
+<title>FreeFlow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>/*__CSS__*/</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">FreeFlow</span>
+    </div>
+    <label class="btn btn-primary file-btn">
+      <input id="file-input" type="file" accept=".fcs,.lmd,application/octet-stream" multiple>
+      Open FCS files
+    </label>
+    <p id="example-note" class="example-note">Showing 3 synthetic example samples. Opening your own files replaces them.</p>
+    <div class="topbar-actions">
+      <button id="undo" class="btn" disabled title="Undo (Ctrl+Z)">Undo</button>
+      <button id="comp-btn" class="btn">Compensation</button>
+    </div>
+  </header>
+
+  <main class="work">
+    <aside class="left">
+      <section class="panel">
+        <header class="panel-head"><h2>Samples</h2></header>
+        <ul id="samples" class="sample-list"></ul>
+      </section>
+      <section class="panel">
+        <header class="panel-head">
+          <h2>Populations</h2>
+          <button id="copy-tree" class="btn btn-quiet btn-small" title="Copy this sample's whole gating tree to every other sample">Copy tree to all</button>
+        </header>
+        <ul id="tree" class="tree"></ul>
+      </section>
+    </aside>
+
+    <section class="center">
+      <div class="toolbar">
+        <div id="tools" class="seg-group" role="group" aria-label="Gate tools"></div>
+        <div id="plot-types" class="seg-group" role="group" aria-label="Plot type">
+          <button class="seg" data-type="pseudo">Pseudocolor</button>
+          <button class="seg" data-type="dot">Dot</button>
+          <button class="seg" data-type="histogram">Histogram</button>
+        </div>
+      </div>
+      <div class="axis-row">
+        <label class="axis-pick"><span>X</span><select id="axis-x"></select></label>
+        <span id="axis-y-wrap" class="axis-y-wrap">
+          <label class="axis-pick"><span>Y</span><select id="axis-y"></select></label>
+          <button id="swap-axes" class="btn btn-quiet btn-small" title="Swap X and Y">Swap</button>
+        </span>
+      </div>
+      <div class="plot-head">
+        <nav id="breadcrumb" class="breadcrumb" aria-label="Population being viewed"></nav>
+        <span id="plot-count" class="plot-count"></span>
+      </div>
+      <div id="plot-wrap" class="plot-wrap"><canvas id="plot" aria-label="Flow cytometry plot"></canvas></div>
+      <p id="hint" class="hint"></p>
+    </section>
+
+    <aside class="right">
+      <div id="axes" class="stack"></div>
+      <div id="inspector"></div>
+      <div id="popstats"></div>
+      <div id="keywords"></div>
+    </aside>
+  </main>
+
+  <section class="stats">
+    <header class="panel-head stats-head">
+      <h2>Statistics</h2>
+      <label class="axis-pick"><span>Show</span><select id="stat-metric"></select></label>
+      <label id="stat-channel-wrap" class="axis-pick" hidden><span>of</span><select id="stat-channel"></select></label>
+      <button id="copy-stats" class="btn btn-small">Copy table</button>
+    </header>
+    <div class="table-scroll"><table id="stats-table" class="stats-table"></table></div>
+    <textarea id="copy-fallback" class="copy-fallback" hidden readonly aria-label="Statistics table as tab-separated text"></textarea>
+  </section>
+</div>
+
+<div id="comp-panel" class="overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="comp-title">
+    <header class="sheet-head">
+      <h2 id="comp-title">Compensation matrix</h2>
+      <button id="comp-close" class="btn btn-quiet">Close</button>
+    </header>
+    <div id="comp-body"></div>
+  </div>
+</div>
+<div id="drop" class="drop" hidden><p>Drop FCS files to open them</p></div>
+<div id="toast" class="toast" role="status" hidden></div>
+<script>/*__JS__*/</script>
