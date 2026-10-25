@@ -2,6 +2,7 @@ import { parseFCS } from './fcs.js';
 import { exportWSP, parseWSP } from './wsp.js';
 import { makeZip, makeZipCompressed, readZip } from './zip.js';
 import { SharedWorkspaces, stableStringify } from './share.js';
+import { clearAll, getFile, getSession, pruneFiles, putFile, putSession } from './autosave.js';
 import { PROVIDERS, forgetStorageSettings, loadStorageSettings, providerById, saveStorageSettings } from './storage/index.js';
 import { xhr } from './storage/http.js';
 import { PUBLIC_SITE, makeShareLink, sharedFileFrom } from './links.js';
@@ -235,7 +236,7 @@ function dropExamples() {
   }
 }
 
-async function openEntries(rawEntries, { folder = false } = {}) {
+async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
   const entries = (await expandZips(rawEntries)).filter((e) => !baseName(e.path).startsWith('.'));
   const wsps = entries.filter((e) => isWSP(e.name));
   const extras = entries.filter((e) => e.name === BUNDLE_JSON);
@@ -338,7 +339,89 @@ async function openEntries(rawEntries, { folder = false } = {}) {
     lines.push(`Opened ${added.length} FCS file${added.length > 1 ? 's' : ''}.`);
   }
   if (errors.length) lines.push(...errors);
+  if (quiet && !errors.length) return;
   toast(lines.join('\n'), errors.length > 0 || (report && (report.missing.length > 0 || report.warnings.length > 0)));
+}
+
+// ---------------------------------------------------------------- keeping the session in this browser
+
+const AS = { last: null, busy: false, off: false, restoring: false };
+const AUTOSAVE_MS = 15000;
+
+// Saves the session if anything changed since the last save. FCS files are
+// stored once; the analysis is stored whole each time.
+async function autosave() {
+  if (AS.busy || AS.off || AS.restoring) return;
+  const samples = S.samples.filter((s) => s.source && !s.isExample);
+  AS.busy = true;
+  try {
+    if (!samples.length) {
+      // Everything was closed: forget the saved session too.
+      if (AS.last) { await clearAll(); AS.last = null; }
+      return;
+    }
+    const named = uniqueNames(samples);
+    const { wspText, json } = analysisParts(named, 'autosave');
+    const ui = { sampleIndex: named.findIndex(({ s }) => s === sample()), viewPath: S.viewPath, groupId: S.groupId, mode: S.mode };
+    for (const { s } of named) s.storeKey ||= `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const files = named.map(({ s, fn }) => ({ key: s.storeKey, name: fn }));
+    const sig = wspText + json + JSON.stringify(ui) + JSON.stringify(files);
+    if (sig === AS.last) return;
+    for (const { s, fn } of named) {
+      if (s.stored) continue;
+      await putFile(s.storeKey, fn, await s.source.read());
+      s.stored = true;
+    }
+    await putSession({ savedAt: new Date().toISOString(), wsp: wspText, json, ui, files });
+    await pruneFiles(new Set(files.map((f) => f.key)));
+    AS.last = sig;
+  } catch (err) {
+    AS.off = true;
+    toast(`This session can no longer be kept in the browser (${err?.name === 'QuotaExceededError' ? 'not enough storage space' : err?.message || err}). Use Save & share to keep a copy.`, true);
+  } finally {
+    AS.busy = false;
+  }
+}
+
+// Opens the session saved in this browser, if there is one.
+async function restoreSession() {
+  let ses = null;
+  try { ses = await getSession(); } catch { return; }
+  if (!ses?.files?.length || S.samples.some((s) => !s.isExample)) return;
+  AS.restoring = true;
+  try {
+    const text = (t) => async () => new TextEncoder().encode(t).buffer;
+    const entries = ses.files.map(({ key, name }) => ({
+      name, path: `session/${name}`,
+      read: async () => {
+        const f = await getFile(key);
+        if (!f) throw new Error(`${name} is no longer stored in this browser.`);
+        return f.bytes;
+      },
+    }));
+    entries.push({ name: 'session.wsp', path: 'session/session.wsp', read: text(ses.wsp) });
+    entries.push({ name: BUNDLE_JSON, path: `session/${BUNDLE_JSON}`, read: text(ses.json) });
+    await openEntries(entries, { folder: true, quiet: true });
+    for (const { key, name } of ses.files) {
+      const s = S.samples.find((x) => x.fileName === name && !x.storeKey);
+      if (s) { s.storeKey = key; s.stored = true; }
+    }
+    const ui = ses.ui || {};
+    const main = S.samples.find((x) => x.fileName === ses.files[ui.sampleIndex]?.name);
+    if (main) S.sampleId = main.id;
+    if (groupById(ui.groupId)) S.groupId = ui.groupId;
+    if (Array.isArray(ui.viewPath)) S.viewPath = ui.viewPath;
+    if (S.samples.length) {
+      $('restore-text').textContent = `Restored your last session (saved ${timeAgo(ses.savedAt)}).`;
+      $('restore-note').hidden = false;
+    }
+    if (['gating', 'group', 'layout'].includes(ui.mode) && ui.mode !== S.mode) setMode(ui.mode);
+    else renderAll();
+  } catch (err) {
+    toast(`Your last session could not be restored: ${err?.message || err}`, true);
+  } finally {
+    AS.restoring = false;
+  }
 }
 
 function openFiles(files) {
@@ -473,16 +556,31 @@ async function saveWorkspace() {
 const BUNDLE_JSON = 'freeflow.json';
 
 // Builds the bundle .zip. Returns { zip, bytes (of FCS data), count, skipped }.
-async function buildBundle(name) {
-  const samples = S.samples.filter((s) => s.source);
-  // Give each FCS file a unique name inside the bundle.
+// Each sample with a unique file name, as the files are stored together.
+function uniqueNames(samples) {
   const used = new Set();
-  const named = samples.map((s) => {
+  return samples.map((s) => {
     let fn = s.fileName;
     for (let i = 2; used.has(fn.toLowerCase()); i++) fn = s.fileName.replace(/(\.[^.]+)?$/, ` (${i})$1`);
     used.add(fn.toLowerCase());
     return { s, fn };
   });
+}
+
+// The analysis without the data: a workspace and FreeFlow's own settings.
+function analysisParts(named, created = new Date().toISOString()) {
+  const samples = named.map(({ s }) => s);
+  const wrapped = named.map(({ s, fn }) => ({ ...s, fileName: fn }));
+  const wrap = new Map(named.map(({ s }, i) => [s, wrapped[i]]));
+  const wspText = exportWSP({ samples: wrapped, transformOf: getTransform, groups: wspGroups(samples).map((g) => ({ name: g.name, members: g.members.map((m) => wrap.get(m)).filter(Boolean) })) });
+  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, links: bundleLinks(named) }, null, 1);
+  return { wspText, json };
+}
+
+async function buildBundle(name) {
+  const samples = S.samples.filter((s) => s.source);
+  // Give each FCS file a unique name inside the bundle.
+  const named = uniqueNames(samples);
   const files = [];
   let bytes = 0;
   for (const { s, fn } of named) {
@@ -490,14 +588,9 @@ async function buildBundle(name) {
     bytes += data.length;
     files.push({ name: `${name}/${fn}`, data });
   }
-  const wrapped = named.map(({ s, fn }) => ({ ...s, fileName: fn }));
-  const wrap = new Map(named.map(({ s }, i) => [s, wrapped[i]]));
-  const wspText = exportWSP({ samples: wrapped, transformOf: getTransform, groups: wspGroups(samples).map((g) => ({ name: g.name, members: g.members.map((m) => wrap.get(m)).filter(Boolean) })) });
+  const { wspText, json } = analysisParts(named);
   files.push({ name: `${name}/${name}.wsp`, data: wspText });
-  files.push({
-    name: `${name}/${BUNDLE_JSON}`,
-    data: JSON.stringify({ app: 'FreeFlow', format: 1, created: new Date().toISOString(), layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, links: bundleLinks(named) }, null, 1),
-  });
+  files.push({ name: `${name}/${BUNDLE_JSON}`, data: json });
   files.push({
     name: `${name}/README.txt`,
     data: [
@@ -3578,4 +3671,16 @@ export function start() {
   if (sharedFile) showSharedCard(sharedFile);
   sizePlot();
   renderAll();
+  // Keep the session in this browser, and bring back the last one.
+  $('restore-new').addEventListener('click', async () => {
+    AS.off = true;
+    try { await clearAll(); } catch { /* nothing stored */ }
+    location.reload();
+  });
+  $('restore-hide').addEventListener('click', () => { $('restore-note').hidden = true; });
+  (sharedFile ? Promise.resolve() : restoreSession()).finally(() => {
+    setInterval(autosave, AUTOSAVE_MS);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autosave(); });
+    window.addEventListener('pagehide', autosave);
+  });
 }

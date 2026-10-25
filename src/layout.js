@@ -33,7 +33,7 @@ export function newLayout(name = 'Layout 1') {
  * }
  */
 export function createLayoutEditor(root, env) {
-  const ui = { layoutId: null, sel: null, zoom: 1, previewUrl: null, previewTimer: null };
+  const ui = { layoutId: null, sel: null, zoom: 1, previewUrl: null, previewTimer: null, origin: null }; // origin: page-to-sheet offset of the first copy
   const imageCache = new Map();
   const $ = (id) => root.querySelector(`#${id}`);
 
@@ -116,24 +116,39 @@ export function createLayoutEditor(root, env) {
   }
 
   // The full sheet: one page, or in batch mode one copy per sample in a grid.
+  // The part of the page one batch copy takes: the items' bounding box with
+  // a margin, or the whole page outside batch mode or with no items.
+  function batchCell(layout) {
+    if (!layout.batch || !layout.items.length) return { x0: 0, y0: 0, w: layout.width, h: layout.height };
+    const pad = 16;
+    const x0 = Math.max(0, Math.min(...layout.items.map((it) => it.x)) - pad);
+    const y0 = Math.max(0, Math.min(...layout.items.map((it) => it.y)) - pad);
+    const x1 = Math.max(...layout.items.map((it) => it.x + it.w)) + pad;
+    const y1 = Math.max(...layout.items.map((it) => it.y + it.h)) + pad;
+    return { x0, y0, w: x1 - x0, h: y1 - y0 };
+  }
+
   function sheet(layout) {
-    if (!layout) return { width: 800, height: 600, svg: pageSVG({ width: 800, height: 600, parts: [] }), blocks: [] };
+    if (!layout) return { width: 800, height: 600, svg: pageSVG({ width: 800, height: 600, parts: [] }), blocks: [], origin: { dx: 0, dy: 0 }, cell: { x0: 0, y0: 0, w: 800, h: 600 } };
     // Batch copies skip compensation controls.
     const samples = layout.batch ? env.batchSamples(layout) : [pageSampleOf(layout)];
     const cols = layout.batch ? Math.max(1, Math.min(layout.columns || 1, samples.length || 1)) : 1;
     const rows = Math.max(1, Math.ceil(samples.length / cols));
-    const width = layout.width * cols;
-    const height = layout.height * rows;
+    // In batch, each copy is only as big as the items on the page (plus a
+    // margin), not the whole page.
+    const cell = batchCell(layout);
+    const width = cell.w * cols;
+    const height = cell.h * rows;
     const parts = [];
     const blocks = [];
     samples.forEach((s, i) => {
-      const dx = (i % cols) * layout.width;
-      const dy = Math.floor(i / cols) * layout.height;
+      const cx = (i % cols) * cell.w, cy = Math.floor(i / cols) * cell.h;
+      const dx = cx - cell.x0, dy = cy - cell.y0;
       blocks.push({ dx, dy, sample: s });
-      if (layout.batch && i > 0) parts.push(`<line x1="${dx}" y1="${dy}" x2="${dx + layout.width}" y2="${dy}" stroke="#dddddd" stroke-width="0.5"/>`);
+      if (layout.batch && i > 0) parts.push(`<line x1="${cx}" y1="${cy}" x2="${cx + cell.w}" y2="${cy}" stroke="#dddddd" stroke-width="0.5"/>`);
       for (const item of layout.items) parts.push(itemSVG(item, s, dx, dy));
     });
-    return { width, height, svg: pageSVG({ width, height, parts }), blocks };
+    return { width, height, svg: pageSVG({ width, height, parts }), blocks, origin: { dx: -cell.x0, dy: -cell.y0 }, cell };
   }
 
   // ---------------------------------------------------------------- export
@@ -231,10 +246,12 @@ export function createLayoutEditor(root, env) {
     const avail = Math.max(300, stage.clientWidth - 24);
     ui.zoom = Math.min(1, avail / sh.width);
     const z = ui.zoom;
-    const overlays = l.items.map((it) => `<div class="lay-box${it.id === ui.sel ? ' is-sel' : ''}" data-id="${it.id}" style="left:${it.x * z}px;top:${it.y * z}px;width:${it.w * z}px;height:${it.h * z}px">${it.id === ui.sel ? '<span class="lay-resize" data-act="resize" aria-hidden="true"></span>' : ''}</div>`).join('');
+    ui.origin = sh.origin;
+    const o = sh.origin;
+    const overlays = l.items.map((it) => `<div class="lay-box${it.id === ui.sel ? ' is-sel' : ''}" data-id="${it.id}" style="left:${(it.x + o.dx) * z}px;top:${(it.y + o.dy) * z}px;width:${it.w * z}px;height:${it.h * z}px">${it.id === ui.sel ? '<span class="lay-resize" data-act="resize" aria-hidden="true"></span>' : ''}</div>`).join('');
     stage.innerHTML = `<div class="lay-sheet" style="width:${sh.width * z}px;height:${sh.height * z}px">
       <div class="lay-svg">${sh.svg}</div>
-      ${l.batch ? `<div class="lay-block-hint" style="width:${l.width * z}px;height:${l.height * z}px"></div>` : ''}
+      ${l.batch ? `<div class="lay-block-hint" style="width:${sh.cell.w * z}px;height:${sh.cell.h * z}px"></div>` : ''}
       <div class="lay-overlay">${overlays}</div></div>`;
     const svg = stage.querySelector('.lay-svg svg');
     svg.setAttribute('width', sh.width * z);
@@ -638,7 +655,8 @@ export function createLayoutEditor(root, env) {
     }
     const z = ui.zoom;
     const box = root.querySelector(`.lay-box[data-id="${it.id}"]`);
-    if (box) Object.assign(box.style, { left: `${it.x * z}px`, top: `${it.y * z}px`, width: `${it.w * z}px`, height: `${it.h * z}px` });
+    const o = ui.origin || { dx: 0, dy: 0 };
+    if (box) Object.assign(box.style, { left: `${(it.x + o.dx) * z}px`, top: `${(it.y + o.dy) * z}px`, width: `${it.w * z}px`, height: `${it.h * z}px` });
     renderSoon();
   }
   function onPointerUp() {
@@ -707,7 +725,8 @@ export function createLayoutEditor(root, env) {
     if (!sheetEl || !e.target.closest('#lay-stage')) return;
     const r = sheetEl.getBoundingClientRect();
     const l = current() || ensureLayout();
-    const at = { x: Math.min(l.width, (e.clientX - r.left) / ui.zoom), y: Math.min(l.height, (e.clientY - r.top) / ui.zoom) };
+    const o = ui.origin || { dx: 0, dy: 0 };
+    const at = { x: Math.min(l.width, (e.clientX - r.left) / ui.zoom - o.dx), y: Math.min(l.height, (e.clientY - r.top) / ui.zoom - o.dy) };
     addFromSidebar(src.key, src.path, at);
   });
   window.addEventListener('pointermove', onPointerMove);

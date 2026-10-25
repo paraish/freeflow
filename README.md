@@ -163,7 +163,8 @@ Gating, **Add to layout** places the plot you are looking at.
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
 - **Batch** repeats the page for every sample, in a grid with a chosen number of copies per
-  row; each copy fills in its own sample's numbers and keywords.
+  row; each copy fills in its own sample's numbers and keywords. Each copy is only as big as
+  the items on the page (plus a small margin), so a half-filled page gives compact copies.
 - Export: **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
   Illustrator, Inkscape or PowerPoint; density clouds embedded as images), **Download PNG**,
   **Copy as image**, **Copy plot as image** for one plot, and a preview image you can
@@ -171,6 +172,16 @@ Gating, **Add to layout** places the plot you are looking at.
 - Page sizes: Letter and A4 (portrait or landscape), 16:9 slide, or custom.
 - Layouts are kept with shared workspaces and analysis bundles. They are not part of the .wsp
   file, which has no standard layout format.
+
+## Your session is kept in this browser
+
+FreeFlow saves your session in the browser's own storage every 15 seconds when something has
+changed (and when you switch away from the tab): the FCS files, gates, compensation, axis
+settings, folders and layouts. Reload the page or reopen it later in the same browser and it
+picks up where you left off, with a note saying so; **Start a new session** in that note
+closes everything and forgets the saved copy. The data stays on your computer, in this browser
+only. Sample data and opened share links are not kept this way. For a copy you can move or
+send, use an analysis bundle.
 
 ## Analysis bundles
 
