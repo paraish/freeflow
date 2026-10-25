@@ -34,6 +34,7 @@
 
   <div id="gating-view" class="gating-view">
   <section id="welcome" class="welcome" hidden>
+    <div id="shared-open" class="shared-open" hidden></div>
     <h1>Analyse flow cytometry data in your browser</h1>
     <p class="welcome-lede">Open FCS files to gate, compensate and build figures. Your files stay on your computer: nothing is uploaded.</p>
     <div class="welcome-options">
@@ -192,6 +193,10 @@
         <label class="field"><span>Name</span><input id="ws-name" type="text" autocomplete="off"></label>
         <button id="save-bundle" class="btn btn-primary">Download bundle (.zip)</button>
       </div>
+    </section>
+    <section class="sheet-section">
+      <h3>Share a link</h3>
+      <div id="link-body"></div>
     </section>
     <section class="sheet-section">
       <h3>Workspace file (.wsp)</h3>

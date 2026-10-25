@@ -2,6 +2,9 @@ import { parseFCS } from './fcs.js';
 import { exportWSP, parseWSP } from './wsp.js';
 import { makeZip, makeZipCompressed, readZip } from './zip.js';
 import { SharedWorkspaces, stableStringify } from './share.js';
+import { PROVIDERS, forgetStorageSettings, loadStorageSettings, providerById, saveStorageSettings } from './storage/index.js';
+import { xhr } from './storage/http.js';
+import { PUBLIC_SITE, makeShareLink, sharedFileFrom } from './links.js';
 import { EXAMPLE_CONTROLS, EXAMPLE_SAMPLES, makeSyntheticControl, makeSyntheticFCS } from './synth.js';
 import { computeSpillover, detectControls } from './compcalc.js';
 import { applyCompensation, buildChannels, createSample, gatingContext, sampleKey } from './model.js';
@@ -426,58 +429,64 @@ async function saveWorkspace() {
 
 const BUNDLE_JSON = 'freeflow.json';
 
-async function saveBundle() {
+// Builds the bundle .zip. Returns { zip, bytes (of FCS data), count, skipped }.
+async function buildBundle(name) {
   const samples = S.samples.filter((s) => s.source);
-  if (!samples.length) { toast('Open some FCS files first: there is nothing to bundle yet.'); return; }
+  // Give each FCS file a unique name inside the bundle.
+  const used = new Set();
+  const named = samples.map((s) => {
+    let fn = s.fileName;
+    for (let i = 2; used.has(fn.toLowerCase()); i++) fn = s.fileName.replace(/(\.[^.]+)?$/, ` (${i})$1`);
+    used.add(fn.toLowerCase());
+    return { s, fn };
+  });
+  const files = [];
+  let bytes = 0;
+  for (const { s, fn } of named) {
+    const data = new Uint8Array(await s.source.read());
+    bytes += data.length;
+    files.push({ name: `${name}/${fn}`, data });
+  }
+  const wspText = exportWSP({ samples: named.map(({ s, fn }) => ({ ...s, fileName: fn })), transformOf: getTransform });
+  files.push({ name: `${name}/${name}.wsp`, data: wspText });
+  files.push({
+    name: `${name}/${BUNDLE_JSON}`,
+    data: JSON.stringify({ app: 'FreeFlow', format: 1, created: new Date().toISOString(), layouts: S.layouts }, null, 1),
+  });
+  files.push({
+    name: `${name}/README.txt`,
+    data: [
+      `${name}: a FreeFlow analysis bundle`,
+      '',
+      `Contains ${named.length} FCS file${named.length === 1 ? '' : 's'}, a workspace (${name}.wsp) with the gates, axis settings`,
+      'and compensation, and FreeFlow layouts (freeflow.json).',
+      '',
+      'To continue in FreeFlow: open https://paraish.github.io/freeflow/ and use Open FCS files to open this .zip',
+      '(or unzip it and use Open folder).',
+      'To continue in other analysis software: unzip it and open the .wsp; keep it in the folder with the FCS files.',
+      '',
+      'If FreeFlow contributed to your work, please cite: Misra, Paraish S. (2026). FreeFlow: a free, open-source',
+      'tool for flow cytometry analysis and figure generation [Computer software]. https://github.com/paraish/freeflow',
+      '',
+    ].join('\r\n'),
+  });
+  const zip = await makeZipCompressed(files);
+  return { zip, bytes, count: named.length, skipped: S.samples.length - samples.length };
+}
+
+const mb = (n) => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
+
+async function saveBundle() {
+  if (!S.samples.some((s) => s.source)) { toast('Open some FCS files first: there is nothing to bundle yet.'); return; }
   const name = safeFileName($('ws-name')?.value || S.wsName || 'FreeFlow analysis');
   const btn = $('save-bundle');
   btn.disabled = true;
   const label = btn.textContent;
   btn.textContent = 'Preparing…';
   try {
-    // Give each FCS file a unique name inside the bundle.
-    const used = new Set();
-    const named = samples.map((s) => {
-      let fn = s.fileName;
-      for (let i = 2; used.has(fn.toLowerCase()); i++) fn = s.fileName.replace(/(\.[^.]+)?$/, ` (${i})$1`);
-      used.add(fn.toLowerCase());
-      return { s, fn };
-    });
-    const files = [];
-    let bytes = 0;
-    for (const { s, fn } of named) {
-      const data = new Uint8Array(await s.source.read());
-      bytes += data.length;
-      files.push({ name: `${name}/${fn}`, data });
-    }
-    const wspText = exportWSP({ samples: named.map(({ s, fn }) => ({ ...s, fileName: fn })), transformOf: getTransform });
-    files.push({ name: `${name}/${name}.wsp`, data: wspText });
-    files.push({
-      name: `${name}/${BUNDLE_JSON}`,
-      data: JSON.stringify({ app: 'FreeFlow', format: 1, created: new Date().toISOString(), layouts: S.layouts }, null, 1),
-    });
-    files.push({
-      name: `${name}/README.txt`,
-      data: [
-        `${name}: a FreeFlow analysis bundle`,
-        '',
-        `Contains ${named.length} FCS file${named.length === 1 ? '' : 's'}, a workspace (${name}.wsp) with the gates, axis settings`,
-        'and compensation, and FreeFlow layouts (freeflow.json).',
-        '',
-        'To continue in FreeFlow: open https://paraish.github.io/freeflow/ and use Open FCS files to open this .zip',
-        '(or unzip it and use Open folder).',
-        'To continue in other analysis software: unzip it and open the .wsp; keep it in the folder with the FCS files.',
-        '',
-        'If FreeFlow contributed to your work, please cite: Misra, Paraish S. (2026). FreeFlow: a free, open-source',
-        'tool for flow cytometry analysis and figure generation [Computer software]. https://github.com/paraish/freeflow',
-        '',
-      ].join('\r\n'),
-    });
-    const zip = await makeZipCompressed(files);
-    const mb = (n) => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
+    const { zip, bytes, skipped } = await buildBundle(name);
     const saved = await saveBlob(`${name}.zip`, new Blob([zip], { type: 'application/zip' }));
     if (saved) {
-      const skipped = S.samples.length - samples.length;
       toast(`Saved ${name}.zip (${mb(zip.length)}, from ${mb(bytes)} of FCS data). Send it to anyone; they open it in FreeFlow with Open FCS files.${skipped ? ` ${skipped} sample${skipped === 1 ? '' : 's'} without their original file were left out.` : ''}`);
     }
   } catch (err) {
@@ -509,6 +518,126 @@ async function saveBlob(filename, blob) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
   return true;
+}
+
+// ---------------------------------------------------------------- share links (bring your own storage)
+
+const LINK = { settings: null, remember: true, link: '', busy: '' };
+
+function linkSettings() {
+  if (!LINK.settings) LINK.settings = loadStorageSettings();
+  return LINK.settings;
+}
+
+function renderLinkSection() {
+  const el = $('link-body');
+  if (!el) return;
+  const st = linkSettings();
+  const prov = providerById(st.provider) || PROVIDERS[0];
+  const cfg = st.configs[prov.id] || {};
+  const onClaude = !!globalThis.claude?.use;
+  const blocked = onClaude && !prov.manual;
+  const field = (f) => `<label class="field"><span>${esc(f.label)}</span><input data-link-field="${f.key}" type="${f.secret ? 'password' : 'text'}" autocomplete="off" spellcheck="false" placeholder="${esc(f.placeholder || '')}" value="${esc(cfg[f.key] ?? f.default ?? '')}"></label>`;
+  el.innerHTML = `
+    <p class="muted small">Upload the analysis bundle to storage you control and get a link. Whoever opens the link gets the whole analysis in FreeFlow, data included. Your storage settings stay in this browser.</p>
+    <div class="provider-pick" role="radiogroup" aria-label="Where to keep shared analyses">
+      ${PROVIDERS.map((p) => `<label><input type="radio" name="link-provider" value="${p.id}" ${p.id === prov.id ? 'checked' : ''}> <span><strong>${esc(p.label)}</strong> <span class="muted">${esc(p.summary)}</span></span></label>`).join('')}
+    </div>
+    <details class="howto"><summary>How to set up ${esc(prov.label)}</summary><ol>${prov.help.map((h) => `<li>${esc(h).replace(/(create policy[^<]*?;)/, '<code>$1</code>')}</li>`).join('')}</ol></details>
+    <div class="link-fields">${prov.fields.map(field).join('')}</div>
+    ${prov.manual ? '' : `<label class="check check-small"><input id="link-remember" type="checkbox" ${LINK.remember ? 'checked' : ''}> Remember these settings in this browser</label>`}
+    ${blocked ? `<p class="notice">The claude.ai version cannot contact outside services. Create links from FreeFlow's public site, <a href="${PUBLIC_SITE}" target="_blank" rel="noopener">${PUBLIC_SITE.replace(/^https:\/\//, '')}</a>, or choose “I will upload the bundle myself”.</p>` : ''}
+    <div class="btn-row">
+      <button id="link-create" class="btn btn-primary" ${blocked || LINK.busy || !S.samples.some((x) => x.source) ? 'disabled' : ''}>${LINK.busy ? esc(LINK.busy) : prov.manual ? 'Make link' : 'Upload and make link'}</button>
+      ${Object.keys(st.configs).length && !prov.manual ? '<button id="link-forget" class="btn btn-quiet">Forget saved settings</button>' : ''}
+    </div>
+    ${LINK.link ? `<div class="link-out"><input id="link-out" readonly value="${esc(LINK.link)}" aria-label="Share link"><button id="link-copy" class="btn">Copy link</button></div>
+      <p class="muted small">Anyone with this link can open the analysis and its data. To withdraw it, delete the file from your storage.</p>` : ''}`;
+}
+
+function readLinkFields() {
+  const st = linkSettings();
+  const cfg = { ...(st.configs[st.provider] || {}) };
+  document.querySelectorAll('[data-link-field]').forEach((i) => { cfg[i.dataset.linkField] = i.value.trim(); });
+  return cfg;
+}
+
+async function createShareLink() {
+  const st = linkSettings();
+  const prov = providerById(st.provider);
+  const cfg = readLinkFields();
+  const missing = prov.fields.filter((f) => !cfg[f.key] && !f.default).map((f) => f.label);
+  if (missing.length) { toast(`Fill in: ${missing.join(', ')}.`, true); return; }
+  if (!prov.manual) {
+    const keep = Object.fromEntries(prov.fields.filter((f) => !f.perLink).map((f) => [f.key, cfg[f.key] ?? f.default ?? '']));
+    st.configs[prov.id] = keep;
+    if ($('link-remember')?.checked) saveStorageSettings(st);
+  }
+  const name = safeFileName($('ws-name')?.value || S.wsName || 'FreeFlow analysis');
+  try {
+    let fileUrl;
+    if (prov.manual) {
+      fileUrl = await prov.upload(null, null, cfg);
+    } else {
+      LINK.busy = 'Preparing bundle…';
+      renderLinkSection();
+      const { zip } = await buildBundle(name);
+      LINK.busy = `Uploading ${mb(zip.length)}…`;
+      renderLinkSection();
+      fileUrl = await prov.upload(new Blob([zip], { type: 'application/zip' }), `${name}.zip`, cfg, (f) => {
+        const b = $('link-create');
+        if (b) b.textContent = `Uploading ${Math.round(f * 100)}%…`;
+      });
+    }
+    LINK.link = makeShareLink(fileUrl);
+    toast('Link ready. Copy it and send it to anyone who should open this analysis.');
+  } catch (err) {
+    const msg = err.status === 0
+      ? `${prov.label} did not accept an upload from this site. Check the storage's CORS settings allow uploads from ${location.origin}.`
+      : err.status === 401 || err.status === 403 ? `${prov.label} refused the upload (${err.status}): check the keys and that they may write to the bucket. ${err.message}`
+        : err.status === 413 ? `The bundle is too large for this storage (${err.message}). Supabase's free tier takes files up to 50 MB.`
+          : err.message;
+    toast(msg, true);
+  } finally {
+    LINK.busy = '';
+    renderLinkSection();
+  }
+}
+
+// Opening a share link: show what will be opened and from where, then load
+// it when the person agrees.
+function showSharedCard(fileUrl, problem = '') {
+  const el = $('shared-open');
+  const host = new URL(fileUrl).hostname;
+  el.hidden = false;
+  el.innerHTML = `
+    <h2>Someone shared an analysis with you</h2>
+    <p>It is stored at <strong>${esc(host)}</strong>. Opening it downloads the FCS files and gates into this browser.</p>
+    ${problem ? `<p class="notice is-warn">${problem}</p>` : ''}
+    <div class="btn-row"><button class="btn btn-primary" data-act="open-shared">Open shared analysis</button>
+      <button class="btn btn-quiet" data-act="dismiss-shared">Not now</button></div>`;
+  el.onclick = async (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'dismiss-shared') { el.hidden = true; return; }
+    if (act !== 'open-shared') return;
+    const btn = e.target.closest('button');
+    btn.disabled = true;
+    try {
+      const r = await xhr({ method: 'GET', url: fileUrl, responseType: 'arraybuffer', onProgress: (f) => { btn.textContent = `Downloading ${Math.round(f * 100)}%…`; } });
+      const buf = r.response;
+      const head = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
+      let name = decodeURIComponent(new URL(fileUrl).pathname.split('/').pop() || 'shared.zip');
+      if (head[0] === 0x50 && head[1] === 0x4b && !isZip(name)) name += '.zip';
+      el.hidden = true;
+      await openEntries([{ name, path: name, read: async () => buf }]);
+    } catch (err) {
+      const where = `<a href="${esc(fileUrl)}" target="_blank" rel="noopener">download the file</a>`;
+      const problem = err.status === 0
+        ? `The site holding this analysis does not let other sites download it directly. You can ${where} yourself and open it here with Open FCS files.`
+        : `It could not be downloaded (${esc(err.message)}). The file may have been removed; you can try to ${where} yourself.`;
+      showSharedCard(fileUrl, problem);
+    }
+  };
 }
 
 // ---------------------------------------------------------------- shared workspaces (live collaboration)
@@ -2058,6 +2187,7 @@ function bind() {
     $('ws-name').value = S.wsName || S.shared?.meta?.name || 'FreeFlow workspace';
     $('share-panel').hidden = false;
     renderShare();
+    renderLinkSection();
   });
   $('share-close').addEventListener('click', () => { $('share-panel').hidden = true; });
   $('save-bundle').addEventListener('click', () => {
@@ -2069,6 +2199,31 @@ function bind() {
     saveWorkspace();
   });
   $('share-panel').addEventListener('click', onShareClick);
+  $('link-body').addEventListener('change', (e) => {
+    if (e.target.name === 'link-provider') {
+      const st = linkSettings();
+      st.configs[st.provider] = { ...(st.configs[st.provider] || {}), ...readLinkFields() };
+      st.provider = e.target.value;
+      LINK.link = '';
+      renderLinkSection();
+    }
+    if (e.target.id === 'link-remember') LINK.remember = e.target.checked;
+  });
+  $('link-body').addEventListener('click', (e) => {
+    const id = e.target.closest('button')?.id;
+    if (id === 'link-create') createShareLink();
+    if (id === 'link-forget') {
+      forgetStorageSettings();
+      LINK.settings = null;
+      renderLinkSection();
+      toast('Forgot the storage settings saved in this browser.');
+    }
+    if (id === 'link-copy') {
+      const inp = $('link-out');
+      const fallback = () => { inp.focus(); inp.select(); toast('Copying is blocked here; the link is selected, so press Ctrl+C or ⌘C.'); };
+      try { navigator.clipboard.writeText(inp.value).then(() => toast('Link copied.'), fallback); } catch { fallback(); }
+    }
+  });
   $('copy-cite').addEventListener('click', () => {
     const text = $('cite-text').textContent.trim();
     const done = () => toast('Citation copied.');
@@ -2517,6 +2672,8 @@ export function start() {
     e.target.value = '';
     openEntries(files.map(fileEntry), { folder: true });
   });
+  const sharedFile = sharedFileFrom();
+  if (sharedFile) showSharedCard(sharedFile);
   sizePlot();
   renderAll();
 }

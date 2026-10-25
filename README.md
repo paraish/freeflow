@@ -123,6 +123,31 @@ settings and compensation, FreeFlow's layouts (`freeflow.json`) and a read-me. W
 it opens the .zip in FreeFlow with **Open FCS files** (or unzips it and uses **Open folder**), or
 unzips it and opens the .wsp in other analysis software. FCS data is compressed where the browser supports it.
 
+## Share links (bring your own storage)
+
+**Save & share → Share a link** uploads the analysis bundle to storage *you* control and gives you
+a link like `https://paraish.github.io/freeflow/#open=<address of the bundle>`. Whoever opens it
+sees where the analysis is stored, and on **Open shared analysis** FreeFlow downloads the bundle
+straight from your storage into their browser. FreeFlow itself stores nothing.
+
+Built-in storage options (settings are kept only in your browser):
+
+| Option | Free tier | Notes |
+| --- | --- | --- |
+| Supabase Storage | 1 GB, files up to 50 MB | Public bucket plus an upload policy; setup steps are in the app |
+| S3-compatible: Cloudflare R2, Backblaze B2, Amazon S3, MinIO | R2 and B2: 10 GB | Public bucket with a CORS rule; requests are signed in the browser (AWS Signature V4) |
+| Upload it yourself | — | Paste the address of a bundle on Dropbox, Zenodo or a lab server; Google Drive cannot work |
+
+Anyone with a link can download the data, so share links only for data you may share, and
+delete the file from your storage to withdraw a link. Creating links works on the public site
+(the claude.ai version cannot contact outside services). The storage service has to allow
+downloads from other sites (CORS); if it does not, FreeFlow says so and offers the file for
+manual download.
+
+**Adding a storage service** takes one module in `src/storage/` exporting
+`{ id, label, summary, fields, help, upload(blob, filename, settings, onProgress) }`, where
+`upload` returns the bundle's public address, then one line in `src/storage/index.js`.
+
 ## Workspaces (.wsp)
 
 - **Save & share → Download .wsp only** writes a .wsp workspace (version 10 format) with every open sample's
@@ -202,6 +227,8 @@ Source is plain ES modules in `src/`, bundled into one HTML file by `scripts/bui
 | `src/wsp.js` | .wsp workspace export and import |
 | `src/zip.js` | Zip reading and writing |
 | `src/share.js` | Live shared workspaces |
+| `src/links.js` | Share links |
+| `src/storage/` | Storage options for share links |
 | `src/figure.js` | Figures as SVG |
 | `src/layout.js` | Layout editor |
 | `src/app.js` | Interface and state |
