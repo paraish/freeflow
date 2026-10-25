@@ -1,7 +1,9 @@
 // The layout editor: pages of plots and text that can be arranged, edited,
 // repeated for every sample (batch) and exported as SVG or PNG.
 //
-// A layout: { id, name, size, width, height, items, batch, columns, sampleKey }
+// A layout: { id, name, size, width, height, items, batch, columns, rows, order, sampleKey }
+// In batch, `columns` and `rows` set the grid (0 or missing: as many as
+// needed) and `order` fills it across rows first ('row') or down columns ('col').
 // An item:  { id, kind: 'plot' | 'text', x, y, w, h, ... } in page units
 // (CSS pixels, 96 per inch). Plot items name their population by path and
 // their sample by key (null = the page's sample), so a layout works on any
@@ -128,12 +130,35 @@ export function createLayoutEditor(root, env) {
     return { x0, y0, w: x1 - x0, h: y1 - y0 };
   }
 
+  // Columns and rows of a batch grid for n copies. A size left empty grows to
+  // fit; when both are set and too small, the grid grows in the fill direction.
+  function batchGrid(layout, n) {
+    if (!layout.batch) return { cols: 1, rows: 1, byCol: false };
+    n = Math.max(1, n);
+    const byCol = layout.order === 'col';
+    let cols = Math.max(0, Math.round(layout.columns || 0));
+    let rows = Math.max(0, Math.round(layout.rows || 0));
+    if (!cols && !rows) cols = 2;
+    if (cols && !rows) rows = Math.ceil(n / cols);
+    else if (rows && !cols) cols = Math.ceil(n / rows);
+    else if (cols * rows < n) { if (byCol) cols = Math.ceil(n / rows); else rows = Math.ceil(n / cols); }
+    // No empty columns (or rows) beyond the last copy.
+    if (byCol) cols = Math.min(cols, Math.ceil(n / rows)); else rows = Math.min(rows, Math.ceil(n / cols));
+    if (!byCol) cols = Math.min(cols, n); else rows = Math.min(rows, n);
+    return { cols, rows, byCol };
+  }
+
+  function gridNote(l) {
+    const n = env.batchSamples(l).length;
+    const g = batchGrid(l, n);
+    return `${n} cop${n === 1 ? 'y' : 'ies'} in ${g.cols} column${g.cols === 1 ? '' : 's'} × ${g.rows} row${g.rows === 1 ? '' : 's'}. Leave columns or rows empty to fit every sample.`;
+  }
+
   function sheet(layout) {
     if (!layout) return { width: 800, height: 600, svg: pageSVG({ width: 800, height: 600, parts: [] }), blocks: [], origin: { dx: 0, dy: 0 }, cell: { x0: 0, y0: 0, w: 800, h: 600 } };
     // Batch copies skip compensation controls.
     const samples = layout.batch ? env.batchSamples(layout) : [pageSampleOf(layout)];
-    const cols = layout.batch ? Math.max(1, Math.min(layout.columns || 1, samples.length || 1)) : 1;
-    const rows = Math.max(1, Math.ceil(samples.length / cols));
+    const { cols, rows, byCol } = batchGrid(layout, samples.length);
     // In batch, each copy is only as big as the items on the page (plus a
     // margin), not the whole page.
     const cell = batchCell(layout);
@@ -142,10 +167,12 @@ export function createLayoutEditor(root, env) {
     const parts = [];
     const blocks = [];
     samples.forEach((s, i) => {
-      const cx = (i % cols) * cell.w, cy = Math.floor(i / cols) * cell.h;
+      const c = byCol ? Math.floor(i / rows) : i % cols;
+      const r = byCol ? i % rows : Math.floor(i / cols);
+      const cx = c * cell.w, cy = r * cell.h;
       const dx = cx - cell.x0, dy = cy - cell.y0;
       blocks.push({ dx, dy, sample: s });
-      if (layout.batch && i > 0) parts.push(`<line x1="${cx}" y1="${cy}" x2="${cx + cell.w}" y2="${cy}" stroke="#dddddd" stroke-width="0.5"/>`);
+      if (layout.batch && r > 0) parts.push(`<line x1="${cx}" y1="${cy}" x2="${cx + cell.w}" y2="${cy}" stroke="#dddddd" stroke-width="0.5"/>`);
       for (const item of layout.items) parts.push(itemSVG(item, s, dx, dy));
     });
     return { width, height, svg: pageSVG({ width, height, parts }), blocks, origin: { dx: -cell.x0, dy: -cell.y0 }, cell };
@@ -327,7 +354,9 @@ export function createLayoutEditor(root, env) {
           ${l.batch ? '' : field('', 'Sample', `<select id="lpg-sample"><option value="">Sample open in gating</option>${samples.map((x) => `<option value="${escH(env.sampleKey(x))}" ${l.sampleKey === env.sampleKey(x) ? 'selected' : ''}>${escH(x.name)}</option>`).join('')}</select>`)}
           ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${env.batchSamples(l).length})`)}
           ${l.batch ? field('', 'Repeat for', `<select id="lpg-group"><option value="">All samples (not controls)</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`) : ''}
-          ${l.batch ? field('', 'Copies per row', num('lpg-cols', l.columns, 'min="1" max="12" step="1"')) : ''}
+          ${l.batch ? `<div class="field-pair">${field('', 'Columns', `<input id="lpg-cols" type="number" min="0" max="24" step="1" value="${l.columns || ''}" placeholder="Auto">`)}${field('', 'Rows', `<input id="lpg-rows" type="number" min="0" max="24" step="1" value="${l.rows || ''}" placeholder="Auto">`)}</div>
+          ${field('', 'Fill order', `<select id="lpg-order"><option value="row" ${l.order !== 'col' ? 'selected' : ''}>Across, then down</option><option value="col" ${l.order === 'col' ? 'selected' : ''}>Down, then across</option></select>`)}
+          <p id="lpg-grid" class="muted small">${gridNote(l)}</p>` : ''}
         </div>
       </section>
       <section class="card">
@@ -505,7 +534,9 @@ export function createLayoutEditor(root, env) {
       case 'lpg-sample': l.sampleKey = val || null; return changed({ props: true });
       case 'lpg-batch': l.batch = val; return changed({ props: true });
       case 'lpg-group': l.batchGroup = val || null; return changed({ props: true });
-      case 'lpg-cols': if (n >= 1) { l.columns = Math.round(n); changed(); } return;
+      case 'lpg-cols': l.columns = n >= 1 ? Math.round(n) : 0; $('lpg-grid').textContent = gridNote(l); return changed();
+      case 'lpg-rows': l.rows = n >= 1 ? Math.round(n) : 0; $('lpg-grid').textContent = gridNote(l); return changed();
+      case 'lpg-order': l.order = val === 'col' ? 'col' : 'row'; return changed({ props: true });
       default: break;
     }
     if (!it) return;

@@ -162,8 +162,9 @@ Gating, **Add to layout** places the plot you are looking at.
 - Text items and titles take fill-ins: `{sample}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
-- **Batch** repeats the page for every sample, in a grid with a chosen number of copies per
-  row; each copy fills in its own sample's numbers and keywords. Each copy is only as big as
+- **Batch** repeats the page for every sample, in a grid: set the number of **Columns** and/or
+  **Rows** (leave one empty to fit every sample) and the **Fill order** (across, then down; or
+  down, then across). Each copy fills in its own sample's numbers and keywords. Each copy is only as big as
   the items on the page (plus a small margin), so a half-filled page gives compact copies.
 - Export: **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
   Illustrator, Inkscape or PowerPoint; density clouds embedded as images), **Download PNG**,
