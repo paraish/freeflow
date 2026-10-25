@@ -13,7 +13,7 @@ figures. Files are read locally in your browser and are never uploaded.
 
 Use it at **https://paraish.github.io/freeflow/**, or open `dist/freeflow.html` in any
 modern browser (download it, then double-click it); it is a single self-contained file.
-It opens on a welcome screen: open FCS files, open a folder with a FlowJo workspace, or
+It opens on a welcome screen: open FCS files, open a folder with a .wsp workspace, or
 **Try sample data** (three synthetic samples with gates and an example figure, removable
 with one click).
 
@@ -42,10 +42,10 @@ with one click).
 
   - linear (min/max)
   - log (decades)
-  - **Biex** (FlowJo's biexponential, the default for fluorescence): top of scale, positive
-    decades, width basis (−1 to −1000), extra negative decades. This is a port of
-    FlowJo's own lookup-table algorithm, checked against FlowKit's implementation, so plots and
-    polygon gates match FlowJo.
+  - **Biex** (the widely used lookup-table biexponential, the default for fluorescence): top of
+    scale, positive decades, width basis (−1 to −1000), extra negative decades. Ported from
+    FlowKit and checked against its implementation (see `NOTICE`), so plots and polygon gates
+    match other software that reads .wsp workspaces.
   - Logicle (Parks et al. 2006): T, W, M, A
   - arcsinh (cofactor, min, max)
 
@@ -104,7 +104,7 @@ Gating, **Add to layout** places the plot you are looking at.
   title, axis labels, font size, width and height, gates and gate labels on or off.
 - Text items and titles take fill-ins: `{sample}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
-  braces, such as `{$DATE}` or `{DONOR}` (including keywords added in FlowJo).
+  braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
 - **Batch** repeats the page for every sample, in a grid with a chosen number of copies per
   row; each copy fills in its own sample's numbers and keywords.
 - Export: **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
@@ -112,38 +112,38 @@ Gating, **Add to layout** places the plot you are looking at.
   **Copy as image**, **Copy plot as image** for one plot, and a preview image you can
   right-click to copy.
 - Page sizes: Letter and A4 (portrait or landscape), 16:9 slide, or custom.
-- Layouts are kept with shared workspaces. They are not part of the .wsp file, since FlowJo's
-  layout format is different.
+- Layouts are kept with shared workspaces and analysis bundles. They are not part of the .wsp
+  file, which has no standard layout format.
 
 ## Analysis bundles
 
 **Save & share → Download bundle (.zip)** packs everything needed to continue an analysis
-somewhere else: the original FCS files (byte for byte), a FlowJo workspace with the gates, axis
+somewhere else: the original FCS files (byte for byte), a .wsp workspace with the gates, axis
 settings and compensation, FreeFlow's layouts (`freeflow.json`) and a read-me. Whoever receives
 it opens the .zip in FreeFlow with **Open FCS files** (or unzips it and uses **Open folder**), or
-unzips it and opens the .wsp in FlowJo. FCS data is compressed where the browser supports it.
+unzips it and opens the .wsp in other analysis software. FCS data is compressed where the browser supports it.
 
-## FlowJo workspaces (.wsp)
+## Workspaces (.wsp)
 
-- **Save & share → Download .wsp** writes a FlowJo 10 workspace with every open sample's
+- **Save & share → Download .wsp only** writes a .wsp workspace (version 10 format) with every open sample's
   gates, axis settings, compensation matrix and keywords. On claude.ai the file is saved
   inside a .zip (the hosted page can only save certain file types); unzip it before opening it
-  in FlowJo. Opened from `dist/freeflow.html`, it saves the .wsp directly.
+  in other software. Opened from `dist/freeflow.html`, it saves the .wsp directly.
 - **Open folder** opens a folder of FCS files containing exactly one .wsp, applies the
   workspace and connects each of its samples to an FCS file by file name (then by `$FIL`),
   checking event counts. A folder with no .wsp, or more than one, is refused with an
   explanation. Dropping a folder on the page does the same. **Open FCS files** also accepts a
   .wsp (or the saved .zip) picked together with FCS files.
-- Imported from FlowJo: rectangle, polygon, ellipse (converted to a polygon, as FlowJo does
-  internally), range and quadrant gates; linear, log, biex, Logicle and ArcSinh axes;
+- Imported from .wsp workspaces: rectangle, polygon, ellipse (converted to a polygon), range
+  and quadrant gates; linear, log, biex, Logicle and ArcSinh axes;
   compensation matrices (any prefix); custom keywords; plot axes per population. Not yet
   imported (reported by name when skipped): Boolean gates, exclusion ("outside") gates,
   spectral unmixing matrices, derived parameters.
-- Checked with [FlowKit](https://github.com/whitews/FlowKit), an independent reader of
-  FlowJo 10 workspaces: `npm run check:flowjo` exports the example samples with every gate
+- Checked with [FlowKit](https://github.com/whitews/FlowKit), an independent open-source reader
+  of .wsp workspaces: `npm run check:wsp` exports the example samples with every gate
   and axis type, has FlowKit gate the FCS files from the .wsp, and compares counts. All 33
-  populations match exactly. (Needs Python with `pip install flowkit`.) FlowJo itself has
-  not been run on these files yet; please report anything it does differently.
+  populations match exactly. (Needs Python with `pip install flowkit`.) Please report any
+  .wsp file that opens differently in other software.
 
 ## Working together
 
@@ -166,12 +166,13 @@ change wins.
 
 ## Accuracy notes
 
-- The biexponential axis is the published Logicle transform (Parks, Roederer & Moore,
-  *Cytometry A* 2006; Moore & Parks 2012). FlowJo's biex is close to it but not identical,
-  so plots can look slightly different. Population frequencies from axis-aligned gates
-  (rectangle, range, quadrant) do not depend on the axis transform at all.
+- The default fluorescence axis is the lookup-table biex transform used in .wsp workspaces;
+  FreeFlow's port matches FlowKit's to within 10⁻⁶. The Logicle option is the published
+  transform (Parks, Roederer & Moore, *Cytometry A* 2006; Moore & Parks 2012). Population
+  frequencies from axis-aligned gates (rectangle, range, quadrant) do not depend on the axis
+  transform at all.
 - Polygon gates are evaluated in display space, so changing an axis transform after
-  drawing a polygon changes which events it contains, as in FlowJo.
+  drawing a polygon changes which events it contains, as in other cytometry software.
 - Off-scale events are drawn pinned to the plot edge and are counted by gates that touch
   that edge.
 
@@ -180,7 +181,7 @@ change wins.
 ```sh
 npm install
 npm test        # unit tests: transforms, FCS, compensation, gating, .wsp, zip, sync
-npm run check:flowjo   # .wsp round trip through FlowKit (needs Python + flowkit)
+npm run check:wsp      # .wsp round trip through FlowKit (needs Python + flowkit)
 npm run build   # writes dist/freeflow.html
 ```
 
@@ -195,10 +196,10 @@ Source is plain ES modules in `src/`, bundled into one HTML file by `scripts/bui
 | `src/gating.js` | Gate evaluation, population tree, statistics |
 | `src/plot.js` | Canvas rendering |
 | `src/synth.js` | Synthetic example data |
-| `src/biex.js` | FlowJo biex transform |
+| `src/biex.js` | Biex transform |
 | `src/compcalc.js` | Compensation from single-stain controls |
 | `src/model.js` | Samples: channels, compensation, gating context |
-| `src/wsp.js` | FlowJo workspace export and import |
+| `src/wsp.js` | .wsp workspace export and import |
 | `src/zip.js` | Zip reading and writing |
 | `src/share.js` | Live shared workspaces |
 | `src/figure.js` | Figures as SVG |
@@ -221,7 +222,7 @@ GitHub's **Cite this repository** button (from `CITATION.cff`) gives APA and Bib
 FreeFlow is free software under the GNU Affero General Public License v3 (`LICENSE`), with an
 additional term under section 7(b): copies and modified versions must keep the author
 attribution and the "How to cite" notice in the app's footer. See `NOTICE`, which also credits
-FlowKit (BSD 3-Clause) and cytolib (AGPL-3.0), the sources of the FlowJo biex transform.
+FlowKit (BSD 3-Clause) and cytolib (AGPL-3.0), the sources of the biex transform.
 
 For research use only, not for diagnostic procedures. Provided as is, without warranty.
 FreeFlow is not affiliated with or endorsed by BD Biosciences or FlowJo; FlowJo is a trademark

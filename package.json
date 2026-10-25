@@ -5,7 +5,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test test/*.test.mjs",
-    "check:flowjo": "node scripts/wsp-roundtrip.mjs wsp-check && python3 scripts/check_wsp_flowkit.py wsp-check"
+    "check:wsp": "node scripts/wsp-roundtrip.mjs wsp-check && python3 scripts/check_wsp_flowkit.py wsp-check"
   },
   "repository": {
     "type": "git",
