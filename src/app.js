@@ -345,7 +345,7 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
 
 // ---------------------------------------------------------------- keeping the session in this browser
 
-const AS = { last: null, busy: false, off: false, restoring: false };
+const AS = { last: null, busy: false, off: false, restoring: false, worked: false }; // worked: a save has succeeded
 const AUTOSAVE_MS = 15000;
 
 // Saves the session if anything changed since the last save. FCS files are
@@ -375,9 +375,11 @@ async function autosave() {
     await putSession({ savedAt: new Date().toISOString(), wsp: wspText, json, ui, files });
     await pruneFiles(new Set(files.map((f) => f.key)));
     AS.last = sig;
+    AS.worked = true;
   } catch (err) {
     AS.off = true;
-    toast(`This session can no longer be kept in the browser (${err?.name === 'QuotaExceededError' ? 'not enough storage space' : err?.message || err}). Use Save & share to keep a copy.`, true);
+    // Where the browser keeps nothing (private windows, blocked storage), stay quiet.
+    if (AS.worked || err?.name === 'QuotaExceededError') toast(`This session can no longer be kept in the browser (${err?.name === 'QuotaExceededError' ? 'not enough storage space' : err?.message || err}). Use Save & share to keep a copy.`, true);
   } finally {
     AS.busy = false;
   }
