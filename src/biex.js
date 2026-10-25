@@ -2,6 +2,11 @@
 // and interpolates linearly between its points. This port follows FlowKit's
 // generate_biex_lut, which was ported from cytolib, itself ported from
 // FlowJo's own Java code, so plots and gates match FlowJo.
+//
+// Derived from FlowKit (https://github.com/whitews/FlowKit, BSD 3-Clause,
+// Copyright (c) 2018, Scott White) and cytolib
+// (https://github.com/RGLab/cytolib, AGPL-3.0-only, Copyright 2019 Fred
+// Hutchinson Cancer Research Center). See NOTICE.
 //   width: width basis (negative, e.g. -10, -100, -1000)
 //   pos:   positive decades
 //   neg:   extra negative decades

@@ -1,0 +1,30 @@
+FreeFlow
+Copyright (C) 2026 Paraish Misra
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License, version 3, as published by
+the Free Software Foundation (see LICENSE).
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+Additional term under section 7(b) of the GNU Affero General Public License:
+copies and modified versions of FreeFlow must preserve the author attribution
+and the "How to cite" notice shown in the application's footer, and the
+citation information in CITATION.cff, in their user interface and source code.
+
+For research use only. Not for use in diagnostic procedures.
+
+FreeFlow is not affiliated with, endorsed by, or sponsored by Becton, Dickinson
+and Company (BD) or FlowJo. FlowJo is a trademark of Becton, Dickinson and
+Company. FreeFlow reads and writes FlowJo workspace files for interoperability.
+
+Third-party code
+----------------
+src/biex.js implements FlowJo's biexponential transform following FlowKit's
+generate_biex_lut (https://github.com/whitews/FlowKit, BSD 3-Clause License,
+Copyright (c) 2018, Scott White), which states it was ported from cytolib
+(https://github.com/RGLab/cytolib, AGPL-3.0-only, Copyright 2019 Fred
+Hutchinson Cancer Research Center), whose code notes it was translated from a
+Java routine from Tree Star (FlowJo's original developer).

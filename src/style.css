@@ -372,6 +372,14 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .apply-to { border: 1px solid var(--line); border-radius: var(--r); padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; }
 .apply-to legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
 
+/* ---- footer */
+.site-foot { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 12px; }
+.site-foot p { margin: 0; max-width: 110ch; }
+.site-foot .cite { color: var(--fg); }
+.site-foot #cite-text { user-select: all; }
+.site-foot .btn-small { margin-left: 6px; vertical-align: baseline; }
+.site-foot a { color: var(--accent); }
+
 /* ---- drop & toast */
 .drop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(29, 95, 196, 0.12); border: 3px dashed var(--accent); pointer-events: none; }
 .drop p { background: var(--surface); padding: 12px 18px; border-radius: var(--r); font-weight: 600; font-size: 15px; }

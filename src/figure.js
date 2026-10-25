@@ -177,5 +177,6 @@ export function textSVG(t) {
 // A whole page (or batch sheet) as a standalone SVG document.
 export function pageSVG({ width, height, parts }) {
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${f(width)}" height="${f(height)}" viewBox="0 0 ${f(width)} ${f(height)}">`
+    + '<desc>Made with FreeFlow (https://github.com/paraish/freeflow)</desc>'
     + `<rect width="${f(width)}" height="${f(height)}" fill="#ffffff"/>${parts.join('')}</svg>`;
 }

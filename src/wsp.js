@@ -156,6 +156,7 @@ export function exportWSP({ samples, transformOf, now = new Date() }) {
   const refs = samples.map((_, i) => `<SampleRef sampleID="${i + 1}"/>`).join('');
   const date = now.toString().replace(/ \(.*\)$/, '');
   return `<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by FreeFlow (https://github.com/paraish/freeflow). If FreeFlow contributed to your work, please cite it: see CITATION.cff in that repository. -->
 <Workspace version="20.0" modDate="${xml(date)}" flowJoVersion="10.7.1" curGroup="All Samples" xmlns:xsi="${NS.xsi}" xmlns:gating="${NS.gating}" xmlns:transforms="${NS.transforms}" xmlns:data-type="${NS['data-type']}">
 <Matrices>${matrices.map((m) => matrixXML(m.comp, m.id, m.name)).join('')}</Matrices>
 <Groups><GroupNode name="All Samples" annotation="" owningGroup="All Samples" expanded="0" sortPriority="10" count="${samples.length}"><Group name="All Samples"><Criteria/><SampleRefs>${refs}</SampleRefs></Group></GroupNode></Groups>

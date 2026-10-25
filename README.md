@@ -1,5 +1,8 @@
 # FreeFlow
 
+[![Cite this software](https://img.shields.io/badge/cite-CITATION.cff-blue)](CITATION.cff)
+
+
 Flow cytometry analysis in the browser: open FCS files, compensate, draw gates on
 transformed axes, and compare population statistics across samples. Files are read
 locally in your browser and are never uploaded.
@@ -189,3 +192,23 @@ Source is plain ES modules in `src/`, bundled into one HTML file by `scripts/bui
 | `src/figure.js` | Figures as SVG |
 | `src/layout.js` | Layout editor |
 | `src/app.js` | Interface and state |
+
+## How to cite
+
+If FreeFlow contributed to your work, please cite it:
+
+> Misra P. FreeFlow: browser-based flow cytometry analysis with FlowJo workspace
+> compatibility (version 0.1.0). 2026. https://github.com/paraish/freeflow
+
+GitHub's **Cite this repository** button (from `CITATION.cff`) gives APA and BibTeX.
+
+## License
+
+FreeFlow is free software under the GNU Affero General Public License v3 (`LICENSE`), with an
+additional term under section 7(b): copies and modified versions must keep the author
+attribution and the "How to cite" notice in the app's footer. See `NOTICE`, which also credits
+FlowKit (BSD 3-Clause) and cytolib (AGPL-3.0), the sources of the FlowJo biex transform.
+
+For research use only, not for diagnostic procedures. Provided as is, without warranty.
+FreeFlow is not affiliated with or endorsed by BD Biosciences or FlowJo; FlowJo is a trademark
+of Becton, Dickinson and Company.

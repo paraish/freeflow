@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If FreeFlow contributed to your work, please cite it as below."
+title: "FreeFlow: browser-based flow cytometry analysis with FlowJo workspace compatibility"
+type: software
+authors:
+  - family-names: Misra
+    given-names: Paraish
+version: 0.1.0
+date-released: 2026-10-25
+license: AGPL-3.0-only
+repository-code: "https://github.com/paraish/freeflow"
+url: "https://paraish.github.io/freeflow/"
+keywords:
+  - flow cytometry
+  - gating
+  - compensation
+  - FCS
+  - FlowJo

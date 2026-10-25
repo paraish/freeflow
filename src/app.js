@@ -1944,6 +1944,15 @@ function bind() {
     saveWorkspace();
   });
   $('share-panel').addEventListener('click', onShareClick);
+  $('copy-cite').addEventListener('click', () => {
+    const text = $('cite-text').textContent.trim();
+    const done = () => toast('Citation copied.');
+    const fallback = () => {
+      getSelection().selectAllChildren($('cite-text'));
+      toast('Copying is blocked here; the citation is selected, so press Ctrl+C or ⌘C.');
+    };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch { fallback(); }
+  });
   $('share-panel').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.id === 'share-new-name') { e.preventDefault(); $('share-create')?.click(); }
   });
