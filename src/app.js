@@ -1055,8 +1055,9 @@ function updateUndoButtons() {
 }
 
 function clearHistory() {
-  clearHistory();
+  S.undo = [];
   S.redo = [];
+  updateUndoButtons();
 }
 
 function undo() {
@@ -2873,21 +2874,21 @@ function bind() {
     if (shown.length && !shown.some((x) => x.id === S.sampleId)) { S.sampleId = shown[0].id; S.selId = null; S.draft = null; }
     renderAll();
   });
-  // The right-hand settings pane starts collapsed; the choice is remembered.
-  const setRight = (open) => {
+  // The right-hand settings pane starts open; a choice to fold it is remembered.
+  const setRight = (open, remember) => {
     $('right-pane').classList.toggle('is-collapsed', !open);
     $('gating-work').classList.toggle('right-collapsed', !open);
     const t = $('right-toggle');
     t.setAttribute('aria-expanded', String(open));
     t.title = open ? 'Hide axis, gate and statistics settings' : 'Show axis, gate and statistics settings';
     t.querySelector('.rt-label').textContent = open ? 'Hide settings' : 'Settings';
-    try { localStorage.setItem('freeflow.rightOpen', open ? '1' : '0'); } catch { /* not stored */ }
+    if (remember) try { localStorage.setItem('freeflow.settingsOpen', open ? '1' : '0'); } catch { /* not stored */ }
     sizePlot();
   };
-  let rightOpen = false;
-  try { rightOpen = localStorage.getItem('freeflow.rightOpen') === '1'; } catch { /* default */ }
-  setRight(rightOpen);
-  $('right-toggle').addEventListener('click', () => setRight($('right-pane').classList.contains('is-collapsed')));
+  let rightOpen = true;
+  try { rightOpen = localStorage.getItem('freeflow.settingsOpen') !== '0'; } catch { /* default */ }
+  setRight(rightOpen, false);
+  $('right-toggle').addEventListener('click', () => setRight($('right-pane').classList.contains('is-collapsed'), true));
 
   $('group-quick').addEventListener('submit', (e) => {
     e.preventDefault();
