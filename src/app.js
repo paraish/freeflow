@@ -1613,6 +1613,7 @@ function createGate(gate, baseName) {
   parent.children.push(pop);
   recomputeFrom(pop);
   S.selId = pop.id;
+  S.tool = 'select'; // back to Select after each gate
   if (S.mode === 'group') adoptAsFolderGates([pop]);
   renderAll();
   focusGateName();
@@ -2555,6 +2556,7 @@ function setMode(mode) {
   if (mode === 'group') $('group-gate').append($('inspector'));
   else $('right-pane').insertBefore($('inspector'), $('popstats'));
   S.draft = null;
+  S.tool = 'select';
   S.multi.clear();
   if (layout) { layoutEditor.render(); return; }
   restoreRight();
