@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" width="72" alt="FreeFlow logo: a droplet holding a density plot">
+
 # FreeFlow
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23650055.svg)](https://doi.org/10.5281/zenodo.23650055)

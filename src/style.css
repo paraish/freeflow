@@ -71,13 +71,7 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 /* ---- top bar */
 .topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 8px; margin-right: 6px; }
-.brand-mark {
-  width: 20px; height: 20px; border-radius: 4px;
-  background:
-    linear-gradient(var(--gate), var(--gate)) 50% 0 / 1.5px 100% no-repeat,
-    linear-gradient(var(--gate), var(--gate)) 0 50% / 100% 1.5px no-repeat,
-    conic-gradient(from 90deg, #e0331e 0 25%, #f2c500 0 50%, #11a35b 0 75%, #1c62e6 0);
-}
+.brand-mark { width: 26px; height: 26px; flex: none; display: block; }
 .brand-name { font-weight: 700; font-size: 17px; letter-spacing: -0.01em; }
 .example-note { margin: 0; color: var(--muted); font-size: 12px; flex: 1 1 260px; min-width: 0; }
 .topbar-actions { display: flex; gap: 8px; margin-left: auto; }
