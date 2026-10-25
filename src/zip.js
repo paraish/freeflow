@@ -17,17 +17,14 @@ export function crc32(bytes) {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-// files: [{ name, data: Uint8Array | string }] -> Uint8Array
-export function makeZip(files, date = new Date()) {
-  const enc = new TextEncoder();
+// entries: [{ name: Uint8Array, data: Uint8Array (as stored), method: 0 | 8,
+// crc, size (uncompressed) }] -> Uint8Array
+function buildZip(entries, date) {
   const time = ((date.getHours() << 11) | (date.getMinutes() << 5) | (date.getSeconds() >> 1)) & 0xffff;
   const day = (((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate()) & 0xffff;
-  const entries = files.map((f) => {
-    const data = typeof f.data === 'string' ? enc.encode(f.data) : f.data;
-    return { name: enc.encode(f.name), data, crc: crc32(data) };
-  });
-  const size = entries.reduce((a, e) => a + 30 + e.name.length + e.data.length + 46 + e.name.length, 0) + 22;
-  const out = new Uint8Array(size);
+  const total = entries.reduce((a, e) => a + 30 + e.name.length + e.data.length + 46 + e.name.length, 0) + 22;
+  if (total > 0xffffffff) throw new Error('This bundle is over 4 GB, which a standard .zip cannot hold. Save fewer samples at a time.');
+  const out = new Uint8Array(total);
   const dv = new DataView(out.buffer);
   let off = 0;
   const offsets = [];
@@ -36,12 +33,12 @@ export function makeZip(files, date = new Date()) {
     dv.setUint32(off, 0x04034b50, true);
     dv.setUint16(off + 4, 20, true);
     dv.setUint16(off + 6, 0x0800, true); // UTF-8 names
-    dv.setUint16(off + 8, 0, true); // stored
+    dv.setUint16(off + 8, e.method, true);
     dv.setUint16(off + 10, time, true);
     dv.setUint16(off + 12, day, true);
     dv.setUint32(off + 14, e.crc, true);
     dv.setUint32(off + 18, e.data.length, true);
-    dv.setUint32(off + 22, e.data.length, true);
+    dv.setUint32(off + 22, e.size, true);
     dv.setUint16(off + 26, e.name.length, true);
     dv.setUint16(off + 28, 0, true);
     out.set(e.name, off + 30);
@@ -54,12 +51,12 @@ export function makeZip(files, date = new Date()) {
     dv.setUint16(off + 4, 20, true);
     dv.setUint16(off + 6, 20, true);
     dv.setUint16(off + 8, 0x0800, true);
-    dv.setUint16(off + 10, 0, true);
+    dv.setUint16(off + 10, e.method, true);
     dv.setUint16(off + 12, time, true);
     dv.setUint16(off + 14, day, true);
     dv.setUint32(off + 16, e.crc, true);
     dv.setUint32(off + 20, e.data.length, true);
-    dv.setUint32(off + 24, e.data.length, true);
+    dv.setUint32(off + 24, e.size, true);
     dv.setUint16(off + 28, e.name.length, true);
     dv.setUint32(off + 42, offsets[i], true);
     out.set(e.name, off + 46);
@@ -71,6 +68,41 @@ export function makeZip(files, date = new Date()) {
   dv.setUint32(off + 12, off - cdStart, true);
   dv.setUint32(off + 16, cdStart, true);
   return out;
+}
+
+const toBytes = (d) => (typeof d === 'string' ? new TextEncoder().encode(d) : d instanceof Uint8Array ? d : new Uint8Array(d));
+
+// files: [{ name, data: Uint8Array | ArrayBuffer | string }] -> Uint8Array, uncompressed.
+export function makeZip(files, date = new Date()) {
+  const enc = new TextEncoder();
+  return buildZip(files.map((f) => {
+    const data = toBytes(f.data);
+    return { name: enc.encode(f.name), data, method: 0, crc: crc32(data), size: data.length };
+  }), date);
+}
+
+async function deflateRaw(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+// Like makeZip, but deflates each file when the browser can and it helps.
+export async function makeZipCompressed(files, date = new Date()) {
+  const enc = new TextEncoder();
+  const canDeflate = typeof CompressionStream !== 'undefined';
+  const entries = [];
+  for (const f of files) {
+    const raw = toBytes(f.data);
+    const crc = crc32(raw);
+    let data = raw;
+    let method = 0;
+    if (canDeflate && raw.length > 256) {
+      const packed = await deflateRaw(raw);
+      if (packed.length < raw.length * 0.95) { data = packed; method = 8; }
+    }
+    entries.push({ name: enc.encode(f.name), data, method, crc, size: raw.length });
+  }
+  return buildZip(entries, date);
 }
 
 async function inflateRaw(bytes) {

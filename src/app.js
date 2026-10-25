@@ -1,6 +1,6 @@
 import { parseFCS } from './fcs.js';
 import { exportWSP, parseWSP } from './wsp.js';
-import { makeZip, readZip } from './zip.js';
+import { makeZip, makeZipCompressed, readZip } from './zip.js';
 import { SharedWorkspaces, stableStringify } from './share.js';
 import { EXAMPLE_CONTROLS, EXAMPLE_SAMPLES, makeSyntheticControl, makeSyntheticFCS } from './synth.js';
 import { computeSpillover, detectControls } from './compcalc.js';
@@ -101,7 +101,7 @@ function addSample(fcs, isExample = false) {
 function loadExamples() {
   for (const spec of EXAMPLE_SAMPLES) {
     const buf = makeSyntheticFCS(spec);
-    addSample(parseFCS(buf, `${spec.name}.fcs`), true);
+    addSample(parseFCS(buf, `${spec.name}.fcs`), true).source = { read: async () => buf };
   }
   S.examples = true;
   S.sampleId = S.samples.find((x) => x.isExample)?.id ?? S.samples[0].id;
@@ -228,6 +228,7 @@ function dropExamples() {
 async function openEntries(rawEntries, { folder = false } = {}) {
   const entries = (await expandZips(rawEntries)).filter((e) => !baseName(e.path).startsWith('.'));
   const wsps = entries.filter((e) => isWSP(e.name));
+  const extras = entries.filter((e) => e.name === BUNDLE_JSON);
   const fcs = entries.filter((e) => isFCS(e.name));
   const where = folder ? 'This folder' : 'These files';
   if (folder && wsps.length === 0) {
@@ -261,7 +262,9 @@ async function openEntries(rawEntries, { folder = false } = {}) {
     try {
       const parsed = parseFCS(await f.read(), f.name);
       dropExamples();
-      added.push(addSample(parsed));
+      const s = addSample(parsed);
+      s.source = { read: f.read }; // the original bytes, for analysis bundles
+      added.push(s);
     } catch (err) {
       errors.push(err.message || String(err));
     }
@@ -274,6 +277,19 @@ async function openEntries(rawEntries, { folder = false } = {}) {
     report = applyWorkspace(ws, wsps[0].name);
   }
   for (const s of added) applyPendingShared(s);
+  let bundleLayouts = 0;
+  for (const e of extras) {
+    try {
+      const info = JSON.parse(new TextDecoder().decode(await e.read()));
+      if (Array.isArray(info.layouts)) {
+        const ids = new Set(info.layouts.map((l) => l.id));
+        S.layouts = [...S.layouts.filter((l) => !ids.has(l.id)), ...info.layouts];
+        bundleLayouts += info.layouts.length;
+      }
+    } catch (err) {
+      errors.push(`${e.path}: ${err.message}`);
+    }
+  }
   if (added.length) S.sampleId = added[0].id;
   if (!sample()) S.sampleId = S.samples[0]?.id ?? null;
   S.viewPath = [];
@@ -284,7 +300,7 @@ async function openEntries(rawEntries, { folder = false } = {}) {
 
   const lines = [];
   if (report) {
-    lines.push(`Loaded ${wsps[0].name}: ${report.connected.length} of ${report.total} sample${report.total === 1 ? '' : 's'} connected to FCS files.`);
+    lines.push(`Loaded ${wsps[0].name}: ${report.connected.length} of ${report.total} sample${report.total === 1 ? '' : 's'} connected to FCS files${bundleLayouts ? `, plus ${bundleLayouts} layout${bundleLayouts === 1 ? '' : 's'}` : ''}.`);
     if (report.missing.length) lines.push(`No FCS file found for: ${report.missing.slice(0, 6).join(', ')}${report.missing.length > 6 ? ` and ${report.missing.length - 6} more` : ''}. Open those files to connect them.`);
     lines.push(...report.warnings.slice(0, 4));
     if (report.warnings.length > 4) lines.push(`…and ${report.warnings.length - 4} more notes.`);
@@ -400,6 +416,99 @@ async function saveWorkspace() {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   toast(`Saved ${name}.wsp. Keep it in the folder with the FCS files.`);
+}
+
+// ---------------------------------------------------------------- analysis bundles
+//
+// One .zip with everything needed to continue an analysis elsewhere: the
+// original FCS files, the FlowJo workspace, FreeFlow's layouts and a read-me.
+// Opening the .zip in FreeFlow restores it; unzipped, the folder opens in FlowJo.
+
+const BUNDLE_JSON = 'freeflow.json';
+
+async function saveBundle() {
+  const samples = S.samples.filter((s) => s.source);
+  if (!samples.length) { toast('Open some FCS files first: there is nothing to bundle yet.'); return; }
+  const name = safeFileName($('ws-name')?.value || S.wsName || 'FreeFlow analysis');
+  const btn = $('save-bundle');
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = 'Preparing…';
+  try {
+    // Give each FCS file a unique name inside the bundle.
+    const used = new Set();
+    const named = samples.map((s) => {
+      let fn = s.fileName;
+      for (let i = 2; used.has(fn.toLowerCase()); i++) fn = s.fileName.replace(/(\.[^.]+)?$/, ` (${i})$1`);
+      used.add(fn.toLowerCase());
+      return { s, fn };
+    });
+    const files = [];
+    let bytes = 0;
+    for (const { s, fn } of named) {
+      const data = new Uint8Array(await s.source.read());
+      bytes += data.length;
+      files.push({ name: `${name}/${fn}`, data });
+    }
+    const wspText = exportWSP({ samples: named.map(({ s, fn }) => ({ ...s, fileName: fn })), transformOf: getTransform });
+    files.push({ name: `${name}/${name}.wsp`, data: wspText });
+    files.push({
+      name: `${name}/${BUNDLE_JSON}`,
+      data: JSON.stringify({ app: 'FreeFlow', format: 1, created: new Date().toISOString(), layouts: S.layouts }, null, 1),
+    });
+    files.push({
+      name: `${name}/README.txt`,
+      data: [
+        `${name}: a FreeFlow analysis bundle`,
+        '',
+        `Contains ${named.length} FCS file${named.length === 1 ? '' : 's'}, a FlowJo workspace (${name}.wsp) with the gates, axis settings`,
+        'and compensation, and FreeFlow layouts (freeflow.json).',
+        '',
+        'To continue in FreeFlow: open https://paraish.github.io/freeflow/ and use Open FCS files to open this .zip',
+        '(or unzip it and use Open folder).',
+        'To continue in FlowJo: unzip it and open the .wsp; keep it in the folder with the FCS files.',
+        '',
+        'If FreeFlow contributed to your work, please cite: Misra, Paraish S. (2026). FreeFlow: browser-based flow',
+        'cytometry analysis with FlowJo workspace compatibility [Computer software]. https://github.com/paraish/freeflow',
+        '',
+      ].join('\r\n'),
+    });
+    const zip = await makeZipCompressed(files);
+    const mb = (n) => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
+    const saved = await saveBlob(`${name}.zip`, new Blob([zip], { type: 'application/zip' }));
+    if (saved) {
+      const skipped = S.samples.length - samples.length;
+      toast(`Saved ${name}.zip (${mb(zip.length)}, from ${mb(bytes)} of FCS data). Send it to anyone; they open it in FreeFlow with Open FCS files.${skipped ? ` ${skipped} sample${skipped === 1 ? '' : 's'} without their original file were left out.` : ''}`);
+    }
+  } catch (err) {
+    toast(`The bundle could not be made: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+// Saves a file through the viewer's downloads capability on claude.ai, or a
+// plain download link elsewhere. Resolves true when it was handed over.
+async function saveBlob(filename, blob) {
+  const claude = globalThis.claude;
+  const downloads = claude?.use ? await claude.use('downloads').catch(() => null) : null;
+  if (downloads) {
+    try {
+      await downloads.save({ filename, data: blob });
+      return true;
+    } catch (e) {
+      if (e?.code === 'declined') return false;
+      throw new Error(e?.message || String(e));
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return true;
 }
 
 // ---------------------------------------------------------------- shared workspaces (live collaboration)
@@ -1639,7 +1748,7 @@ function applyCompCalc() {
 function addExampleControls() {
   for (const c of EXAMPLE_CONTROLS) {
     const { name, buffer } = makeSyntheticControl(c);
-    addSample(parseFCS(buffer, `${name}.fcs`), true);
+    addSample(parseFCS(buffer, `${name}.fcs`), true).source = { read: async () => buffer };
   }
   CC.detected = false;
   renderAll();
@@ -1951,6 +2060,10 @@ function bind() {
     renderShare();
   });
   $('share-close').addEventListener('click', () => { $('share-panel').hidden = true; });
+  $('save-bundle').addEventListener('click', () => {
+    S.wsName = $('ws-name').value.trim() || S.wsName;
+    saveBundle();
+  });
   $('save-wsp').addEventListener('click', () => {
     S.wsName = $('ws-name').value.trim() || S.wsName;
     saveWorkspace();

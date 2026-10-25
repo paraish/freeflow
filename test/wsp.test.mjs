@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DOMParser } from '@xmldom/xmldom';
 import { exportWSP, parseWSP } from '../src/wsp.js';
-import { makeZip, readZip } from '../src/zip.js';
+import { makeZip, makeZipCompressed, readZip } from '../src/zip.js';
 import { makeScaler } from '../src/transforms.js';
 
 // A small workspace in the shape FlowJo 10 writes, with a custom
@@ -173,4 +173,13 @@ test('reads deflated zip entries', async () => {
   zip.set(local); zip.set(cd, local.length);
   const files = await readZip(zip.buffer);
   assert.equal(new TextDecoder().decode(files[0].data), 'hello hello hello hello workspace');
+});
+
+test('compressed zip round trip', async () => {
+  const big = new Uint8Array(50000).map((_, i) => (i % 7) * 13);
+  const z = await makeZipCompressed([{ name: 'a/data.fcs', data: big }, { name: 'a/x.wsp', data: '<Workspace/>' }]);
+  assert.ok(z.length < big.length / 2, 'repetitive data is compressed');
+  const files = await readZip(z.buffer);
+  assert.deepEqual(files.map((f) => f.name), ['a/data.fcs', 'a/x.wsp']);
+  assert.deepEqual([...files[0].data], [...big]);
 });

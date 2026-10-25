@@ -115,6 +115,14 @@ Gating, **Add to layout** places the plot you are looking at.
 - Layouts are kept with shared workspaces. They are not part of the .wsp file, since FlowJo's
   layout format is different.
 
+## Analysis bundles
+
+**Save & share → Download bundle (.zip)** packs everything needed to continue an analysis
+somewhere else: the original FCS files (byte for byte), a FlowJo workspace with the gates, axis
+settings and compensation, FreeFlow's layouts (`freeflow.json`) and a read-me. Whoever receives
+it opens the .zip in FreeFlow with **Open FCS files** (or unzips it and uses **Open folder**), or
+unzips it and opens the .wsp in FlowJo. FCS data is compressed where the browser supports it.
+
 ## FlowJo workspaces (.wsp)
 
 - **Save & share → Download .wsp** writes a FlowJo 10 workspace with every open sample's
