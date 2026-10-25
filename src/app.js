@@ -37,7 +37,7 @@ const S = {
   version: 0,
   stat: { metric: 'freqParent', channel: null },
   clip: null, // copied gates: { items: [serialized populations], label }
-  mode: 'gating', // or 'layout'
+  mode: 'gating', // or 'group' (group gating) or 'layout'
   layouts: [],
   groups: [], // folders; see groups.js
   groupGates: {}, // folder id -> folder gate templates; see groupgates.js
@@ -1110,9 +1110,11 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
   const hist = v.type === 'histogram';
   const out = [];
   const seenQuad = new Set();
+  const only = S.mode === 'group' ? S.groupId : null;
   for (const c of pop.children) {
     const g = c.gate;
     if (!g) continue;
+    if (only && c.link?.group !== only) continue;
     const sub = fmtPct(pct(c.indices.length, pop.indices.length));
     if (hist) {
       if (g.type !== 'range' || g.x !== v.x) continue;
@@ -1167,19 +1169,26 @@ function requestPlot() {
   });
 }
 
+function plotColors() {
+  return {
+    surface: cssVar('--surface'), plotBg: cssVar('--plot'), fg: cssVar('--fg'), muted: cssVar('--muted'),
+    axis: cssVar('--axis'), gate: cssVar('--gate'), gateSel: cssVar('--gate-sel'), labelBg: cssVar('--label-bg'),
+    histFill: cssVar('--hist-fill'), histLine: cssVar('--hist-line'), dotRGB: hexToRGB(cssVar('--dot')),
+  };
+}
+
+const histTicks = () => [0, 25, 50, 75, 100].map((p) => ({ s: (p / 100) * 0.95, major: true, label: String(p), v: p }));
+
 function drawPlot() {
   const s = sample();
   const pop = viewedPop();
   const canvas = plot.canvas;
   const w = plot.size;
   const h = plot.size;
-  const colors = {
-    surface: cssVar('--surface'), plotBg: cssVar('--plot'), fg: cssVar('--fg'), muted: cssVar('--muted'),
-    axis: cssVar('--axis'), gate: cssVar('--gate'), gateSel: cssVar('--gate-sel'), labelBg: cssVar('--label-bg'),
-    histFill: cssVar('--hist-fill'), histLine: cssVar('--hist-line'), dotRGB: hexToRGB(cssVar('--dot')),
-  };
+  const colors = plotColors();
   const fontSans = cssVar('--font-sans');
   const fontMono = cssVar('--font-mono');
+  if (S.mode === 'group') drawTiles();
   if (!s || !pop) {
     plot.geo = renderPlot(canvas, { w, h, dpr: devicePixelRatio || 1, colors, fontSans, fontMono, xTicks: [], yTicks: [], xLabel: '', yLabel: '', gates: [] });
     return;
@@ -1188,9 +1197,7 @@ function drawPlot() {
   const hist = v.type === 'histogram';
   const sx = scalerFor(v.x);
   const sy = hist ? null : scalerFor(v.y);
-  const yTicks = hist
-    ? [0, 25, 50, 75, 100].map((p) => ({ s: (p / 100) * 0.95, major: true, label: String(p), v: p }))
-    : sy.ticks();
+  const yTicks = hist ? histTicks() : sy.ticks();
   let draft = S.draft;
   if (draft && draft.kind === 'rect') {
     const [a, b] = draft.start; const [c, d] = draft.cur;
@@ -1204,6 +1211,139 @@ function drawPlot() {
     gates: gateShapes(), draft,
   });
   $('plot-count').textContent = `${fmtInt(pop.indices.length)} events`;
+}
+
+// ---------------------------------------------------------------- group gating tiles
+//
+// Every sample of the folder, small, showing the population open on the
+// main plot with the main plot's axes. Gates can be moved and reshaped in a
+// tile for that sample alone; new gates are drawn on the main plot.
+
+const tiles = new Map(); // sample id -> { canvas, geo, pop, key }
+
+function renderTiles() {
+  const el = $('tiles');
+  const g = currentGroup();
+  const shown = visibleSamples();
+  const main = viewedPop();
+  $('tiles-title').textContent = `${g.name}: ${main?.name ?? ''}`;
+  tiles.clear();
+  if (!shown.length) {
+    el.innerHTML = `<p class="muted small">No samples in ${esc(g.name)} yet.</p>`;
+    return;
+  }
+  el.innerHTML = shown.map((s) => {
+    const pop = findByPath(s.root, S.viewPath);
+    const adjusted = pop?.children.some((c) => c.link?.group === g.id && c.custom);
+    return `<figure class="tile${s.id === S.sampleId ? ' is-main' : ''}" data-sample="${s.id}">
+      <figcaption>
+        <button class="tile-name" data-act="tile-main" title="Show ${esc(s.name)} on the main plot">${esc(s.name)}</button>
+        <span class="tile-meta">${pop ? fmtInt(pop.indices.length) : ''}</span>
+      </figcaption>
+      ${pop ? '<canvas class="tile-plot"></canvas>' : `<p class="tile-missing">No “${esc(S.viewPath[S.viewPath.length - 1] ?? 'All Events')}” population</p>`}
+      ${adjusted ? '<p class="tile-adj"><span class="fg-mark is-custom">adjusted for this sample</span><button class="btn btn-quiet btn-small" data-act="tile-reset" title="Use the folder’s gates again in this sample">Reset</button></p>' : ''}
+    </figure>`;
+  }).join('');
+  for (const s of shown) {
+    const canvas = el.querySelector(`.tile[data-sample="${s.id}"] canvas`);
+    if (canvas) tiles.set(s.id, { canvas, geo: null, pop: null, key: '' });
+  }
+  requestPlot();
+}
+
+// Each array and object gets a number, so a redraw can tell what changed.
+const objId = (() => {
+  const ids = new WeakMap();
+  let n = 0;
+  return (o) => { if (!ids.has(o)) ids.set(o, ++n); return ids.get(o); };
+})();
+
+function drawTiles() {
+  for (const s of S.samples) if (tiles.has(s.id)) drawTile(s);
+}
+
+function drawTile(s, force = false) {
+  const t = tiles.get(s.id);
+  const main = viewedPop();
+  if (!t || !main || !t.canvas.isConnected) return;
+  const pop = findByPath(s.root, S.viewPath);
+  if (!pop) return;
+  const v = viewOf(main);
+  const hist = v.type === 'histogram';
+  const has = (n) => s.channels.some((c) => c.name === n);
+  const w = Math.max(120, Math.floor(t.canvas.parentElement.clientWidth - 12));
+  const shapes = has(v.x) && (hist || has(v.y)) ? gateShapes(pop, v) : [];
+  const key = [w, pop.id, objId(pop.indices), v.x, v.y, v.type, scalerFor(v.x).key, hist ? '' : scalerFor(v.y).key, S.selId,
+    cssVar('--surface'), JSON.stringify(shapes.map((sh) => [sh.pts, sh.cx, sh.cy, sh.lo, sh.hi, sh.level, sh.sub, sh.quads?.map((q) => q.sub)]))].join('|');
+  if (!force && key === t.key) return;
+  t.key = key;
+  t.pop = pop;
+  const colors = plotColors();
+  if (!has(v.x) || (!hist && !has(v.y))) {
+    t.geo = renderPlot(t.canvas, { w, h: w, dpr: devicePixelRatio || 1, colors, fontSans: cssVar('--font-sans'), fontMono: cssVar('--font-mono'), compact: true, xTicks: [], yTicks: [], xLabel: '', yLabel: '', gates: [] });
+    return;
+  }
+  t.geo = renderPlot(t.canvas, {
+    w, h: w, dpr: devicePixelRatio || 1, colors, fontSans: cssVar('--font-sans'), fontMono: cssVar('--font-mono'), compact: true,
+    type: v.type, xs: scaled(s, v.x), ys: hist ? null : scaled(s, v.y), idx: pop.indices,
+    xTicks: scalerFor(v.x).ticks(), yTicks: hist ? histTicks() : scalerFor(v.y).ticks(),
+    xLabel: '', yLabel: '', gates: shapes,
+  });
+}
+
+function tileAt(ev) {
+  const fig = ev.target.closest?.('.tile');
+  const s = fig && S.samples.find((x) => x.id === fig.dataset.sample);
+  const t = s && tiles.get(s.id);
+  if (!t?.geo || ev.target !== t.canvas) return null;
+  const r = t.canvas.getBoundingClientRect();
+  const px = ev.clientX - r.left, py = ev.clientY - r.top;
+  const [sx, sy] = t.geo.toScale(px, py);
+  const v = viewOf(viewedPop());
+  return { s, t, px, py, sx, sy, hit: hitTest(px, py, t.geo, gateShapes(t.pop, v)) };
+}
+
+function onTilePointerDown(ev) {
+  if (ev.button !== 0) return;
+  const a = tileAt(ev);
+  if (!a) return;
+  if (!a.hit) {
+    if (S.selId) { S.selId = null; drawTiles(); requestPlot(); renderSide(); }
+    return;
+  }
+  S.selId = a.hit.pop.id;
+  if (a.hit.mode !== 'select') {
+    const csx = Math.max(0, Math.min(1, a.sx)), csy = Math.max(0, Math.min(1, a.sy));
+    drag = {
+      mode: a.hit.mode, index: a.hit.index, pop: a.hit.pop, start: [csx, csy], orig: cloneGate(a.hit.pop.gate),
+      undoSnap: snapshot(), undoPushed: false, sample: a.s, tile: a.t,
+    };
+    a.t.canvas.setPointerCapture(ev.pointerId);
+  }
+  drawTiles();
+  requestPlot();
+  renderSide();
+}
+
+function onTilePointerMove(ev) {
+  if (drag?.tile) {
+    const r = drag.tile.canvas.getBoundingClientRect();
+    const [sx, sy] = drag.tile.geo.toScale(ev.clientX - r.left, ev.clientY - r.top);
+    applyDrag(Math.max(0, Math.min(1, sx)), Math.max(0, Math.min(1, sy)));
+    return;
+  }
+  const a = tileAt(ev);
+  if (!a) return;
+  const m = a.hit?.mode;
+  a.t.canvas.style.cursor = !m ? 'default' : m === 'vertex' || m === 'quad' || m === 'rangeEdge' ? 'crosshair' : m === 'move' ? 'move' : 'pointer';
+}
+
+function onTilePointerUp() {
+  if (!drag?.tile) return;
+  const moved = drag.undoPushed;
+  drag = null;
+  if (moved) renderAll();
+  flushRemoteQueue();
 }
 
 // ---------------------------------------------------------------- pointer interaction
@@ -1220,10 +1360,8 @@ const near = (geo, a, b, px, py, tol) => {
   return Math.hypot(x - px, y - py) <= tol;
 };
 
-function hitTest(px, py) {
-  const geo = plot.geo;
+function hitTest(px, py, geo = plot.geo, shapes = gateShapes()) {
   const [sx, sy] = geo.toScale(px, py);
-  const shapes = gateShapes();
   const clamp = (v) => Math.max(0, Math.min(1, v));
   // Handles of the selected gate first.
   for (const sh of shapes) {
@@ -1274,7 +1412,9 @@ function applyDrag(sx, sy) {
     updateUndoButtons();
     d.undoPushed = true;
     // A folder gate moved on one sample becomes this sample's own version.
-    for (const q of d.mode === 'quad' ? quadSiblings(d.pop) : [d.pop]) if (q.link) q.custom = true;
+    // On the main plot of group gating it stays the folder's gate, and the
+    // change goes to the whole folder when the drag ends.
+    if (!d.forFolder) for (const q of d.mode === 'quad' ? quadSiblings(d.pop) : [d.pop]) if (q.link) q.custom = true;
   }
   if (!d.undoPushed) return;
   const fx = (n) => scalerFor(n).fwd;
@@ -1311,10 +1451,23 @@ function applyDrag(sx, sy) {
       g.level = Math.max(0.05, Math.min(0.95, (o.level ?? 0.82) + dy));
     }
   }
-  for (const q of d.mode === 'quad' ? quadSiblings(d.pop) : [d.pop]) recompute(q, ctxFor(sample()), sample().n);
+  for (const q of d.mode === 'quad' ? quadSiblings(d.pop) : [d.pop]) recompute(q, ctxFor(d.sample), d.sample.n);
   S.version++;
-  requestPlot();
+  if (d.tile) drawTile(d.sample);
+  if (d.sample === sample()) requestPlot();
   renderTrees();
+}
+
+// The end of a drag on the main plot of group gating: the folder's gate
+// becomes what was drawn, for every sample not adjusted on its own.
+function commitFolderDrag(d) {
+  for (const q of d.mode === 'quad' ? quadSiblings(d.pop) : [d.pop]) {
+    const t = templateFor(q);
+    if (!t) continue;
+    t.node.gate = cloneGate(q.gate);
+    delete q.custom;
+  }
+  syncFolderGates();
 }
 
 function onPointerDown(ev) {
@@ -1358,7 +1511,8 @@ function onPointerDown(ev) {
   if (hit.mode !== 'select') {
     drag = {
       mode: hit.mode, index: hit.index, pop: hit.pop, start: [sx, sy], orig: cloneGate(hit.pop.gate),
-      undoSnap: snapshot(), undoPushed: false,
+      undoSnap: snapshot(), undoPushed: false, sample: sample(),
+      forFolder: S.mode === 'group' && hit.pop.link?.group === S.groupId,
     };
     plot.canvas.setPointerCapture(ev.pointerId);
   }
@@ -1390,6 +1544,7 @@ function onPointerMove(ev) {
 function onPointerUp() {
   if (drag) {
     const moved = drag.undoPushed;
+    if (moved && drag.forFolder) commitFolderDrag(drag);
     drag = null;
     if (moved) renderAll();
     flushRemoteQueue();
@@ -1445,8 +1600,25 @@ function createGate(gate, baseName) {
   parent.children.push(pop);
   recomputeFrom(pop);
   S.selId = pop.id;
+  if (S.mode === 'group') adoptAsFolderGates([pop]);
   renderAll();
   focusGateName();
+}
+
+// Group gating: gates drawn on the main plot become the folder's gates and
+// are added to every sample in it. Under a folder gate they join its tree.
+function adoptAsFolderGates(pops) {
+  const g = currentGroup();
+  const entries = S.groupGates[g.id] || (S.groupGates[g.id] = []);
+  const parent = pops[0].parent;
+  const holder = parent.link?.group === g.id ? findTemplate(entries, parent.link.gid) : null;
+  for (const p of pops) {
+    const node = templateFrom(p);
+    if (holder) holder.node.children.push(node); else entries.push({ parentPath: pathOf(parent), node });
+    p.link = { group: g.id, gid: node.gid };
+  }
+  const missing = syncFolderGates();
+  if (missing.length) toast(`Not added to ${missing.join(', ')}: missing the parent population.`, true);
 }
 
 function createQuad(sx, sy) {
@@ -1468,11 +1640,15 @@ function createQuad(sx, sy) {
   S.version++;
   S.selId = made[1].id;
   S.tool = 'select';
+  if (S.mode === 'group') adoptAsFolderGates(made);
   renderAll();
 }
 
 function deleteGate(pop) {
   const pops = pop.gate?.type === 'quad' ? quadSiblings(pop) : [pop];
+  // In group gating, deleting a folder gate deletes it for the whole folder.
+  const linked = S.mode === 'group' ? pops.filter((q) => q.link?.group === S.groupId) : [];
+  if (linked.length) { deleteFolderGate(S.groupId, linked.map((q) => q.link.gid), true); return; }
   pushUndo();
   for (const q of pops) {
     const t = templateFor(q);
@@ -1503,6 +1679,8 @@ function treeRows(s, list) {
   const active = s.id === S.sampleId;
   const viewed = active ? viewedPop() : null;
   const rows = [];
+  const shown = S.mode === 'group' ? groupShown(s) : null;
+  const kidsOf = (p) => (shown ? p.children.filter((c) => shown.has(c)) : p.children);
   const visit = (p, depth) => {
     const key = `${list}:${p.id}`;
     const collapsed = S.collapsed.has(key);
@@ -1511,8 +1689,10 @@ function treeRows(s, list) {
     if (p === viewed) cls.push('is-view');
     if (active && p.id === S.selId) cls.push('is-sel');
     if (S.multi.has(p.id)) cls.push('is-multi');
+    if (shown && p.parent && p.link?.group !== S.groupId) cls.push('is-context');
     const drag = p.gate ? ' draggable="true"' : '';
-    const twisty = p.children.length
+    const kids = kidsOf(p);
+    const twisty = kids.length
       ? `<button class="twisty" data-act="twisty" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${esc(p.name)}">${collapsed ? '▸' : '▾'}</button>`
       : '<span class="twisty-space"></span>';
     rows.push(`<li class="${cls.join(' ')}" style="--depth:${depth}" data-id="${p.id}" data-list="${list}"${drag}>${twisty}
@@ -1520,10 +1700,35 @@ function treeRows(s, list) {
         <span class="pop-name">${esc(p.name)}${p.link ? `<span class="fg-mark${p.custom ? ' is-custom' : ''}" title="${esc(p.custom ? `Folder gate from ${folderGateName(p.link)}, adjusted for this sample only` : `Folder gate from ${folderGateName(p.link)}`)}">${p.custom ? 'adjusted' : ''}</span>` : ''}</span>
         <span class="pop-stats"><span class="pop-num">${fmtInt(p.indices.length)}</span><span class="pop-pct">${par}</span></span>
       </button></li>`);
-    if (!collapsed) for (const c of p.children) visit(c, depth + 1);
+    if (!collapsed) for (const c of kids) visit(c, depth + 1);
   };
   visit(s.root, 0);
   return rows.join('');
+}
+
+// Group gating shows a sample's gates from the selected folder, with the
+// populations above them; with none, only All Events.
+function groupShown(s) {
+  const out = new Set([s.root]);
+  walk(s.root, (p) => {
+    if (p.link?.group !== S.groupId) return;
+    for (let q = p; q && !out.has(q); q = q.parent) out.add(q);
+  });
+  return out;
+}
+
+// Keeps group gating on a member of the folder and on a population it shows.
+function fitGroupView() {
+  const shown = visibleSamples();
+  if (shown.length && !shown.includes(sample())) { S.sampleId = shown[0].id; S.selId = null; S.draft = null; }
+  const s = sample();
+  if (!s) return;
+  const keep = groupShown(s);
+  let p = viewedPop();
+  while (p && !keep.has(p)) p = p.parent;
+  if (p && pathOf(p).join('\u0000') !== S.viewPath.join('\u0000')) { S.viewPath = pathOf(p); S.selId = null; }
+  const sel = S.selId && popById(S.selId);
+  if (sel && sel.link?.group !== S.groupId) S.selId = null;
 }
 
 function keepScroll(el, fn) {
@@ -1749,11 +1954,13 @@ function folderGateName(link) {
 // Deleting a folder gate from the Folders pane: for every sample, or only
 // the folder's management of it (each sample keeps its copy).
 function deleteFolderGate(groupId, gid, everywhere) {
-  const t = findTemplate(templatesOf(groupId), gid);
-  if (!t) return;
+  const found = [].concat(gid).map((x) => findTemplate(templatesOf(groupId), x)).filter(Boolean);
+  if (!found.length) return;
+  const t = found[0];
   pushUndo();
-  const gids = subtreeGids(t.node);
-  t.remove();
+  const gids = new Set(found.flatMap((f) => [...subtreeGids(f.node)]));
+  // Found again each time: removing one shifts the places of the others.
+  for (const f of found) findTemplate(templatesOf(groupId), f.node.gid)?.remove();
   for (const x of S.samples) {
     if (everywhere) {
       for (const parent of removeLinkedPops(x, groupId, gids)) recompute(parent, ctxFor(x), x.n);
@@ -1767,7 +1974,7 @@ function deleteFolderGate(groupId, gid, everywhere) {
   S.version++;
   GF.confirm = null;
   renderAll();
-  toast(everywhere ? `Deleted "${t.node.name}" from every sample in ${groupById(groupId)?.name}.`
+  toast(everywhere ? `Deleted "${found.length > 1 ? found.map((f) => f.node.name).join('", "') : t.node.name}" from every sample in ${groupById(groupId)?.name}.`
     : `"${t.node.name}" is no longer a folder gate; each sample keeps its own copy.`);
 }
 
@@ -1857,7 +2064,10 @@ function renderToolbar() {
   if (v) { xs.value = v.x; ys.value = v.y; }
   xs.disabled = ys.disabled = !s;
   $('axis-y-wrap').hidden = hist;
-  $('hint').textContent = TOOLS.find((t) => t.id === S.tool)?.hint ?? '';
+  const hint = TOOLS.find((t) => t.id === S.tool)?.hint ?? '';
+  $('hint').textContent = S.mode === 'group'
+    ? `${hint} Gates drawn or changed here apply to every sample in ${currentGroup().name}; to change one sample only, adjust its gate in its tile.`
+    : hint;
 }
 
 // ---------------------------------------------------------------- rendering: side panel
@@ -1930,6 +2140,7 @@ function inspectorPop() {
 function renderInspector() {
   const el = $('inspector');
   const pop = inspectorPop();
+  if (!pop && S.mode === 'group') { el.innerHTML = ''; return; }
   if (!pop) {
     el.innerHTML = `<section class="card"><header class="card-head"><span class="eyebrow">Gate</span></header>
       <p class="muted small">Select a gate on the plot to rename, copy or delete it. Pick a drawing tool above the plot to add one.</p></section>`;
@@ -1937,6 +2148,7 @@ function renderInspector() {
   }
   const g = pop.gate;
   const s = sample();
+  const grouping = S.mode === 'group' && pop.link?.group === S.groupId;
   const params = gateParams(g).map((n) => shortLabel(s, n)).join(' vs ');
   el.innerHTML = `<section class="card">
     <header class="card-head"><span class="eyebrow">Gate</span><span class="chan">${gateDescription(g)} · ${esc(params)}</span></header>
@@ -1948,16 +2160,16 @@ function renderInspector() {
     </dl>
     ${pop.link ? `<div class="fg-status${pop.custom ? ' is-custom' : ''}">
       <p><strong>Folder gate</strong> from ${esc(folderGateName(pop.link))}. ${pop.custom
-        ? 'Adjusted for this sample only: the other samples keep the folder’s gate.'
-        : 'Moving or reshaping it here changes this sample only.'}</p>
+        ? `Adjusted for this sample only: the other samples keep the folder’s gate.${grouping ? ' Moving it here applies it to the whole folder.' : ''}`
+        : grouping ? 'Changes here apply to every sample in the folder that has not been adjusted in its tile.' : 'Moving or reshaping it here changes this sample only.'}</p>
       ${pop.custom ? `<div class="btn-row"><button class="btn btn-small" data-act="fg-use">Use the folder’s gate</button>
         <button class="btn btn-small" data-act="fg-promote">Apply this gate to the whole folder</button></div>` : ''}
     </div>` : ''}
     <div class="btn-row">
       ${pop === viewedPop() ? '' : '<button class="btn" data-act="open-gate">Open population</button>'}
       <button class="btn" data-act="clip-gate" title="Copy, then paste into any population (Ctrl+C)">Copy gate</button>
-      <button class="btn" data-act="copy-gate" ${S.samples.length < 2 ? 'disabled' : ''}>Copy to all samples</button>
-      <button class="btn btn-danger" data-act="delete-gate">Delete</button>
+      ${grouping ? '' : `<button class="btn" data-act="copy-gate" ${S.samples.length < 2 ? 'disabled' : ''}>Copy to all samples</button>`}
+      <button class="btn btn-danger" data-act="delete-gate">${grouping ? 'Delete from every sample' : 'Delete'}</button>
     </div>
   </section>`;
 }
@@ -2340,8 +2552,35 @@ function setMode(mode) {
   });
   $('gating-view').hidden = layout;
   $('layout-view').hidden = !layout;
-  if (layout) layoutEditor.render();
-  else renderAll();
+  $('gating-work').classList.toggle('is-group', mode === 'group');
+  $('tiles-section').hidden = mode !== 'group';
+  // Group gating keeps the gate card under the main plot, in view.
+  if (mode === 'group') $('group-gate').append($('inspector'));
+  else $('right-pane').insertBefore($('inspector'), $('popstats'));
+  S.draft = null;
+  S.multi.clear();
+  if (layout) { layoutEditor.render(); return; }
+  restoreRight();
+  renderAll();
+}
+
+// The settings pane: open by default in Gating, folded in Group gating so
+// the tiles have room. A choice to open or fold it is remembered per view.
+const rightKey = () => (S.mode === 'group' ? 'freeflow.groupSettingsOpen' : 'freeflow.settingsOpen');
+function setRight(open, remember) {
+  $('right-pane').classList.toggle('is-collapsed', !open);
+  $('gating-work').classList.toggle('right-collapsed', !open);
+  const t = $('right-toggle');
+  t.setAttribute('aria-expanded', String(open));
+  t.title = open ? 'Hide axis, gate and statistics settings' : 'Show axis, gate and statistics settings';
+  t.querySelector('.rt-label').textContent = open ? 'Hide settings' : 'Settings';
+  if (remember) try { localStorage.setItem(rightKey(), open ? '1' : '0'); } catch { /* not stored */ }
+  sizePlot();
+}
+function restoreRight() {
+  let open = S.mode !== 'group';
+  try { const v = localStorage.getItem(rightKey()); if (v) open = v === '1'; } catch { /* default */ }
+  setRight(open, false);
 }
 
 function addCurrentToLayout() {
@@ -2500,9 +2739,11 @@ function renderAll() {
   $('gating-work').hidden = empty;
   $('stats-section').hidden = empty;
   if (empty) return;
+  if (S.mode === 'group') fitGroupView();
   renderGroups();
   renderSamples();
   renderTree();
+  if (S.mode === 'group') renderTiles();
   renderToolbar();
   renderSide();
   renderStats();
@@ -2874,20 +3115,35 @@ function bind() {
     if (shown.length && !shown.some((x) => x.id === S.sampleId)) { S.sampleId = shown[0].id; S.selId = null; S.draft = null; }
     renderAll();
   });
-  // The right-hand settings pane starts open; a choice to fold it is remembered.
-  const setRight = (open, remember) => {
-    $('right-pane').classList.toggle('is-collapsed', !open);
-    $('gating-work').classList.toggle('right-collapsed', !open);
-    const t = $('right-toggle');
-    t.setAttribute('aria-expanded', String(open));
-    t.title = open ? 'Hide axis, gate and statistics settings' : 'Show axis, gate and statistics settings';
-    t.querySelector('.rt-label').textContent = open ? 'Hide settings' : 'Settings';
-    if (remember) try { localStorage.setItem('freeflow.settingsOpen', open ? '1' : '0'); } catch { /* not stored */ }
-    sizePlot();
-  };
-  let rightOpen = true;
-  try { rightOpen = localStorage.getItem('freeflow.settingsOpen') !== '0'; } catch { /* default */ }
-  setRight(rightOpen, false);
+  $('tiles').addEventListener('pointerdown', onTilePointerDown);
+  $('tiles').addEventListener('pointermove', onTilePointerMove);
+  $('tiles').addEventListener('pointerup', onTilePointerUp);
+  $('tiles').addEventListener('pointercancel', () => { if (drag?.tile) { drag = null; renderAll(); } });
+  $('tiles').addEventListener('dblclick', (ev) => {
+    const a = tileAt(ev);
+    if (!a?.hit) return;
+    S.viewPath = pathOf(a.hit.pop);
+    S.selId = null;
+    renderAll();
+  });
+  $('tiles').addEventListener('click', (ev) => {
+    const act = ev.target.closest('[data-act]')?.dataset.act;
+    const fig = ev.target.closest('.tile');
+    const s = fig && S.samples.find((x) => x.id === fig.dataset.sample);
+    if (!s || !act) return;
+    if (act === 'tile-main') { S.sampleId = s.id; S.selId = null; S.draft = null; renderAll(); }
+    if (act === 'tile-reset') {
+      const pop = findByPath(s.root, S.viewPath);
+      if (!pop) return;
+      pushUndo();
+      for (const c of pop.children) if (c.link?.group === S.groupId) delete c.custom;
+      syncFolderGates();
+      renderAll();
+      toast(`${s.name} uses ${currentGroup().name}’s gates again.`);
+    }
+  });
+  new ResizeObserver(() => { if (S.mode === 'group') requestPlot(); }).observe($('tiles'));
+  restoreRight();
   $('right-toggle').addEventListener('click', () => setRight($('right-pane').classList.contains('is-collapsed'), true));
 
   $('group-quick').addEventListener('submit', (e) => {

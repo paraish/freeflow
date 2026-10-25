@@ -21,6 +21,7 @@
     </label>
     <div class="seg-group mode-switch" role="group" aria-label="View">
       <button class="seg is-on" data-mode="gating" aria-pressed="true">Gating</button>
+      <button class="seg" data-mode="group" aria-pressed="false" title="Gate a whole folder at once, with every sample tiled below">Group gating</button>
       <button class="seg" data-mode="layout" aria-pressed="false">Layout</button>
     </div>
     <p id="example-note" class="example-note" hidden>Showing sample data (synthetic). Opening your own files replaces it.
@@ -122,6 +123,14 @@
       </div>
       <div id="plot-wrap" class="plot-wrap"><canvas id="plot" aria-label="Flow cytometry plot"></canvas></div>
       <p id="hint" class="hint"></p>
+      <div id="group-gate" class="group-gate"></div>
+      <section id="tiles-section" class="tiles-section" hidden aria-label="Every sample in the folder">
+        <header class="tiles-head">
+          <h2 id="tiles-title"></h2>
+          <span class="muted small">Adjust a gate in a tile to change that sample only. Click a name to show it above.</span>
+        </header>
+        <div id="tiles" class="tiles"></div>
+      </section>
     </section>
 
     <aside id="right-pane" class="right">

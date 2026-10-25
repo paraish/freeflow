@@ -2,9 +2,11 @@
 // Everything is drawn from display-scale coordinates in [0, 1].
 
 export const MARGIN = { l: 62, r: 14, t: 14, b: 52 };
+// Small plots (group gating tiles): tick labels only, no axis titles.
+export const COMPACT_MARGIN = { l: 34, r: 6, t: 6, b: 18 };
 
-export function geometry(w, h) {
-  const l = MARGIN.l, t = MARGIN.t, r = w - MARGIN.r, b = h - MARGIN.b;
+export function geometry(w, h, m = MARGIN) {
+  const l = m.l, t = m.t, r = w - m.r, b = h - m.b;
   return {
     l, t, r, b, pw: r - l, ph: b - t,
     toPx: (sx, sy) => [l + sx * (r - l), b - sy * (b - t)],
@@ -147,7 +149,7 @@ function drawHistogram(g, geo, o) {
 
 function drawAxes(g, geo, o) {
   const c = o.colors;
-  g.font = `11px ${o.fontMono}`;
+  g.font = `${o.compact ? 9 : 11}px ${o.fontMono}`;
   g.fillStyle = c.muted;
   g.strokeStyle = c.axis;
   g.lineWidth = 1;
@@ -159,7 +161,7 @@ function drawAxes(g, geo, o) {
     const sorted = ticks.filter((t) => t.major && t.label).sort((a, b) => Math.abs(a.v) - Math.abs(b.v));
     for (const t of sorted) {
       const p = toPos(t.s);
-      if (kept.every((q) => Math.abs(q.p - p) >= 22)) kept.push({ ...t, p });
+      if (kept.every((q) => Math.abs(q.p - p) >= (o.compact ? 30 : 22))) kept.push({ ...t, p });
     }
     return kept;
   };
@@ -174,7 +176,7 @@ function drawAxes(g, geo, o) {
     g.lineTo(x, geo.b + (t.major ? 6 : 3));
     g.stroke();
   }
-  for (const t of labelled(o.xTicks, (s) => geo.l + s * geo.pw)) g.fillText(t.label, t.p, geo.b + 8);
+  for (const t of labelled(o.xTicks, (s) => geo.l + s * geo.pw)) g.fillText(t.label, t.p, geo.b + (o.compact ? 5 : 8));
 
   // Y axis
   g.textAlign = 'right';
@@ -186,7 +188,8 @@ function drawAxes(g, geo, o) {
     g.lineTo(geo.l - (t.major ? 6 : 3), y);
     g.stroke();
   }
-  for (const t of labelled(o.yTicks, (s) => geo.b - s * geo.ph)) g.fillText(t.label, geo.l - 8, t.p);
+  for (const t of labelled(o.yTicks, (s) => geo.b - s * geo.ph)) g.fillText(t.label, geo.l - (o.compact ? 4 : 8), t.p);
+  if (o.compact) return;
 
   g.fillStyle = c.fg;
   g.font = `600 12px ${o.fontSans}`;
@@ -202,6 +205,7 @@ function drawAxes(g, geo, o) {
 }
 
 function labelBox(g, o, x, y, lines, selected) {
+  if (o.compact) lines = lines.slice(1);
   g.font = `600 11px ${o.fontSans}`;
   const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 10;
   const h = lines.length * 14 + 4;
@@ -249,7 +253,7 @@ function drawGates(g, geo, o) {
       for (const p of s.pts) if (p[1] > top[1]) top = p;
       const cx = s.pts.reduce((a, p) => a + clampS(p[0]), 0) / s.pts.length;
       const [lx, ly] = geo.toPx(cx, clampS(top[1]));
-      labelBox(g, o, lx, ly - 14, [s.label, s.sub], s.selected);
+      labelBox(g, o, lx, ly - (o.compact ? 9 : 14), [s.label, s.sub], s.selected);
     } else if (s.kind === 'quad') {
       const [x, y] = geo.toPx(clampS(s.cx), clampS(s.cy));
       g.beginPath();
@@ -261,11 +265,11 @@ function drawGates(g, geo, o) {
       for (const q of s.quads) {
         const [qx, qy] = pos[q.quadrant];
         g.font = `600 11px ${o.fontSans}`;
-        const lines = [q.label, q.sub];
+        const lines = o.compact ? [q.sub] : [q.label, q.sub];
         const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 10;
         const bx = q.quadrant === 'UL' || q.quadrant === 'LL' ? qx + w / 2 : qx - w / 2;
-        const by = q.quadrant === 'UL' || q.quadrant === 'UR' ? qy + 16 : qy - 16;
-        labelBox(g, o, bx, by, lines, q.selected);
+        const by = q.quadrant === 'UL' || q.quadrant === 'UR' ? qy + (o.compact ? 9 : 16) : qy - (o.compact ? 9 : 16);
+        labelBox(g, o, bx, by, [q.label, q.sub], q.selected);
       }
     } else if (s.kind === 'range') {
       const [x1] = geo.toPx(clampS(s.lo), 0);
@@ -330,7 +334,7 @@ export function renderPlot(canvas, o) {
   }
   const g = canvas.getContext('2d');
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const geo = geometry(w, h);
+  const geo = geometry(w, h, o.compact ? COMPACT_MARGIN : MARGIN);
   o.geo = geo;
   g.fillStyle = o.colors.surface;
   g.fillRect(0, 0, w, h);

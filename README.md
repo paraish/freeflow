@@ -93,9 +93,8 @@ with one click).
   - **Copy to all samples** and **Copy tree to all** copy to every other sample. In these
     and in drops on a sample's name, a population with the same name is updated, not
     duplicated.
-- **Settings pane**: the axis and transform settings on the right of the Gating view are
-  folded away by default to give the plot more room; **Settings** opens them, and the choice
-  is remembered.
+- **Settings pane**: the axis, transform and gate settings on the right of the Gating view.
+  **Hide settings** folds it away to give the plot more room, and the choice is remembered.
 - **Statistics**: per-population median, mean and CV for every channel, and a
   samples × populations table (frequency of parent, frequency of total, count, median or
   mean of a chosen channel). **Copy table** puts it on the clipboard for Excel or Sheets.
@@ -113,6 +112,24 @@ with one click).
 | Ctrl/⌘ + C, Ctrl/⌘ + V | Copy the selected gate, paste it into the population being viewed |
 | Ctrl/⌘ + Z | Undo |
 | Ctrl/⌘ + Shift + Z, Ctrl + Y | Redo |
+
+## Group gating
+
+**Group gating** (between Gating and Layout) gates a whole folder at once. Folders sit above
+the samples on the left. One sample is shown large, and below it every sample in the folder
+is tiled, showing the same population on the same axes.
+
+- Gates drawn on the large plot become folder gates: they are added to every sample in the
+  folder, nested under a folder gate if one is open. Moving, reshaping, renaming or deleting
+  a gate there changes it for the whole folder.
+- In a tile, gates can be moved and reshaped for that sample alone; no new gates are drawn
+  there. That sample's gate is marked "adjusted", keeps its place in the tree, and later
+  changes on the large plot leave it alone. **Reset** on the tile gives it the folder's
+  gates again.
+- Click a sample (in the Samples pane or a tile's name) to show it large. Double-click a gate
+  to open that population on every sample.
+- The Samples pane shows only the folder's gates and the populations above them; with no
+  folder gates yet, only All Events. Ordinary gates are still there in the Gating view.
 
 ## Layouts and figures
 

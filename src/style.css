@@ -158,6 +158,33 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 @media (max-width: 760px) {
   .work { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "groups" "ws" "left" "right"; }
 }
+/* Group gating: folders above samples, the main plot with every sample tiled below. */
+.work.is-group { grid-template-columns: 270px minmax(0, 1fr) 300px; grid-template-areas: "groups center right" "ws center right"; grid-template-rows: auto 1fr; }
+.work.is-group .left { display: none; }
+.work.is-group .groups.sidebar, .work.is-group .ws.sidebar { position: static; }
+.work.is-group .groups.sidebar { max-height: 42vh; }
+.work.is-group .ws.sidebar { max-height: 80vh; }
+@media (min-width: 1641px) { .work.is-group.right-collapsed { grid-template-columns: 270px minmax(0, 1fr) 36px; } }
+@media (max-width: 1640px) { .work.is-group { grid-template-columns: 270px minmax(0, 1fr); grid-template-areas: "groups center" "ws center" "right right"; } }
+@media (max-width: 760px) { .work.is-group { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "groups" "ws" "right"; grid-template-rows: auto; } }
+.pop-row.is-context .pop-name { color: var(--muted); }
+.group-gate:empty, .group-gate #inspector:empty { display: none; }
+.group-gate .card { max-width: 760px; align-self: center; width: 100%; }
+.group-gate { display: flex; flex-direction: column; }
+.tiles-section { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.tiles-head { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+.tiles-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.tile { margin: 0; border: 1px solid var(--line); border-radius: var(--r); padding: 6px; display: flex; flex-direction: column; gap: 4px; min-width: 0; background: var(--surface); }
+.tile.is-main { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tile figcaption { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; min-height: 24px; }
+.tile-name { flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--fg); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-name:hover { color: var(--accent); }
+.tile .fg-mark { margin-left: 0; }
+.tile-meta { color: var(--muted); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
+.tile-adj { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 0; font-size: 12px; }
+.tile canvas { display: block; touch-action: none; border-radius: 3px; }
+.tile-missing { color: var(--muted); font-size: 12px; margin: 0; padding: 40px 6px; text-align: center; }
 
 .panel, .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
 .panel { padding: 10px 0 6px; }
