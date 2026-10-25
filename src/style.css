@@ -269,7 +269,11 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 .breadcrumb strong { color: var(--fg); }
 .crumb-sep { margin: 0 6px; opacity: 0.6; }
 .plot-count { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.plot-wrap { width: 100%; max-width: 620px; align-self: center; }
+.plot-wrap { width: 100%; max-width: 620px; align-self: center; position: relative; }
+.axis-hot { position: absolute; border-radius: 4px; cursor: pointer; }
+.axis-hot[hidden] { display: none; }
+.axis-hot:hover, .axis-hot:focus-within { outline: 1px dashed var(--accent); outline-offset: 1px; }
+.axis-hot select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 14px; }
 .plot-wrap canvas { display: block; touch-action: none; border-radius: 4px; }
 .hint { margin: 0; color: var(--muted); font-size: 12px; text-align: center; }
 

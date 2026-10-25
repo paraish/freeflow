@@ -121,7 +121,9 @@
         <span class="plot-head-end"><span id="plot-count" class="plot-count"></span>
           <button id="add-to-layout" class="btn btn-small" title="Place this plot on the current layout">Add to layout</button></span>
       </div>
-      <div id="plot-wrap" class="plot-wrap"><canvas id="plot" aria-label="Flow cytometry plot"></canvas></div>
+      <div id="plot-wrap" class="plot-wrap"><canvas id="plot" aria-label="Flow cytometry plot"></canvas>
+        <label id="axis-x-hot" class="axis-hot" title="Click to change the X channel"><select id="axis-x2" aria-label="X channel"></select></label>
+        <label id="axis-y-hot" class="axis-hot" title="Click to change the Y channel"><select id="axis-y2" aria-label="Y channel"></select></label></div>
       <p id="hint" class="hint"></p>
       <div id="group-gate" class="group-gate"></div>
       <section id="tiles-section" class="tiles-section" hidden aria-label="Every sample in the folder">

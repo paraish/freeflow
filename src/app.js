@@ -1211,6 +1211,23 @@ function drawPlot() {
     gates: gateShapes(), draft,
   });
   $('plot-count').textContent = `${fmtInt(pop.indices.length)} events`;
+  placeAxisMenus(hist, channelInfo(s, v.x).label, hist ? '' : channelInfo(s, v.y).label, fontSans);
+}
+
+// Invisible channel menus over the axis titles: clicking a title opens the
+// browser's own list of channels.
+function placeAxisMenus(hist, xLabel, yLabel, fontSans) {
+  const geo = plot.geo;
+  const g = plot.canvas.getContext('2d');
+  g.save();
+  g.font = `600 12px ${fontSans}`;
+  const wx = Math.min(geo.pw, g.measureText(xLabel).width + 16);
+  const wy = Math.min(geo.ph, g.measureText(yLabel).width + 16);
+  g.restore();
+  Object.assign($('axis-x-hot').style, { left: `${geo.l + geo.pw / 2 - wx / 2}px`, top: `${geo.b + 28}px`, width: `${wx}px`, height: '20px' });
+  Object.assign($('axis-y-hot').style, { left: '6px', top: `${geo.t + geo.ph / 2 - wy / 2}px`, width: '20px', height: `${wy}px` });
+  $('axis-x-hot').hidden = !xLabel;
+  $('axis-y-hot').hidden = hist || !yLabel;
 }
 
 // ---------------------------------------------------------------- group gating tiles
@@ -1679,8 +1696,7 @@ function treeRows(s, list) {
   const active = s.id === S.sampleId;
   const viewed = active ? viewedPop() : null;
   const rows = [];
-  const shown = S.mode === 'group' ? groupShown(s) : null;
-  const kidsOf = (p) => (shown ? p.children.filter((c) => shown.has(c)) : p.children);
+  const grouping = S.mode === 'group';
   const visit = (p, depth) => {
     const key = `${list}:${p.id}`;
     const collapsed = S.collapsed.has(key);
@@ -1689,10 +1705,9 @@ function treeRows(s, list) {
     if (p === viewed) cls.push('is-view');
     if (active && p.id === S.selId) cls.push('is-sel');
     if (S.multi.has(p.id)) cls.push('is-multi');
-    if (shown && p.parent && p.link?.group !== S.groupId) cls.push('is-context');
+    if (grouping && p.parent && p.link?.group !== S.groupId) cls.push('is-context');
     const drag = p.gate ? ' draggable="true"' : '';
-    const kids = kidsOf(p);
-    const twisty = kids.length
+    const twisty = p.children.length
       ? `<button class="twisty" data-act="twisty" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${esc(p.name)}">${collapsed ? '▸' : '▾'}</button>`
       : '<span class="twisty-space"></span>';
     rows.push(`<li class="${cls.join(' ')}" style="--depth:${depth}" data-id="${p.id}" data-list="${list}"${drag}>${twisty}
@@ -1700,33 +1715,18 @@ function treeRows(s, list) {
         <span class="pop-name">${esc(p.name)}${p.link ? `<span class="fg-mark${p.custom ? ' is-custom' : ''}" title="${esc(p.custom ? `Folder gate from ${folderGateName(p.link)}, adjusted for this sample only` : `Folder gate from ${folderGateName(p.link)}`)}">${p.custom ? 'adjusted' : ''}</span>` : ''}</span>
         <span class="pop-stats"><span class="pop-num">${fmtInt(p.indices.length)}</span><span class="pop-pct">${par}</span></span>
       </button></li>`);
-    if (!collapsed) for (const c of kids) visit(c, depth + 1);
+    if (!collapsed) for (const c of p.children) visit(c, depth + 1);
   };
   visit(s.root, 0);
   return rows.join('');
 }
 
-// Group gating shows a sample's gates from the selected folder, with the
-// populations above them; with none, only All Events.
-function groupShown(s) {
-  const out = new Set([s.root]);
-  walk(s.root, (p) => {
-    if (p.link?.group !== S.groupId) return;
-    for (let q = p; q && !out.has(q); q = q.parent) out.add(q);
-  });
-  return out;
-}
-
-// Keeps group gating on a member of the folder and on a population it shows.
+// Keeps group gating on a member of the folder, with only the folder's
+// gates selectable. Ordinary gates stay in the trees, greyed, as places to
+// start folder gates from.
 function fitGroupView() {
   const shown = visibleSamples();
   if (shown.length && !shown.includes(sample())) { S.sampleId = shown[0].id; S.selId = null; S.draft = null; }
-  const s = sample();
-  if (!s) return;
-  const keep = groupShown(s);
-  let p = viewedPop();
-  while (p && !keep.has(p)) p = p.parent;
-  if (p && pathOf(p).join('\u0000') !== S.viewPath.join('\u0000')) { S.viewPath = pathOf(p); S.selId = null; }
   const sel = S.selId && popById(S.selId);
   if (sel && sel.link?.group !== S.groupId) S.selId = null;
 }
@@ -2059,10 +2059,11 @@ function renderToolbar() {
     b.disabled = !s;
   });
   const opts = s ? s.channels.map((c) => `<option value="${esc(c.name)}">${esc(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('') : '';
-  const xs = $('axis-x'), ys = $('axis-y');
-  xs.innerHTML = opts; ys.innerHTML = opts;
-  if (v) { xs.value = v.x; ys.value = v.y; }
-  xs.disabled = ys.disabled = !s;
+  for (const [xs, ys] of [[$('axis-x'), $('axis-y')], [$('axis-x2'), $('axis-y2')]]) {
+    xs.innerHTML = opts; ys.innerHTML = opts;
+    if (v) { xs.value = v.x; ys.value = v.y; }
+    xs.disabled = ys.disabled = !s;
+  }
   $('axis-y-wrap').hidden = hist;
   const hint = TOOLS.find((t) => t.id === S.tool)?.hint ?? '';
   $('hint').textContent = S.mode === 'group'
@@ -3215,11 +3216,14 @@ function bind() {
     if (!pop) return;
     viewOf(pop)[axis] = e.target.value;
     S.draft = null;
+    renderToolbar();
     renderAxes();
     requestPlot();
   };
   $('axis-x').addEventListener('change', axisChange('x'));
   $('axis-y').addEventListener('change', axisChange('y'));
+  $('axis-x2').addEventListener('change', axisChange('x'));
+  $('axis-y2').addEventListener('change', axisChange('y'));
   $('swap-axes').addEventListener('click', () => {
     const pop = viewedPop();
     if (!pop) return;

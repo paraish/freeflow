@@ -52,7 +52,8 @@ with one click).
   Sliders redraw live. **Estimate width from this sample** sets the width from the spread of
   the negative events (Parks et al. 2006). A detector's raw and compensated channels share
   one axis setting.
-- **Plots**: pseudocolor density, dot, and histogram.
+- **Plots**: pseudocolor density, dot, and histogram. Click an axis title to pick its channel
+  (or use the X and Y menus above the plot).
 - **Gates**: rectangle, polygon, quadrant, range. Move gates, drag their corners, rename,
   delete, with **Undo** and **Redo** buttons in the header (Ctrl/⌘+Z, Ctrl/⌘+Shift+Z or Ctrl+Y). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
@@ -128,8 +129,8 @@ is tiled, showing the same population on the same axes.
   gates again.
 - Click a sample (in the Samples pane or a tile's name) to show it large. Double-click a gate
   to open that population on every sample.
-- The Samples pane shows only the folder's gates and the populations above them; with no
-  folder gates yet, only All Events. Ordinary gates are still there in the Gating view.
+- The Samples pane shows every population. Ordinary gates are greyed: open one to start
+  folder gates under it (they are not shown or edited on the plots here).
 
 ## Layouts and figures
 
