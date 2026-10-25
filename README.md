@@ -35,15 +35,22 @@ replaces the examples.
   delete, undo (Ctrl/⌘+Z). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
 - **Population tree** with counts and % of parent.
+- **Samples column**: every sample with its own gating tree, each collapsible (per sample,
+  per population, or **Expand all** / **Collapse all**). It scrolls separately from the
+  active sample's **Populations** column, so you can drag between any two trees. Clicking a
+  population in any sample's tree opens it.
 - **Copying gates between populations**:
-  - Drag a gate in the population tree onto any other population to copy it (with its
-    sub-gates) there. Quadrant gates travel as their set of four.
-  - Drag a gate onto a sample in the sample list to copy it to the same place in that
-    sample's tree.
-  - Or select a gate, press Ctrl/⌘+C (or **Copy gate**), open any population in any sample,
-    and press Ctrl/⌘+V (or **Paste**).
+  - Drag a gate onto any population, in the same sample or any other sample's tree, to
+    copy it (with its sub-gates) there. Quadrant gates travel as their set of four.
+  - Select several gates with Ctrl/⌘-click (toggle) or Shift-click (range), then drag any
+    of them to copy them all together. A gate whose parent is also selected comes along
+    with its parent rather than being copied twice. Esc clears the selection.
+  - Drop gates on a sample's name to copy each one to the same place in that sample's tree.
+  - Or press Ctrl/⌘+C (or **Copy gate**), open any population in any sample, and press
+    Ctrl/⌘+V (or **Paste**). Ctrl/⌘+C copies the multi-selection if there is one.
   - **Copy to all samples** and **Copy tree to all** copy to every other sample. In these
-    and in drops onto a sample, a population with the same name is updated, not duplicated.
+    and in drops on a sample's name, a population with the same name is updated, not
+    duplicated.
 - **Statistics**: per-population median, mean and CV for every channel, and a
   samples × populations table (frequency of parent, frequency of total, count, median or
   mean of a chosen channel). **Copy table** puts it on the clipboard for Excel or Sheets.
@@ -55,7 +62,8 @@ replaces the examples.
 | --- | --- |
 | V / R / P / Q / G | Select, rectangle, polygon, quadrant, range tools |
 | Enter or double-click | Close a polygon |
-| Esc | Cancel drawing / deselect |
+| Ctrl/⌘-click, Shift-click | Select several gates in a tree |
+| Esc | Cancel drawing / clear selection / deselect |
 | Delete / Backspace | Delete the selected gate |
 | Ctrl/⌘ + C, Ctrl/⌘ + V | Copy the selected gate, paste it into the population being viewed |
 | Ctrl/⌘ + Z | Undo |

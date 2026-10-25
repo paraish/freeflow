@@ -23,18 +23,28 @@
   </header>
 
   <main class="work">
-    <aside class="left">
+    <aside class="ws sidebar" aria-label="All samples">
       <section class="panel">
-        <header class="panel-head"><h2>Samples</h2></header>
-        <ul id="samples" class="sample-list"></ul>
+        <header class="panel-head">
+          <h2>Samples</h2>
+          <span class="head-actions">
+            <button id="ws-expand" class="btn btn-quiet btn-small">Expand all</button>
+            <button id="ws-collapse" class="btn btn-quiet btn-small">Collapse all</button>
+          </span>
+        </header>
+        <ul id="samples" class="ws-list scroll"></ul>
+        <p class="tree-hint">Drag gates onto any population in any sample to copy them there. Drop on a sample's name to copy them to the same place in its tree.</p>
       </section>
+    </aside>
+
+    <aside class="left sidebar" aria-label="Populations of the active sample">
       <section class="panel">
         <header class="panel-head">
           <h2>Populations</h2>
           <button id="copy-tree" class="btn btn-quiet btn-small" title="Copy this sample's whole gating tree to every other sample">Copy tree to all</button>
         </header>
-        <ul id="tree" class="tree"></ul>
-        <p class="tree-hint">Drag a gate onto another population to copy it there, or onto a sample to copy it to the same place in that sample.</p>
+        <ul id="tree" class="tree scroll"></ul>
+        <p class="tree-hint">Ctrl/⌘-click or Shift-click to select several gates, then drag them together. Esc clears the selection.</p>
       </section>
     </aside>
 
@@ -93,4 +103,5 @@
 </div>
 <div id="drop" class="drop" hidden><p>Drop FCS files to open them</p></div>
 <div id="toast" class="toast" role="status" hidden></div>
+<div id="drag-ghost" class="drag-ghost" aria-hidden="true"></div>
 <script>/*__JS__*/</script>

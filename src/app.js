@@ -26,6 +26,9 @@ const S = {
   version: 0,
   stat: { metric: 'freqParent', channel: null },
   clip: null, // copied gates: { items: [serialized populations], label }
+  multi: new Set(), // ids of gates selected together in the trees (any sample)
+  anchor: null, // { id, list } of the last clicked tree row, for Shift-click ranges
+  collapsed: new Set(), // "<list>:<population id>" and "sample:<sample id>" keys
 };
 
 const $ = (id) => document.getElementById(id);
@@ -271,6 +274,16 @@ function popById(id) {
   return found;
 }
 
+// Finds a population in any sample.
+function findPop(id) {
+  for (const s of S.samples) {
+    let found = null;
+    walk(s.root, (p) => { if (p.id === id) found = p; });
+    if (found) return { sample: s, pop: found };
+  }
+  return null;
+}
+
 function recomputeFrom(pop) {
   const s = sample();
   recompute(pop, ctxFor(s), s.n);
@@ -327,8 +340,28 @@ function gateSet(pop) {
   return pop.gate?.type === 'quad' ? quadSiblings(pop) : [pop];
 }
 
-function setLabel(pops) {
-  return pops.length > 1 && pops[0].gate?.type === 'quad' ? 'the quadrant gate' : `"${pops[0].name}"`;
+// Turns a list of { sample, pop } into what actually gets copied: quadrant
+// gates expand to their set of four, duplicates go, and a population whose
+// ancestor is also selected is dropped because it travels with that ancestor.
+function copyItems(entries) {
+  const out = [];
+  const ids = new Set();
+  for (const { sample: smp, pop } of entries) {
+    for (const p of gateSet(pop)) {
+      if (!ids.has(p.id)) { ids.add(p.id); out.push({ sample: smp, pop: p }); }
+    }
+  }
+  return out.filter(({ pop }) => {
+    for (let a = pop.parent; a; a = a.parent) if (ids.has(a.id)) return false;
+    return true;
+  });
+}
+
+function itemsLabel(items) {
+  const pops = items.map((i) => i.pop);
+  const oneQuad = pops.length === 4 && pops.every((p) => p.gate?.type === 'quad' && p.gate.link === pops[0].gate.link);
+  if (oneQuad) return 'the quadrant gate';
+  return pops.length === 1 ? `"${pops[0].name}"` : `${pops.length} gates`;
 }
 
 function missingParams(items, target) {
@@ -365,45 +398,63 @@ function pasteInto(items, target, parent, label) {
   });
   recompute(parent, ctxFor(target), target.n);
   S.version++;
+  S.collapsed.delete(`sample:${target.id}`);
   if (target === sample() && parent === viewedPop()) S.selId = made[0].id;
   renderAll();
-  const what = label ?? (items.length === 4 && items[0].gate?.type === 'quad' ? 'the quadrant gate' : `"${items[0].name}"`);
-  toast(`Copied ${what} into ${parent.name}${target === sample() ? '' : ` in ${target.name}`}.`);
+  toast(`Copied ${label} into ${parent.name}${target === sample() ? '' : ` in ${target.name}`}.`);
 }
 
-// Dropping on a sample puts the gate at the same place in that sample's tree,
-// updating a population of the same name if there is one (like "Copy to all").
+// Dropping on a sample puts each gate at the same place in that sample's
+// tree, updating a population of the same name if there is one (as "Copy to
+// all samples" does).
 function dropOnSample(src, target) {
   if (!target) return;
-  if (target === src.sample) {
-    toast('To copy within this sample, drop the gate onto a population instead.');
+  const from = src.items.filter((i) => i.sample !== target);
+  if (!from.length) {
+    toast(`Those gates are already in ${target.name}. To copy within a sample, drop onto a population instead.`);
     return;
   }
-  const items = src.pops.map(serialize);
-  const missing = missingParams(items, target);
+  const missing = missingParams(from.map((i) => serialize(i.pop)), target);
   if (missing.length) {
     toast(`Can't copy: ${target.name} has no parameter ${missing.join(', ')}.`, true);
     return;
   }
-  const parentPath = pathOf(src.pops[0].parent);
-  const parent = findByPath(target.root, parentPath);
-  if (!parent) {
-    toast(`${target.name} has no "${parentPath.join(' / ')}" population. Open that sample and drop the gate onto a population in its tree.`, true);
+  const placed = [];
+  const skipped = [];
+  for (const { pop } of from) {
+    const parent = findByPath(target.root, pathOf(pop.parent));
+    if (parent) placed.push({ pop, parent });
+    else skipped.push(`${pop.name} (no "${pathOf(pop.parent).join(' / ')}")`);
+  }
+  if (!placed.length) {
+    toast(`${target.name} has no matching parent population for ${skipped.join(', ')}. Drop onto a population in its tree instead.`, true);
     return;
   }
   pushUndo();
-  for (const p of src.pops) mergeInto(p, parent);
-  recompute(parent, ctxFor(target), target.n);
+  for (const { pop, parent } of placed) mergeInto(pop, parent);
+  recompute(target.root, ctxFor(target), target.n);
   S.version++;
+  S.collapsed.delete(`sample:${target.id}`);
   renderAll();
-  toast(`Copied ${setLabel(src.pops)} to ${target.name}.`);
+  const what = itemsLabel(placed.map((x) => ({ pop: x.pop })));
+  if (skipped.length) toast(`Copied ${what} to ${target.name}. Skipped ${skipped.join(', ')}.`, true);
+  else toast(`Copied ${what} to ${target.name}.`);
 }
 
-function copyGate(pop) {
-  const pops = gateSet(pop);
-  S.clip = { items: pops.map(serialize), label: setLabel(pops) };
+// What Ctrl+C copies: the gates selected in the trees, or else the gate in
+// the Gate panel.
+function selectionEntries() {
+  if (S.multi.size) return [...S.multi].map(findPop).filter(Boolean);
+  const pop = inspectorPop();
+  return pop ? [{ sample: sample(), pop }] : [];
+}
+
+function copyGates(entries) {
+  const items = copyItems(entries);
+  if (!items.length) return;
+  S.clip = { items: items.map((i) => serialize(i.pop)), label: itemsLabel(items) };
   renderPopStats();
-  toast(`Copied ${S.clip.label}. Open any population (in any sample) and press Ctrl+V or ⌘V, or use Paste gate.`);
+  toast(`Copied ${S.clip.label}. Open any population (in any sample) and press Ctrl+V or ⌘V, or use Paste.`);
 }
 
 function pasteGate() {
@@ -667,7 +718,7 @@ function applyDrag(sx, sy) {
   for (const q of d.mode === 'quad' ? quadSiblings(d.pop) : [d.pop]) recompute(q, ctxFor(sample()), sample().n);
   S.version++;
   requestPlot();
-  renderTree();
+  renderTrees();
 }
 
 function onPointerDown(ev) {
@@ -844,41 +895,78 @@ function renderHeader() {
   $('comp-btn').textContent = s?.comp ? `Compensation${s.comp.enabled ? '' : ' (off)'}` : 'Compensation';
 }
 
+// Rows of one population tree. `list` names the tree ("active", or
+// "ws-<sample id>" in the samples column) so each keeps its own collapsed
+// state and Shift-click ranges stay within one tree.
+function treeRows(s, list) {
+  const active = s.id === S.sampleId;
+  const viewed = active ? viewedPop() : null;
+  const rows = [];
+  const visit = (p, depth) => {
+    const key = `${list}:${p.id}`;
+    const collapsed = S.collapsed.has(key);
+    const par = p.parent ? fmtPct(pct(p.indices.length, p.parent.indices.length)) : '';
+    const cls = ['pop-row'];
+    if (p === viewed) cls.push('is-view');
+    if (active && p.id === S.selId) cls.push('is-sel');
+    if (S.multi.has(p.id)) cls.push('is-multi');
+    const drag = p.gate ? ' draggable="true"' : '';
+    const twisty = p.children.length
+      ? `<button class="twisty" data-act="twisty" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${esc(p.name)}">${collapsed ? '▸' : '▾'}</button>`
+      : '<span class="twisty-space"></span>';
+    rows.push(`<li class="${cls.join(' ')}" style="--depth:${depth}" data-id="${p.id}" data-list="${list}"${drag}>${twisty}
+      <button class="pop-pick" data-act="view" title="${p.gate ? 'Click to open. Drag to copy. Ctrl/⌘- or Shift-click to select several.' : 'Click to open'}">
+        <span class="pop-name">${esc(p.name)}</span>
+        <span class="pop-stats"><span class="pop-num">${fmtInt(p.indices.length)}</span><span class="pop-pct">${par}</span></span>
+      </button></li>`);
+    if (!collapsed) for (const c of p.children) visit(c, depth + 1);
+  };
+  visit(s.root, 0);
+  return rows.join('');
+}
+
+function keepScroll(el, fn) {
+  const top = el.scrollTop;
+  fn();
+  el.scrollTop = top;
+}
+
 function renderSamples() {
   const el = $('samples');
   if (!S.samples.length) {
-    el.innerHTML = '<p class="empty">No samples yet. Open FCS files or drop them anywhere on the page.</p>';
+    el.innerHTML = '<li class="empty">No samples yet. Open FCS files or drop them anywhere on the page.</li>';
     return;
   }
-  el.innerHTML = S.samples.map((s) => `
-    <li class="sample-row${s.id === S.sampleId ? ' is-sel' : ''}" data-id="${s.id}">
-      <button class="sample-pick" data-act="pick" title="${esc(s.fileName)}">
-        <span class="sample-name">${esc(s.name)}</span>
-        <span class="sample-meta">${fmtInt(s.n)} events${s.comp ? ` · ${s.comp.enabled ? 'comp' : 'comp off'}` : ''}</span>
-      </button>
-      <button class="icon-btn" data-act="remove" aria-label="Remove ${esc(s.name)}" title="Remove sample">×</button>
-    </li>`).join('');
+  keepScroll(el, () => {
+    el.innerHTML = S.samples.map((s) => {
+      const collapsed = S.collapsed.has(`sample:${s.id}`);
+      return `<li class="ws-sample${s.id === S.sampleId ? ' is-active' : ''}">
+        <div class="sample-row" data-id="${s.id}">
+          <button class="twisty" data-act="twisty-sample" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Show' : 'Hide'} gates of ${esc(s.name)}">${collapsed ? '▸' : '▾'}</button>
+          <button class="sample-pick" data-act="pick" title="${esc(s.fileName)}">
+            <span class="sample-name">${esc(s.name)}</span>
+            <span class="sample-meta">${fmtInt(s.n)} events${s.comp ? ` · ${s.comp.enabled ? 'comp' : 'comp off'}` : ''}</span>
+          </button>
+          <button class="icon-btn" data-act="remove" aria-label="Remove ${esc(s.name)}" title="Remove sample">×</button>
+        </div>
+        ${collapsed ? '' : `<ul class="tree">${treeRows(s, `ws-${s.id}`)}</ul>`}
+      </li>`;
+    }).join('');
+  });
 }
 
 function renderTree() {
   const el = $('tree');
   const s = sample();
   if (!s) { el.innerHTML = ''; return; }
-  const viewed = viewedPop();
-  const rows = [];
-  walk(s.root, (p, depth) => {
-    const par = p.parent ? fmtPct(pct(p.indices.length, p.parent.indices.length)) : '';
-    const drag = p.gate ? ' draggable="true" title="Drag onto another population or sample to copy this gate"' : '';
-    rows.push(`<li class="pop-row${p === viewed ? ' is-view' : ''}${p.id === S.selId ? ' is-sel' : ''}" style="--depth:${depth}" data-id="${p.id}"${drag}>
-      <button class="pop-pick" data-act="view">
-        <span class="pop-name">${esc(p.name)}</span>
-        <span class="pop-num">${fmtInt(p.indices.length)}</span>
-        <span class="pop-pct">${par}</span>
-      </button></li>`);
-  });
-  el.innerHTML = rows.join('');
-  $('breadcrumb').innerHTML = [s.name, 'All Events', ...pathOf(viewed)]
+  keepScroll(el, () => { el.innerHTML = treeRows(s, 'active'); });
+  $('breadcrumb').innerHTML = [s.name, 'All Events', ...pathOf(viewedPop())]
     .map((n, i, arr) => (i === arr.length - 1 ? `<strong>${esc(n)}</strong>` : esc(n))).join('<span class="crumb-sep">›</span>');
+}
+
+function renderTrees() {
+  renderSamples();
+  renderTree();
 }
 
 // ---------------------------------------------------------------- rendering: toolbar
@@ -1245,7 +1333,7 @@ function transformsChanged(name) {
   // Polygon gates are defined in display space, so membership can change.
   let usesPolygon = false;
   for (const s of S.samples) walk(s.root, (p) => { if (p.gate?.type === 'polygon' && gateParams(p.gate).includes(name)) usesPolygon = true; });
-  if (usesPolygon) { recomputeAll(); renderTree(); scheduleStats(); }
+  if (usesPolygon) { recomputeAll(); renderTrees(); scheduleStats(); }
   requestPlot();
 }
 
@@ -1308,6 +1396,12 @@ function bind() {
     const row = e.target.closest('.sample-row');
     if (!row) return;
     const btn = e.target.closest('[data-act]');
+    if (btn?.dataset.act === 'twisty-sample') {
+      const key = `sample:${row.dataset.id}`;
+      if (S.collapsed.has(key)) S.collapsed.delete(key); else S.collapsed.add(key);
+      renderSamples();
+      return;
+    }
     if (btn?.dataset.act === 'remove') {
       if (btn.dataset.confirm !== '1') {
         btn.dataset.confirm = '1';
@@ -1318,6 +1412,7 @@ function bind() {
       }
       S.samples = S.samples.filter((s) => s.id !== row.dataset.id);
       S.undo = [];
+      S.multi.clear();
       if (S.sampleId === row.dataset.id) S.sampleId = S.samples[0]?.id ?? null;
       if (!S.samples.some((s) => s.isExample)) S.examples = false;
       S.selId = null;
@@ -1329,40 +1424,96 @@ function bind() {
     S.draft = null;
     renderAll();
   });
+  $('ws-expand').addEventListener('click', () => {
+    for (const k of [...S.collapsed]) if (k.startsWith('sample:') || k.startsWith('ws-')) S.collapsed.delete(k);
+    renderSamples();
+  });
+  $('ws-collapse').addEventListener('click', () => {
+    for (const s of S.samples) S.collapsed.add(`sample:${s.id}`);
+    renderSamples();
+  });
 
-  $('tree').addEventListener('click', (e) => {
+  // Clicks on population rows, in either tree.
+  const onPopRowClick = (e) => {
     const row = e.target.closest('.pop-row');
     if (!row) return;
-    const pop = popById(row.dataset.id);
-    if (pop) navigate(pop);
-  });
+    const found = findPop(row.dataset.id);
+    if (!found) return;
+    const { id, list } = row.dataset;
+    if (e.target.closest('[data-act="twisty"]')) {
+      const key = `${list}:${id}`;
+      if (S.collapsed.has(key)) S.collapsed.delete(key); else S.collapsed.add(key);
+      renderTrees();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      if (found.pop.gate) {
+        if (S.multi.has(id)) S.multi.delete(id); else S.multi.add(id);
+      }
+      S.anchor = { id, list };
+      renderTrees();
+      return;
+    }
+    if (e.shiftKey) {
+      const rows = [...document.querySelectorAll(`.pop-row[data-list="${list}"]`)];
+      const from = S.anchor?.list === list ? rows.findIndex((r) => r.dataset.id === S.anchor.id) : -1;
+      const to = rows.indexOf(row);
+      const [lo, hi] = from < 0 ? [to, to] : [Math.min(from, to), Math.max(from, to)];
+      for (const r of rows.slice(lo, hi + 1)) if (r.hasAttribute('draggable')) S.multi.add(r.dataset.id);
+      if (from < 0) S.anchor = { id, list };
+      renderTrees();
+      return;
+    }
+    S.multi.clear();
+    S.anchor = { id, list };
+    if (found.sample.id !== S.sampleId) {
+      S.sampleId = found.sample.id;
+      S.selId = null;
+      S.draft = null;
+    }
+    navigate(found.pop);
+  };
+  $('samples').addEventListener('click', onPopRowClick);
+  $('tree').addEventListener('click', onPopRowClick);
+  // Keep Shift-click from selecting page text.
+  for (const list of [$('samples'), $('tree')]) {
+    list.addEventListener('mousedown', (e) => { if (e.shiftKey && e.target.closest('.pop-row')) e.preventDefault(); });
+  }
   $('popstats').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="paste-gate"]')) pasteGate();
   });
 
-  // Drag a gated population onto another population (copied there as a
-  // child) or onto a sample (copied to the same place in that sample).
+  // Drag gates (one, or every selected gate) onto any population in any
+  // sample to copy them there as children, or onto a sample's name to copy
+  // them to the same place in that sample's tree.
   let dragSrc = null;
   const clearDrop = () => document.querySelectorAll('.is-drop').forEach((n) => n.classList.remove('is-drop'));
-  $('tree').addEventListener('dragstart', (e) => {
+  const onDragStart = (e) => {
     const row = e.target.closest?.('.pop-row');
-    const pop = row && popById(row.dataset.id);
-    if (!pop?.gate) { e.preventDefault(); return; }
-    dragSrc = { sample: sample(), pops: gateSet(pop) };
-    e.dataTransfer.setData('text/plain', pop.name);
+    const found = row && findPop(row.dataset.id);
+    if (!found?.pop.gate) { e.preventDefault(); return; }
+    const entries = S.multi.has(found.pop.id) ? [...S.multi].map(findPop).filter(Boolean) : [found];
+    const items = copyItems(entries);
+    const ids = new Set(items.map((i) => i.pop.id));
+    dragSrc = { items, ids, label: itemsLabel(items) };
+    e.dataTransfer.setData('text/plain', items.map((i) => i.pop.name).join(', '));
     e.dataTransfer.effectAllowed = 'copy';
-    row.classList.add('is-dragging');
-  });
+    const ghost = $('drag-ghost');
+    ghost.textContent = items.length === 1 ? items[0].pop.name : `${dragSrc.label}`;
+    e.dataTransfer.setDragImage(ghost, 12, 12);
+    document.querySelectorAll('.pop-row').forEach((r) => { if (ids.has(r.dataset.id)) r.classList.add('is-dragging'); });
+  };
   document.addEventListener('dragend', () => {
     dragSrc = null;
     clearDrop();
     document.querySelectorAll('.is-dragging').forEach((n) => n.classList.remove('is-dragging'));
   });
   for (const list of [$('tree'), $('samples')]) {
+    list.addEventListener('dragstart', onDragStart);
     list.addEventListener('dragover', (e) => {
       if (!dragSrc) return;
       const row = e.target.closest?.('.pop-row, .sample-row');
-      if (!row) return;
+      if (!row || (row.classList.contains('pop-row') && dragSrc.ids.has(row.dataset.id))) { clearDrop(); return; }
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
       if (!row.classList.contains('is-drop')) { clearDrop(); row.classList.add('is-drop'); }
@@ -1377,8 +1528,9 @@ function bind() {
       const row = e.target.closest?.('.pop-row, .sample-row');
       if (!row) return;
       if (row.classList.contains('pop-row')) {
-        const target = popById(row.dataset.id);
-        if (target) pasteInto(src.pops.map(serialize), sample(), target, setLabel(src.pops));
+        if (src.ids.has(row.dataset.id)) return;
+        const target = findPop(row.dataset.id);
+        if (target) pasteInto(src.items.map((i) => serialize(i.pop)), target.sample, target.pop, src.label);
       } else {
         dropOnSample(src, S.samples.find((x) => x.id === row.dataset.id));
       }
@@ -1469,7 +1621,7 @@ function bind() {
     const pop = inspectorPop();
     if (!pop) return;
     if (act === 'open-gate') navigate(pop);
-    if (act === 'clip-gate') copyGate(pop);
+    if (act === 'clip-gate') copyGates([{ sample: sample(), pop }]);
     if (act === 'delete-gate') deleteGate(pop);
     if (act === 'copy-gate') {
       pushUndo();
@@ -1536,11 +1688,15 @@ function bind() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); return; }
     if ((e.ctrlKey || e.metaKey) && !typing && !e.shiftKey && !e.altKey) {
       const k = e.key.toLowerCase();
-      if (k === 'c' && inspectorPop() && !String(getSelection())) { e.preventDefault(); copyGate(inspectorPop()); return; }
+      if (k === 'c' && !String(getSelection())) {
+        const entries = selectionEntries();
+        if (entries.length) { e.preventDefault(); copyGates(entries); return; }
+      }
       if (k === 'v' && S.clip) { e.preventDefault(); pasteGate(); return; }
     }
     if (e.target.matches('input, textarea, select')) return;
     if (e.key === 'Escape') {
+      if (S.multi.size) { S.multi.clear(); renderTrees(); return; }
       if (S.draft) { S.draft = null; requestPlot(); } else if (!$('comp-panel').hidden) $('comp-panel').hidden = true;
       else if (S.selId) { S.selId = null; renderSide(); requestPlot(); }
       return;
