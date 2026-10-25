@@ -127,7 +127,7 @@ is tiled, showing the same population on the same axes.
   there. That sample's gate is marked "adjusted", keeps its place in the tree, and later
   changes on the large plot leave it alone. **Reset** on the tile gives it the folder's
   gates again.
-- Click a sample (in the Samples pane or a tile's name) to show it large. Double-click a gate
+- Click a tile (anywhere but on a gate) or a sample in the Samples pane to show it large. Double-click a gate
   to open that population on every sample.
 - The Samples pane shows every population. Ordinary gates are greyed: open one to start
   folder gates under it (they are not shown or edited on the plots here).

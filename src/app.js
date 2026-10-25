@@ -1320,10 +1320,8 @@ function onTilePointerDown(ev) {
   if (ev.button !== 0) return;
   const a = tileAt(ev);
   if (!a) return;
-  if (!a.hit) {
-    if (S.selId) { S.selId = null; drawTiles(); requestPlot(); renderSide(); }
-    return;
-  }
+  // A click away from the gates shows this sample on the main plot.
+  if (!a.hit) { showMain(a.s); return; }
   S.selId = a.hit.pop.id;
   if (a.hit.mode !== 'select') {
     const csx = Math.max(0, Math.min(1, a.sx)), csy = Math.max(0, Math.min(1, a.sy));
@@ -1336,6 +1334,13 @@ function onTilePointerDown(ev) {
   drawTiles();
   requestPlot();
   renderSide();
+}
+
+function showMain(s) {
+  S.sampleId = s.id;
+  S.selId = null;
+  S.draft = null;
+  renderAll();
 }
 
 function onTilePointerMove(ev) {
@@ -3129,8 +3134,8 @@ function bind() {
     const act = ev.target.closest('[data-act]')?.dataset.act;
     const fig = ev.target.closest('.tile');
     const s = fig && S.samples.find((x) => x.id === fig.dataset.sample);
-    if (!s || !act) return;
-    if (act === 'tile-main') { S.sampleId = s.id; S.selId = null; S.draft = null; renderAll(); }
+    if (!s || ev.target.matches('canvas')) return;
+    if (!act || act === 'tile-main') { if (s.id !== S.sampleId) showMain(s); return; }
     if (act === 'tile-reset') {
       const pop = findByPath(s.root, S.viewPath);
       if (!pop) return;
