@@ -172,7 +172,17 @@
         <p class="tree-hint">Click a population to add its plot to the page, or drag it to where you want it.</p>
       </section>
     </aside>
-    <div id="lay-stage" class="lay-stage"></div>
+    <div id="lay-main" class="lay-main">
+      <div id="lay-stage" class="lay-stage"></div>
+      <section id="lay-edit" class="lay-edit" hidden aria-label="Edit this plot's gates">
+        <header class="lay-edit-head">
+          <h2 id="lay-edit-title"></h2>
+          <button id="lay-edit-close" class="btn btn-small">Done</button>
+        </header>
+        <div id="lay-edit-body" class="lay-edit-body"></div>
+        <p class="tree-hint">Draw, move and reshape gates here; the figure updates as you go. Double-click a gate to rename it; Delete removes the selected gate. Esc or Done closes.</p>
+      </section>
+    </div>
     <div class="lay-right">
       <section class="panel lay-side">
         <header class="panel-head"><h2>Layouts</h2><button class="btn btn-quiet btn-small" data-act="new-layout">New layout</button></header>

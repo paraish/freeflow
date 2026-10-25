@@ -26,7 +26,10 @@ export function newLayout(name = 'Layout 1') {
  *   samples(), activeSample(), sampleKey(s), findByPath(root, path), pathOf(pop),
  *   viewOf(pop), channels(s), channelLabel(s, name), stats(s, pop),
  *   plotData(s, pop, view) -> { xs, ys, idx, xTicks, yTicks, gates, histogram },
- *   cacheKey(s, pop, view), layouts(), changed(), toast(msg, isError)
+ *   cacheKey(s, pop, view), layouts(), changed(), toast(msg, isError),
+ *   editPlot(item, sample)   open a plot's gates for editing below the page
+ *   editing()                true while a plot is open for editing
+ *   itemRemoved(item)        an item was deleted
  * }
  */
 export function createLayoutEditor(root, env) {
@@ -574,7 +577,7 @@ export function createLayoutEditor(root, env) {
     }
     if (!l) return;
     const it = itemById(ui.sel);
-    if (act === 'del-item' && it) { l.items.splice(l.items.indexOf(it), 1); ui.sel = null; env.changed(); return render(); }
+    if (act === 'del-item' && it) { l.items.splice(l.items.indexOf(it), 1); ui.sel = null; env.itemRemoved(it); env.changed(); return render(); }
     if (act === 'dup-item' && it) {
       const copy = { ...JSON.parse(JSON.stringify(it)), id: newId('i'), ...placeFor(l, it.w, it.h) };
       l.items.push(copy);
@@ -594,6 +597,7 @@ export function createLayoutEditor(root, env) {
 
   // Dragging and resizing items on the page.
   let drag = null;
+  let lastDown = { id: null, t: 0 };
   function onPointerDown(e) {
     const box = e.target.closest('.lay-box');
     const stage = $('lay-stage');
@@ -604,6 +608,15 @@ export function createLayoutEditor(root, env) {
     const it = itemById(box.dataset.id);
     if (!it) return;
     e.preventDefault();
+    // A double-click on a plot opens it for editing its gates.
+    const now = Date.now();
+    if (it.kind === 'plot' && lastDown.id === it.id && now - lastDown.t < 400 && !e.target.closest('[data-act="resize"]')) {
+      lastDown = { id: null, t: 0 };
+      const s = sampleFor(it, pageSampleOf(current()));
+      if (s) env.editPlot(it, s);
+      return;
+    }
+    lastDown = { id: it.id, t: now };
     if (ui.sel !== it.id) { ui.sel = it.id; render(); }
     const resize = !!e.target.closest('[data-act="resize"]');
     drag = { it, resize, sx: e.clientX, sy: e.clientY, ox: it.x, oy: it.y, ow: it.w, oh: it.h, moved: false };
@@ -636,7 +649,7 @@ export function createLayoutEditor(root, env) {
   }
 
   function onKey(e) {
-    if (root.hidden || e.target.matches('input, textarea, select')) return;
+    if (root.hidden || e.target.matches('input, textarea, select') || env.editing()) return;
     const it = itemById(ui.sel);
     if (!it) return;
     const l = current();
@@ -644,6 +657,7 @@ export function createLayoutEditor(root, env) {
       e.preventDefault();
       l.items.splice(l.items.indexOf(it), 1);
       ui.sel = null;
+      env.itemRemoved(it);
       env.changed();
       render();
       return;

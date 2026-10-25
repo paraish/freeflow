@@ -153,8 +153,12 @@ Gating, **Add to layout** places the plot you are looking at.
 
 - Drag items to move them, drag the corner to resize, arrow keys to nudge (Shift for bigger
   steps), Delete to remove.
+- **Double-click a plot** to edit its gates without leaving the layout: it opens below the
+  page with the gating tools. Draw new gates (a name box opens), move and reshape gates,
+  double-click a gate to rename it, Delete to remove it, and change the axes; the figure
+  updates as you go. Esc or **Done** closes it.
 - Per plot: sample, population, plot type (pseudocolor, dot, histogram), X and Y channels,
-  title, axis labels, font size, width and height, gates and gate labels on or off.
+  title, axis labels, font size, dot size, width and height, gates and gate labels on or off.
 - Text items and titles take fill-ins: `{sample}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).

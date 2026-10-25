@@ -389,6 +389,14 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .lay-pick.is-sel { background: var(--accent-soft); border-left-color: var(--accent); font-weight: 600; }
 .lay-add { padding: 8px 12px 0; }
 .lay-stage { min-width: 0; overflow: auto; background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; max-height: calc(100vh - 90px); }
+.lay-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.lay-main.is-editing .lay-stage { max-height: 48vh; }
+.lay-edit { background: var(--surface); border: 1px solid var(--accent); border-radius: var(--r); padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.lay-edit[hidden] { display: none; }
+.lay-edit-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lay-edit-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.lay-edit-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.lay-edit #add-to-layout { display: none; }
 .lay-sheet { position: relative; margin: 0 auto; box-shadow: 0 2px 14px rgba(0, 0, 0, 0.16); background: #ffffff; }
 .lay-svg, .lay-svg svg { display: block; }
 .lay-overlay { position: absolute; inset: 0; }

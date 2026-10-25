@@ -1209,6 +1209,7 @@ function drawPlot() {
     gates: gateShapes(), draft,
   });
   $('plot-count').textContent = `${fmtInt(pop.indices.length)} events`;
+  if (LE.item) syncLayoutEdit();
   placeAxisMenus(hist, channelInfo(s, v.x).label, hist ? '' : channelInfo(s, v.y).label, fontSans);
 }
 
@@ -1603,7 +1604,9 @@ function onDoubleClick(ev) {
   if (S.tool !== 'select') return;
   const { px, py } = eventScale(ev);
   const hit = hitTest(px, py);
-  if (hit) navigate(hit.pop);
+  // A plot opened from a layout stays on its population: double-click renames.
+  if (hit && LE.item) openNamePop(hit.pop, ev.clientX + 10, ev.clientY + 10);
+  else if (hit) navigate(hit.pop);
 }
 
 function finishPolygon() {
@@ -2521,7 +2524,7 @@ function layoutEnv() {
       return S.samples.filter((x) => !controls.has(x));
     },
     folders: () => [...S.groups.map((g) => ({ id: g.id, name: g.name })), { id: CONTROLS, name: 'Compensation controls' }],
-    activeSample: () => sample(),
+    activeSample: () => (LE.item ? S.samples.find((x) => x.id === LE.saved.sampleId) || sample() : sample()),
     sampleKey,
     findByPath,
     pathOf,
@@ -2548,11 +2551,77 @@ function layoutEnv() {
       view.type === 'histogram' ? '' : scalerFor(view.y).key, S.version].join('|'),
     layouts: () => S.layouts,
     changed: () => {},
+    editPlot: openLayoutEdit,
+    editing: () => !!LE.item,
+    itemRemoved: (it) => { if (LE.item === it) closeLayoutEdit(); },
     toast,
   };
 }
 
+// ---------------------------------------------------------------- editing a layout plot
+//
+// Double-clicking a plot in Layout opens it below the page with the gating
+// plot and tools, moved there while it is open. The plot's sample and
+// population are shown as if opened in Gating, on the layout plot's axes;
+// Gating's own sample, population and axes come back on closing.
+
+const LE = { item: null, saved: null };
+const EDIT_PARTS = ['.toolbar', '.axis-row', '.plot-head', '#plot-wrap', '#hint'];
+
+function openLayoutEdit(item, s) {
+  if (LE.item) closeLayoutEdit();
+  const pop = findByPath(s.root, item.path || []);
+  if (!pop) { toast(`${s.name} has no “${(item.path || []).slice(-1)[0]}” population to edit.`, true); return; }
+  LE.saved = { sampleId: S.sampleId, viewPath: [...S.viewPath], pop, popView: pop.view ? { ...pop.view } : null, tool: S.tool };
+  LE.item = item;
+  S.sampleId = s.id;
+  S.viewPath = pathOf(pop);
+  S.selId = null;
+  S.draft = null;
+  S.tool = 'select';
+  if (item.view) pop.view = { ...item.view };
+  item.view = { ...viewOf(pop) };
+  const center = document.querySelector('#gating-work .center');
+  for (const sel of EDIT_PARTS) $('lay-edit-body').append(center.querySelector(sel));
+  $('lay-edit-title').textContent = `Editing ${s.name} › ${['All Events', ...pathOf(pop)].join(' › ')}`;
+  $('lay-edit').hidden = false;
+  $('lay-main').classList.add('is-editing');
+  renderToolbar();
+  sizePlot();
+  requestPlot();
+  $('lay-edit').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function closeLayoutEdit() {
+  if (!LE.item) return;
+  closeNamePop(true);
+  const { sampleId, viewPath, pop, popView, tool } = LE.saved;
+  pop.view = popView;
+  LE.item = null;
+  LE.saved = null;
+  if (S.samples.some((x) => x.id === sampleId)) S.sampleId = sampleId;
+  S.viewPath = viewPath;
+  S.selId = null;
+  S.draft = null;
+  S.tool = tool;
+  const center = document.querySelector('#gating-work .center');
+  const before = $('group-gate');
+  for (const sel of EDIT_PARTS) center.insertBefore($('lay-edit-body').querySelector(sel), before);
+  $('lay-edit').hidden = true;
+  $('lay-main').classList.remove('is-editing');
+  layoutEditor.render();
+}
+
+// While a layout plot is open, its axes follow the edits made here.
+function syncLayoutEdit() {
+  const pop = viewedPop();
+  if (!LE.item || !pop) return;
+  const v = { ...viewOf(pop) };
+  if (JSON.stringify(v) !== JSON.stringify(LE.item.view)) { LE.item.view = v; layoutEditor.render(); }
+}
+
 function setMode(mode) {
+  closeLayoutEdit();
   S.mode = mode;
   const layout = mode === 'layout';
   document.querySelectorAll('[data-mode]').forEach((b) => {
@@ -2787,7 +2856,12 @@ function renamePop(pop, raw) {
 }
 
 function renderAll() {
-  if (S.mode === 'layout') { renderHeader(); layoutEditor?.render(); return; }
+  if (S.mode === 'layout') {
+    renderHeader();
+    layoutEditor?.render();
+    if (LE.item) { renderToolbar(); requestPlot(); }
+    return;
+  }
   renderHeader();
   const empty = S.samples.length === 0;
   $('welcome').hidden = !empty;
@@ -3190,6 +3264,7 @@ function bind() {
     try { localStorage.setItem('freeflow.dotSize', String(S.dotSize)); } catch { /* not stored */ }
     requestPlot();
   });
+  $('lay-edit-close').addEventListener('click', closeLayoutEdit);
   $('tiles').addEventListener('pointerdown', onTilePointerDown);
   $('tiles').addEventListener('pointermove', onTilePointerMove);
   $('tiles').addEventListener('pointerup', onTilePointerUp);
@@ -3405,7 +3480,7 @@ function bind() {
   });
 
   document.addEventListener('keydown', (e) => {
-    if (S.mode === 'layout') return; // the layout editor has its own keys
+    if (S.mode === 'layout' && !LE.item) return; // the layout editor has its own keys
     let typing = e.target.matches('input, textarea, select');
     // The name box is focused right after drawing a gate; until the name is
     // edited, Ctrl+Z should undo the gate rather than the text.
@@ -3427,6 +3502,7 @@ function bind() {
       if (S.draft) { S.draft = null; requestPlot(); } else if (!$('comp-panel').hidden) $('comp-panel').hidden = true;
       else if (!$('share-panel').hidden) $('share-panel').hidden = true;
       else if (S.selId) { S.selId = null; renderSide(); requestPlot(); }
+      else if (LE.item) closeLayoutEdit();
       return;
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.selId) {
