@@ -12,7 +12,8 @@ import {
   channelStats, cloneGate, deserialize, findByPath, gateParams, makePopulation, newId, pathOf, pointInPolygon,
   quadSiblings, recompute, serialize, uniqueName, walk,
 } from './gating.js';
-import { geometry, renderPlot } from './plot.js';
+import { geometry, histogram, renderPlot } from './plot.js';
+import { createLayoutEditor, newLayout } from './layout.js';
 
 // ---------------------------------------------------------------- state
 
@@ -29,6 +30,8 @@ const S = {
   version: 0,
   stat: { metric: 'freqParent', channel: null },
   clip: null, // copied gates: { items: [serialized populations], label }
+  mode: 'gating', // or 'layout'
+  layouts: [],
   multi: new Set(), // ids of gates selected together in the trees (any sample)
   anchor: null, // { id, list } of the last clicked tree row, for Shift-click ranges
   collapsed: new Set(), // "<list>:<population id>" and "sample:<sample id>" keys
@@ -133,6 +136,24 @@ function buildExampleGates() {
     recompute(other.root, ctxFor(other), other.n);
   }
   S.viewPath = ['Cells', 'Singlets'];
+  S.layouts = [exampleLayout()];
+}
+
+// A figure for the example samples: a title filled in from file keywords and
+// three plots down the gating path. Batch mode repeats it for each sample.
+function exampleLayout() {
+  const l = newLayout('Example figure');
+  const plot = (id, x, path, view, title) => ({
+    id, kind: 'plot', x, y: 96, w: 320, h: 320, sampleKey: null, path, view, title, xLabel: '', yLabel: '', fontSize: 11, showGates: true, showLabels: true,
+  });
+  l.items = [
+    { id: 'ex-title', kind: 'text', x: 40, y: 32, w: 900, h: 40, text: '{sample}: donor {DONOR}, {CONDITION}', fontSize: 22, bold: true, align: 'left' },
+    { id: 'ex-sub', kind: 'text', x: 40, y: 64, w: 900, h: 24, text: 'Acquired {$DATE} · {n} events', fontSize: 13, bold: false, align: 'left' },
+    plot('ex-p1', 40, [], { x: 'FSC-A', y: 'SSC-A', type: 'pseudo' }, 'All events'),
+    plot('ex-p2', 368, ['Cells', 'Singlets'], { x: 'Comp-FITC-A', y: 'Comp-PerCP-Cy5.5-A', type: 'pseudo' }, '{population}'),
+    plot('ex-p3', 696, ['Cells', 'Singlets', 'T cells'], { x: 'Comp-PE-A', y: 'Comp-APC-A', type: 'pseudo' }, '{population}: {freq} of {parent}'),
+  ];
+  return l;
 }
 
 // ---------------------------------------------------------------- opening files, folders and workspaces
@@ -427,8 +448,9 @@ function flushRemoteQueue() {
   for (const core of list) onRemoteSample(core);
 }
 
-function onRemoteTransforms(transforms) {
+function onRemoteMeta({ transforms, layouts }) {
   S.transforms = { ...transforms };
+  S.layouts = JSON.parse(JSON.stringify(layouts || []));
   recomputeAll();
   scheduleRemoteRender();
 }
@@ -725,10 +747,9 @@ function rectCorners(g) {
   return [[fx(g.x1), fy(g.y1)], [fx(g.x2), fy(g.y1)], [fx(g.x2), fy(g.y2)], [fx(g.x1), fy(g.y2)]];
 }
 
-function gateShapes() {
-  const pop = viewedPop();
+// Gates drawn on a plot of `pop` with view `v`, in display-scale coordinates.
+function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
   if (!pop) return [];
-  const v = viewOf(pop);
   const hist = v.type === 'histogram';
   const out = [];
   const seenQuad = new Set();
@@ -1494,6 +1515,72 @@ function compChanged(s) {
   renderAll();
 }
 
+// ---------------------------------------------------------------- layouts
+
+// The axes and plot type a population is shown with: its own, else its
+// nearest ancestor's.
+function savedView(pop) {
+  for (let p = pop; p; p = p.parent) if (p.view) return { ...p.view };
+  return null;
+}
+
+let layoutEditor = null;
+
+function layoutEnv() {
+  return {
+    samples: () => S.samples,
+    activeSample: () => sample(),
+    sampleKey,
+    findByPath,
+    pathOf,
+    viewOf: (pop) => savedView(pop) || { x: 'FSC-A', y: 'SSC-A', type: 'pseudo' },
+    channels: (s) => s.channels,
+    channelLabel: (s, n) => channelInfo(s, n).label,
+    stats: (s, pop) => ({
+      count: pop.indices.length,
+      freq: pop.parent ? fmtPct(pct(pop.indices.length, pop.parent.indices.length)) : '100%',
+      freqTotal: fmtPct(pct(pop.indices.length, s.n)),
+    }),
+    plotData: (s, pop, view) => {
+      const hist = view.type === 'histogram';
+      const xs = scaled(s, view.x);
+      return {
+        xs, ys: hist ? null : scaled(s, view.y), idx: pop.indices,
+        xTicks: scalerFor(view.x).ticks(),
+        yTicks: hist ? [0, 25, 50, 75, 100].map((p) => ({ s: (p / 100) * 0.95, major: true, label: String(p), v: p })) : scalerFor(view.y).ticks(),
+        gates: gateShapes(pop, view),
+        histogram: hist ? histogram(xs, pop.indices, 256) : null,
+      };
+    },
+    cacheKey: (s, pop, view) => [s.id, pop.id, view.x, view.y, view.type, scalerFor(view.x).key,
+      view.type === 'histogram' ? '' : scalerFor(view.y).key, S.version].join('|'),
+    layouts: () => S.layouts,
+    changed: () => {},
+    toast,
+  };
+}
+
+function setMode(mode) {
+  S.mode = mode;
+  const layout = mode === 'layout';
+  document.querySelectorAll('[data-mode]').forEach((b) => {
+    b.classList.toggle('is-on', b.dataset.mode === mode);
+    b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+  });
+  $('gating-view').hidden = layout;
+  $('layout-view').hidden = !layout;
+  if (layout) layoutEditor.render();
+  else renderAll();
+}
+
+function addCurrentToLayout() {
+  const s = sample();
+  const pop = viewedPop();
+  if (!s || !pop) return;
+  const { layout } = layoutEditor.addPlot(s, pop, { ...viewOf(pop) });
+  toast(`Added "${pop.name}" to ${layout.name}. Open Layout to arrange it.`);
+}
+
 // ---------------------------------------------------------------- save & share panel
 
 const timeAgo = (iso) => {
@@ -1635,6 +1722,7 @@ function focusGateName() {
 }
 
 function renderAll() {
+  if (S.mode === 'layout') { renderHeader(); layoutEditor?.render(); return; }
   renderHeader();
   renderSamples();
   renderTree();
@@ -2056,6 +2144,7 @@ function bind() {
   });
 
   document.addEventListener('keydown', (e) => {
+    if (S.mode === 'layout') return; // the layout editor has its own keys
     let typing = e.target.matches('input, textarea, select');
     // The name box is focused right after drawing a gate; until the name is
     // edited, Ctrl+Z should undo the gate rather than the text.
@@ -2114,13 +2203,16 @@ export function start() {
   bind();
   S.shared = new SharedWorkspaces({
     localSamples: () => S.samples.map(sharedState),
-    localTransforms: () => ({ ...S.transforms }),
+    localMeta: () => ({ transforms: { ...S.transforms }, layouts: JSON.parse(JSON.stringify(S.layouts)) }),
     applySample: onRemoteSample,
-    applyTransforms: onRemoteTransforms,
+    applyMeta: onRemoteMeta,
     isBusy: () => !!drag || !!S.draft,
     onChange: renderShare,
   });
   S.shared.init();
+  layoutEditor = createLayoutEditor($('layout-view'), layoutEnv());
+  document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  $('add-to-layout').addEventListener('click', addCurrentToLayout);
   try {
     loadExamples();
   } catch (err) {

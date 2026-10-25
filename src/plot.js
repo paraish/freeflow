@@ -60,22 +60,19 @@ const clampBin = (v, n) => {
   return b < 0 ? 0 : b >= n ? n - 1 : b;
 };
 
-function drawBivariate(g, geo, o) {
-  // One bin per CSS pixel, drawn up at device resolution.
-  const bw = Math.max(1, Math.round(geo.pw));
-  const bh = Math.max(1, Math.round(geo.ph));
+// RGBA pixels of a bivariate plot, one bin per pixel, row 0 at the top.
+// Empty bins stay transparent.
+export function bivariatePixels({ xs, ys, idx, type, dotRGB }, bw, bh) {
   const counts = new Float32Array(bw * bh);
-  const { xs, ys, idx } = o;
   for (let i = 0; i < idx.length; i++) {
     const e = idx[i];
     const bx = clampBin(xs[e], bw);
     const by = bh - 1 - clampBin(ys[e], bh);
     counts[by * bw + bx]++;
   }
-  const img = new ImageData(bw, bh);
-  const px = img.data;
-  if (o.type === 'dot') {
-    const [r, gg, b] = o.colors.dotRGB;
+  const px = new Uint8ClampedArray(bw * bh * 4);
+  if (type === 'dot') {
+    const [r, gg, b] = dotRGB;
     for (let i = 0; i < counts.length; i++) {
       if (counts[i] > 0) { px[i * 4] = r; px[i * 4 + 1] = gg; px[i * 4 + 2] = b; px[i * 4 + 3] = 255; }
     }
@@ -92,6 +89,14 @@ function drawBivariate(g, geo, o) {
       px[i * 4] = LUT[c]; px[i * 4 + 1] = LUT[c + 1]; px[i * 4 + 2] = LUT[c + 2]; px[i * 4 + 3] = 255;
     }
   }
+  return px;
+}
+
+function drawBivariate(g, geo, o) {
+  // One bin per CSS pixel, drawn up at device resolution.
+  const bw = Math.max(1, Math.round(geo.pw));
+  const bh = Math.max(1, Math.round(geo.ph));
+  const img = new ImageData(bivariatePixels({ ...o, dotRGB: o.colors.dotRGB }, bw, bh), bw, bh);
   const off = new OffscreenCanvasOrCanvas(bw, bh);
   off.ctx.putImageData(img, 0, 0);
   g.imageSmoothingEnabled = false;

@@ -72,6 +72,28 @@ replaces the examples.
 | Ctrl/⌘ + C, Ctrl/⌘ + V | Copy the selected gate, paste it into the population being viewed |
 | Ctrl/⌘ + Z | Undo |
 
+## Layouts and figures
+
+Switch to **Layout** (top bar) to arrange figures. In Gating, **Add to layout** places the plot
+you are looking at on the current layout.
+
+- Drag items to move them, drag the corner to resize, arrow keys to nudge (Shift for bigger
+  steps), Delete to remove.
+- Per plot: sample, population, plot type (pseudocolor, dot, histogram), X and Y channels,
+  title, axis labels, font size, width and height, gates and gate labels on or off.
+- Text items and titles take fill-ins: `{sample}`, `{population}`, `{parent}`, `{count}`,
+  `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
+  braces, such as `{$DATE}` or `{DONOR}` (including keywords added in FlowJo).
+- **Batch** repeats the page for every sample, in a grid with a chosen number of copies per
+  row; each copy fills in its own sample's numbers and keywords.
+- Export: **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
+  Illustrator, Inkscape or PowerPoint; density clouds embedded as images), **Download PNG**,
+  **Copy as image**, **Copy plot as image** for one plot, and a preview image you can
+  right-click to copy.
+- Page sizes: Letter and A4 (portrait or landscape), 16:9 slide, or custom.
+- Layouts are kept with shared workspaces. They are not part of the .wsp file, since FlowJo's
+  layout format is different.
+
 ## FlowJo workspaces (.wsp)
 
 - **Save & share → Download .wsp** writes a FlowJo 10 workspace with every open sample's
@@ -109,8 +131,8 @@ change wins.
 
 - **Phase 2**: compute compensation from single-stain controls (auto-detected from
   keywords and filenames), sample groups, gates linked across a group.
-- **Phase 3**: layout editor and batch reports, annotations built from file keywords and
-  sample- or group-level values, table editor with CSV/Excel export.
+- **Phase 3**: sample- and group-level annotations you type in, table editor with CSV/Excel
+  export, histogram overlays in layouts.
 - **Phase 4**: Boolean and exclusion gates, derived parameters, contour/zebra plots,
   dimensionality reduction.
 
@@ -150,4 +172,6 @@ Source is plain ES modules in `src/`, bundled into one HTML file by `scripts/bui
 | `src/wsp.js` | FlowJo workspace export and import |
 | `src/zip.js` | Zip reading and writing |
 | `src/share.js` | Live shared workspaces |
+| `src/figure.js` | Figures as SVG |
+| `src/layout.js` | Layout editor |
 | `src/app.js` | Interface and state |

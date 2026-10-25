@@ -19,6 +19,10 @@
       <input id="folder-input" type="file" webkitdirectory multiple>
       Open folder
     </label>
+    <div class="seg-group mode-switch" role="group" aria-label="View">
+      <button class="seg is-on" data-mode="gating" aria-pressed="true">Gating</button>
+      <button class="seg" data-mode="layout" aria-pressed="false">Layout</button>
+    </div>
     <p id="example-note" class="example-note">Showing 3 synthetic example samples. Opening your own files replaces them.</p>
     <div class="topbar-actions">
       <button id="undo" class="btn" disabled title="Undo (Ctrl+Z)">Undo</button>
@@ -27,6 +31,7 @@
     </div>
   </header>
 
+  <div id="gating-view" class="gating-view">
   <main class="work">
     <aside class="ws sidebar" aria-label="All samples">
       <section class="panel">
@@ -71,7 +76,8 @@
       </div>
       <div class="plot-head">
         <nav id="breadcrumb" class="breadcrumb" aria-label="Population being viewed"></nav>
-        <span id="plot-count" class="plot-count"></span>
+        <span class="plot-head-end"><span id="plot-count" class="plot-count"></span>
+          <button id="add-to-layout" class="btn btn-small" title="Place this plot on the current layout">Add to layout</button></span>
       </div>
       <div id="plot-wrap" class="plot-wrap"><canvas id="plot" aria-label="Flow cytometry plot"></canvas></div>
       <p id="hint" class="hint"></p>
@@ -94,6 +100,24 @@
     </header>
     <div class="table-scroll"><table id="stats-table" class="stats-table"></table></div>
     <textarea id="copy-fallback" class="copy-fallback" hidden readonly aria-label="Statistics table as tab-separated text"></textarea>
+  </section>
+  </div>
+
+  <section id="layout-view" class="layout-view" hidden aria-label="Layout editor">
+    <aside class="panel lay-side">
+      <header class="panel-head"><h2>Layouts</h2><button class="btn btn-quiet btn-small" data-act="new-layout">New layout</button></header>
+      <ul id="lay-list" class="lay-list"></ul>
+      <header class="panel-head lay-sub"><h2>On this page</h2></header>
+      <ul id="lay-items" class="lay-list"></ul>
+      <div class="btn-row lay-add">
+        <button class="btn btn-small" data-act="add-plot">Add plot</button>
+        <button class="btn btn-small" data-act="add-text">Add text</button>
+        <button class="btn btn-small btn-danger" data-act="del-layout">Delete layout</button>
+      </div>
+      <p class="tree-hint">In Gating, use Add to layout to place the plot you are looking at. Arrow keys nudge the selected item; Shift moves it further.</p>
+    </aside>
+    <div id="lay-stage" class="lay-stage"></div>
+    <aside id="lay-props" class="lay-props"></aside>
   </section>
 </div>
 

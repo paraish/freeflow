@@ -5,7 +5,7 @@
 // file name and event count.
 //
 // Layout in the database:
-//   workspaces/<wid>                 { name, createdBy, createdAt, updatedBy, updatedAt, transforms, samples: [{key, fileName, n}] }
+//   workspaces/<wid>                 { name, createdBy, createdAt, updatedBy, updatedAt, transforms, layouts, samples: [{key, fileName, n}] }
 //   workspaces/<wid>/samples/<key>   { key, fileName, n, tree, comp, updatedBy, updatedAt }
 
 // JSON with object keys sorted, so equal states always compare equal.
@@ -23,9 +23,9 @@ export class SharedWorkspaces {
   /**
    * hooks: {
    *   localSamples(): [{ key, fileName, n, tree, comp }]
-   *   localTransforms(): { [channel]: transform }
+   *   localMeta(): { transforms, layouts }   settings shared by the whole workspace
    *   applySample(core)            remote change to one sample
-   *   applyTransforms(transforms)  remote change to axis settings
+   *   applyMeta({ transforms, layouts })  remote change to those settings
    *   isBusy(): boolean            true while the user is mid-drag
    *   onChange()                   status or list changed; re-render
    * }
@@ -83,13 +83,17 @@ export class SharedWorkspaces {
     return { key: s.key, fileName: s.fileName, n: s.n, tree: s.tree, comp: s.comp ?? null };
   }
 
+  metaJson(m) {
+    return stableStringify({ transforms: m.transforms || {}, layouts: m.layouts || [], samples: m.samples || [] });
+  }
+
   async create(name) {
     const wid = `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     const now = new Date().toISOString();
     const samples = this.hooks.localSamples();
     const meta = {
       name, createdBy: this.me, createdAt: now, updatedBy: this.me, updatedAt: now,
-      transforms: this.hooks.localTransforms(),
+      ...this.hooks.localMeta(),
       samples: samples.map((s) => ({ key: s.key, fileName: s.fileName, n: s.n })),
     };
     await this.db.doc(`workspaces/${wid}`).set(meta);
@@ -98,7 +102,7 @@ export class SharedWorkspaces {
       await this.db.doc(`workspaces/${wid}/samples/${s.key}`).set({ ...core, updatedBy: this.me, updatedAt: now });
       this.written.set(`samples/${s.key}`, stableStringify(core));
     }
-    this.written.set('meta', stableStringify({ transforms: meta.transforms, samples: meta.samples }));
+    this.written.set('meta', this.metaJson(meta));
     await this.join(wid, true);
   }
 
@@ -122,10 +126,10 @@ export class SharedWorkspaces {
       }
       const data = snap.data();
       this.meta = data;
-      const json = stableStringify({ transforms: data.transforms || {}, samples: data.samples || [] });
+      const json = this.metaJson(data);
       if (json !== this.written.get('meta')) {
         this.written.set('meta', json);
-        if (data.transforms) this.hooks.applyTransforms(data.transforms);
+        this.hooks.applyMeta({ transforms: data.transforms || {}, layouts: data.layouts || [] });
       }
       if (!snap.metadata.fromCache) { gotMeta = true; markReady(); }
       this.hooks.onChange();
@@ -186,8 +190,8 @@ export class SharedWorkspaces {
       // The sample list keeps entries for files other people have open.
       const listed = new Map((this.meta?.samples || []).map((x) => [x.key, x]));
       for (const s of samples) listed.set(s.key, { key: s.key, fileName: s.fileName, n: s.n });
-      const metaCore = { transforms: this.hooks.localTransforms(), samples: [...listed.values()] };
-      const metaJson = stableStringify(metaCore);
+      const metaCore = { ...this.hooks.localMeta(), samples: [...listed.values()] };
+      const metaJson = this.metaJson(metaCore);
       if (metaJson !== this.written.get('meta') || changed) {
         await this.db.doc(`workspaces/${wid}`).update({ ...metaCore, updatedBy: this.me, updatedAt: now });
         this.written.set('meta', metaJson);

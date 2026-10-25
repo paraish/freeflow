@@ -54,12 +54,12 @@ function fakeStore() {
 
 // One person's FreeFlow: a sample tree per key and their axis settings.
 function person(store, id, samples, transforms = {}) {
-  const local = { samples, transforms, applied: [] };
+  const local = { samples, transforms, layouts: [], applied: [] };
   const sh = new SharedWorkspaces({
     localSamples: () => Object.entries(local.samples).map(([key, tree]) => ({ key, fileName: `${key}.fcs`, n: 100, tree, comp: null })),
-    localTransforms: () => local.transforms,
+    localMeta: () => ({ transforms: local.transforms, layouts: local.layouts }),
     applySample: (core) => { if (local.samples[core.key] !== undefined) { local.samples[core.key] = core.tree; local.applied.push(core.key); } },
-    applyTransforms: (t) => { local.transforms = { ...t }; },
+    applyMeta: (m) => { local.transforms = { ...m.transforms }; local.layouts = JSON.parse(JSON.stringify(m.layouts)); },
     isBusy: () => false,
     onChange: () => {},
   });
@@ -114,6 +114,12 @@ test('two people share and edit one workspace', async () => {
   await alice.sh.push();
   await tick();
   assert.equal(bob.local.transforms['FSC-A'].max, 200);
+
+  // Layouts travel too.
+  bob.local.layouts = [{ id: 'L1', name: 'Figure 1', items: [] }];
+  await bob.sh.push();
+  await tick();
+  assert.equal(alice.local.layouts[0].name, 'Figure 1');
 
   // The workspace keeps listing s2 even though Bob never opened it.
   assert.deepEqual(store.docs.get(`workspaces/${wid}`).samples.map((x) => x.key).sort(), ['s1', 's2']);
