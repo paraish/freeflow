@@ -26,7 +26,8 @@
     <p id="example-note" class="example-note" hidden>Showing sample data (synthetic). Opening your own files replaces it.
       <button id="remove-examples" class="btn btn-quiet btn-small">Remove sample data</button></p>
     <div class="topbar-actions">
-      <button id="undo" class="btn" disabled title="Undo (Ctrl+Z)">Undo</button>
+      <button id="undo" class="btn" disabled title="Undo (Ctrl+Z or ⌘Z)">Undo</button>
+      <button id="redo" class="btn" disabled title="Redo (Ctrl+Shift+Z or ⌘⇧Z)">Redo</button>
       <button id="comp-btn" class="btn">Compensation</button>
       <button id="share-btn" class="btn">Save &amp; share<span id="share-pill" class="pill" hidden></span></button>
     </div>
@@ -60,10 +61,15 @@
       <section class="panel">
         <header class="panel-head">
           <h2>Folders</h2>
-          <button id="group-new" class="btn btn-quiet btn-small">New folder</button>
         </header>
         <div id="group-form" class="group-form" hidden></div>
         <ul id="groups" class="group-list scroll"></ul>
+        <form id="group-quick" class="group-quick" autocomplete="off">
+          <input id="gq-name" type="text" placeholder="Name (Group 1)" aria-label="New folder name">
+          <input id="gq-contains" type="text" placeholder="File name contains…" aria-label="Add files whose names contain">
+          <button type="submit" class="btn btn-primary gq-add" title="Create folder" aria-label="Create folder">+</button>
+          <p id="gq-hint" class="group-preview" aria-live="polite"></p>
+        </form>
         <p class="tree-hint">A sample can be in several folders. Drag a sample onto a folder to add it; drag a gate onto a folder to copy it to every sample in it.</p>
       </section>
     </aside>
@@ -118,7 +124,8 @@
       <p id="hint" class="hint"></p>
     </section>
 
-    <aside class="right">
+    <aside id="right-pane" class="right">
+      <button id="right-toggle" class="right-toggle" aria-expanded="true" aria-controls="right-pane" title="Hide axis, gate and statistics settings"><span class="rt-label">Hide settings</span></button>
       <div id="axes" class="stack"></div>
       <div id="inspector"></div>
       <div id="popstats"></div>
@@ -171,7 +178,7 @@
   <footer class="site-foot">
     <p class="cite">
       <strong>How to cite:</strong> if FreeFlow contributed to your work, please cite
-      <span id="cite-text">Misra, Paraish S. (2026). FreeFlow: a free, open-source tool for flow cytometry analysis and figure generation (Version 0.1.0) [Computer software]. https://github.com/paraish/freeflow</span>
+      <span id="cite-text">Misra, Paraish S. (2026). FreeFlow: a free, open-source tool for flow cytometry analysis and figure generation (Version 0.1.0) [Computer software]. <a href="https://doi.org/10.5281/zenodo.23650055" target="_blank" rel="noopener">https://doi.org/10.5281/zenodo.23650055</a></span>
       <button id="copy-cite" class="btn btn-small">Copy citation</button>
     </p>
     <p class="lab">FreeFlow is made by the Misra Lab. Want to see what else we do? Visit <a href="https://misralab.ca/" target="_blank" rel="noopener">misralab.ca</a>.</p>

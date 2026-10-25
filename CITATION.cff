@@ -8,6 +8,7 @@ authors:
 version: 0.1.0
 date-released: 2026-10-25
 license: AGPL-3.0-only
+doi: 10.5281/zenodo.23650055
 repository-code: "https://github.com/paraish/freeflow"
 url: "https://paraish.github.io/freeflow/"
 keywords:

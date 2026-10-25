@@ -112,6 +112,20 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 .left { grid-area: left; }
 .center { grid-area: center; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .right { grid-area: right; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* The settings pane collapses to a slim tab beside the plot. */
+.right-toggle {
+  align-self: flex-end; border: 1px solid var(--line); background: var(--surface); color: var(--accent);
+  border-radius: var(--r); padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: 600;
+}
+.right-toggle:hover { border-color: var(--accent); }
+.right.is-collapsed > :not(.right-toggle) { display: none !important; }
+.right.is-collapsed .right-toggle {
+  align-self: stretch; writing-mode: vertical-rl; padding: 14px 6px; position: sticky; top: calc(12px + env(safe-area-inset-top, 0px));
+}
+.right.is-collapsed .right-toggle::before { content: "‹ "; }
+@media (min-width: 1641px) {
+  .work.right-collapsed { grid-template-columns: 190px 240px 280px minmax(0, 1fr) 36px; }
+}
 /* Each sidebar sticks in view and scrolls on its own. */
 .sidebar {
   position: sticky;
@@ -128,6 +142,10 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
   .work { grid-template-columns: 190px 240px 280px minmax(0, 1fr); grid-template-areas: "groups ws left center" "right right right right"; }
   .right { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
   .right > #axes { display: contents; }
+  .right-toggle { grid-column: 1 / -1; justify-self: start; }
+  .right.is-collapsed { display: block; }
+  .right.is-collapsed .right-toggle { writing-mode: horizontal-tb; position: static; padding: 6px 12px; }
+  .right.is-collapsed .right-toggle::before { content: "▸ "; }
 }
 @media (max-width: 1400px) {
   .work { grid-template-columns: 250px 280px minmax(0, 1fr); grid-template-areas: "groups left center" "ws left center" "right right right"; }
@@ -434,6 +452,15 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .group-form input[type="text"] { height: 28px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 0 8px; width: 100%; }
 .group-preview { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .sample-row[draggable="true"] .sample-pick { cursor: grab; }
+
+/* ---- quick folder bar */
+.group-quick { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding: 10px 12px 4px; border-top: 1px solid var(--line); margin-top: 6px; flex: none; }
+.group-quick input { height: 28px; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunk); padding: 0 8px; min-width: 0; width: 100%; }
+.group-quick #gq-name { grid-column: 1; grid-row: 1; }
+.group-quick #gq-contains { grid-column: 1; grid-row: 2; }
+.gq-add { grid-column: 2; grid-row: 1 / span 2; height: auto; width: 34px; padding: 0; font-size: 20px; line-height: 1; }
+.group-quick .group-preview { grid-column: 1 / -1; margin: 0; }
+.group-quick .group-preview:empty { display: none; }
 
 /* ---- folder gates */
 .fg-list { list-style: none; }

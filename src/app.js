@@ -31,6 +31,7 @@ const S = {
   tool: 'select',
   transforms: {},
   undo: [],
+  redo: [],
   draft: null,
   examples: false,
   version: 0,
@@ -225,7 +226,7 @@ function dropExamples() {
   S.samples = S.samples.filter((s) => !s.isExample);
   S.layouts = S.layouts.filter((l) => !l.example);
   S.examples = false;
-  S.undo = [];
+  clearHistory();
   if (!sample()) {
     S.sampleId = S.samples[0]?.id ?? null;
     S.viewPath = [];
@@ -326,7 +327,7 @@ async function openEntries(rawEntries, { folder = false } = {}) {
   if (!sample()) S.sampleId = S.samples[0]?.id ?? null;
   S.viewPath = [];
   S.selId = null;
-  S.undo = [];
+  clearHistory();
   S.version++;
   renderAll();
 
@@ -513,7 +514,7 @@ async function buildBundle(name) {
       'To continue in other analysis software: unzip it and open the .wsp; keep it in the folder with the FCS files.',
       '',
       'If FreeFlow contributed to your work, please cite: Misra, Paraish S. (2026). FreeFlow: a free, open-source',
-      'tool for flow cytometry analysis and figure generation [Computer software]. https://github.com/paraish/freeflow',
+      'tool for flow cytometry analysis and figure generation [Computer software]. https://doi.org/10.5281/zenodo.23650055',
       '',
     ].join('\r\n'),
   });
@@ -739,7 +740,7 @@ function onRemoteSample(core) {
   if (!s) return; // kept by the sync engine until the file is opened
   if (drag || S.draft) { remoteQueue.set(core.key, core); return; }
   applySharedToSample(s, core);
-  S.undo = [];
+  clearHistory();
   S.version++;
   if (s === sample()) { S.selId = null; }
   scheduleRemoteRender();
@@ -919,7 +920,23 @@ function missingParams(items, target) {
 
 // Adds copies of serialized populations (with their sub-gates) as children of
 // `parent` in sample `target`. Names that are already taken get a number.
-function pasteInto(items, target, parent, label) {
+// Updates `dst` from a serialized population: its gate, then its sub-gates
+// by name (adding missing ones, updating the rest).
+function overwriteFrom(o, dst) {
+  if (dst.link && JSON.stringify(dst.gate) !== JSON.stringify(o.gate)) dst.custom = true;
+  dst.gate = o.gate ? cloneGate(o.gate) : null;
+  for (const c of o.children) {
+    const match = dst.children.find((x) => x.name === c.name);
+    if (match) overwriteFrom(c, match);
+    else dst.children.push(deserialize(c, dst));
+  }
+}
+
+// Adds copies of serialized populations under `parent`. With `overwrite`, a
+// population of the same name already there is replaced instead (except the
+// dragged ones themselves, listed in `except`, so dropping a gate on its own
+// parent still makes a copy).
+function pasteInto(items, target, parent, label, { overwrite = false, except = new Set() } = {}) {
   items = JSON.parse(JSON.stringify(items)).map(unlinked);
   const missing = missingParams(items, target);
   if (missing.length) {
@@ -936,7 +953,10 @@ function pasteInto(items, target, parent, label) {
     o.children.forEach(relink);
   };
   items.forEach(relink);
+  let replaced = 0;
   const made = items.map((o) => {
+    const existing = overwrite && parent.children.find((c) => c.name === o.name && !except.has(c.id));
+    if (existing) { overwriteFrom(o, existing); replaced++; return existing; }
     const p = deserialize({ ...o, name: uniqueName(parent, o.name) }, parent);
     parent.children.push(p);
     return p;
@@ -946,7 +966,10 @@ function pasteInto(items, target, parent, label) {
   S.collapsed.delete(`sample:${target.id}`);
   if (target === sample() && parent === viewedPop()) S.selId = made[0].id;
   renderAll();
-  toast(`Copied ${label} into ${parent.name}${target === sample() ? '' : ` in ${target.name}`}.`);
+  const where = `${parent.name}${target === sample() ? '' : ` in ${target.name}`}`;
+  toast(replaced === items.length ? `Replaced ${label} in ${where} with the dragged gate.`
+    : replaced ? `Copied ${label} into ${where}; ${replaced} gate${replaced === 1 ? '' : 's'} with the same name ${replaced === 1 ? 'was' : 'were'} replaced.`
+      : `Copied ${label} into ${where}.`);
 }
 
 // Dropping on a sample puts each gate at the same place in that sample's
@@ -1022,12 +1045,35 @@ function snapshot() {
 function pushUndo() {
   S.undo.push(snapshot());
   if (S.undo.length > 60) S.undo.shift();
-  $('undo').disabled = false;
+  S.redo = [];
+  updateUndoButtons();
+}
+
+function updateUndoButtons() {
+  $('undo').disabled = S.undo.length === 0;
+  $('redo').disabled = S.redo.length === 0;
+}
+
+function clearHistory() {
+  clearHistory();
+  S.redo = [];
 }
 
 function undo() {
   const snap = S.undo.pop();
   if (!snap) return;
+  S.redo.push(snapshot());
+  restoreSnapshot(snap);
+}
+
+function redo() {
+  const snap = S.redo.pop();
+  if (!snap) return;
+  S.undo.push(snapshot());
+  restoreSnapshot(snap);
+}
+
+function restoreSnapshot(snap) {
   for (const s of S.samples) {
     const t = snap.trees.get(s.id);
     if (!t) continue;
@@ -1223,7 +1269,8 @@ function applyDrag(sx, sy) {
   const dx = sx - d.start[0], dy = sy - d.start[1];
   if (!d.undoPushed && (Math.abs(dx) > 0.002 || Math.abs(dy) > 0.002)) {
     S.undo.push(d.undoSnap);
-    $('undo').disabled = false;
+    S.redo = [];
+    updateUndoButtons();
     d.undoPushed = true;
     // A folder gate moved on one sample becomes this sample's own version.
     for (const q of d.mode === 'quad' ? quadSiblings(d.pop) : [d.pop]) if (q.link) q.custom = true;
@@ -1442,7 +1489,7 @@ function deleteGate(pop) {
 
 function renderHeader() {
   $('example-note').hidden = !S.examples;
-  $('undo').disabled = S.undo.length === 0;
+  updateUndoButtons();
   const s = sample();
   $('comp-btn').disabled = !s;
   $('comp-btn').textContent = s?.comp ? `Compensation${s.comp.enabled ? '' : ' (off)'}` : 'Compensation';
@@ -1497,6 +1544,7 @@ const GF = { editing: null, open: false, confirm: null }; // the new/edit folder
 
 function renderGroups() {
   const el = $('groups');
+  if (!document.activeElement?.closest?.('#group-quick')) renderQuickHint();
   const row = (g) => {
     const n = groupMembers(g).length;
     const edit = isUserGroup(g) ? `<button class="icon-btn" data-act="edit-group" aria-label="Edit ${esc(g.name)}" title="Rename or change the rule">✎</button>` : '';
@@ -1554,6 +1602,40 @@ function renderGroupForm() {
       ${g ? '<button class="btn btn-small btn-danger" data-act="gf-delete">Delete folder</button>' : ''}
     </div>`;
   if (focus && $(focus)) { $(focus).focus(); try { $(focus).setSelectionRange(pos, pos); } catch { /* checkbox */ } }
+}
+
+// The create bar at the bottom of the Folders pane.
+function nextGroupName() {
+  const taken = new Set([...BUILT_IN, ...S.groups].map((g) => g.name.toLowerCase()));
+  for (let i = 1; ; i++) if (!taken.has(`group ${i}`)) return `Group ${i}`;
+}
+
+function renderQuickHint() {
+  const contains = $('gq-contains').value.trim();
+  const n = contains ? S.samples.filter((x) => nameMatches(contains, x)).length : 0;
+  $('gq-name').placeholder = `Name (${nextGroupName()})`;
+  $('gq-hint').textContent = contains ? `Matches ${n} of ${S.samples.length} file${S.samples.length === 1 ? '' : 's'}` : '';
+}
+
+function quickCreateGroup() {
+  const name = $('gq-name').value.trim() || nextGroupName();
+  const contains = $('gq-contains').value.trim();
+  if ([...BUILT_IN, ...S.groups].some((g) => g.name.toLowerCase() === name.toLowerCase())) {
+    toast(`There is already a folder called "${name}".`, true);
+    $('gq-name').focus();
+    return;
+  }
+  const g = newGroup(name);
+  S.groups.push(g);
+  setRule(g, contains, true, S.samples, sampleKey);
+  syncFolderGates();
+  S.groupId = g.id;
+  $('gq-name').value = '';
+  $('gq-contains').value = '';
+  renderAll();
+  renderQuickHint();
+  const n = groupMembers(g).length;
+  toast(`Created ${name}${contains ? ` with ${n} sample${n === 1 ? '' : 's'} whose names contain “${contains}”; matching files opened later join it too` : '. Drag samples onto it to add them'}.`);
 }
 
 function saveGroupForm() {
@@ -2544,6 +2626,7 @@ function bind() {
     if (e.key === 'Enter' && e.target.id === 'share-new-name') { e.preventDefault(); $('share-create')?.click(); }
   });
   $('undo').addEventListener('click', undo);
+  $('redo').addEventListener('click', redo);
   $('comp-btn').addEventListener('click', () => { $('comp-panel').hidden = false; renderComp(); });
   $('comp-close').addEventListener('click', () => { $('comp-panel').hidden = true; });
   $('comp-panel').addEventListener('click', (e) => {
@@ -2629,7 +2712,7 @@ function bind() {
         return;
       }
       S.samples = S.samples.filter((s) => s.id !== row.dataset.id);
-      S.undo = [];
+      clearHistory();
       S.multi.clear();
       if (S.sampleId === row.dataset.id) S.sampleId = S.samples[0]?.id ?? null;
       if (!S.samples.some((s) => s.isExample)) S.examples = false;
@@ -2764,7 +2847,7 @@ function bind() {
       if (row.classList.contains('pop-row')) {
         if (src.ids.has(row.dataset.id)) return;
         const target = findPop(row.dataset.id);
-        if (target) pasteInto(src.items.map((i) => serialize(i.pop)), target.sample, target.pop, src.label);
+        if (target) pasteInto(src.items.map((i) => serialize(i.pop)), target.sample, target.pop, src.label, { overwrite: true, except: src.ids });
       } else {
         dropOnSample(src, S.samples.find((x) => x.id === row.dataset.id));
       }
@@ -2790,13 +2873,27 @@ function bind() {
     if (shown.length && !shown.some((x) => x.id === S.sampleId)) { S.sampleId = shown[0].id; S.selId = null; S.draft = null; }
     renderAll();
   });
-  $('group-new').addEventListener('click', () => {
-    GF.open = true;
-    GF.editing = null;
-    $('group-form').innerHTML = '';
-    renderGroupForm();
-    $('gf-name').focus();
+  // The right-hand settings pane starts collapsed; the choice is remembered.
+  const setRight = (open) => {
+    $('right-pane').classList.toggle('is-collapsed', !open);
+    $('gating-work').classList.toggle('right-collapsed', !open);
+    const t = $('right-toggle');
+    t.setAttribute('aria-expanded', String(open));
+    t.title = open ? 'Hide axis, gate and statistics settings' : 'Show axis, gate and statistics settings';
+    t.querySelector('.rt-label').textContent = open ? 'Hide settings' : 'Settings';
+    try { localStorage.setItem('freeflow.rightOpen', open ? '1' : '0'); } catch { /* not stored */ }
+    sizePlot();
+  };
+  let rightOpen = false;
+  try { rightOpen = localStorage.getItem('freeflow.rightOpen') === '1'; } catch { /* default */ }
+  setRight(rightOpen);
+  $('right-toggle').addEventListener('click', () => setRight($('right-pane').classList.contains('is-collapsed')));
+
+  $('group-quick').addEventListener('submit', (e) => {
+    e.preventDefault();
+    quickCreateGroup();
   });
+  $('group-quick').addEventListener('input', renderQuickHint);
   $('group-form').addEventListener('input', () => renderGroupForm());
   $('group-form').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.matches('input[type="text"]')) { e.preventDefault(); saveGroupForm(); }
@@ -2997,6 +3094,7 @@ function bind() {
     // The name box is focused right after drawing a gate; until the name is
     // edited, Ctrl+Z should undo the gate rather than the text.
     if (e.target.id === 'gate-name' && e.target.value === inspectorPop()?.name) typing = false;
+    if ((e.ctrlKey || e.metaKey) && !typing && ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y')) { e.preventDefault(); redo(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); return; }
     if ((e.ctrlKey || e.metaKey) && !typing && !e.shiftKey && !e.altKey) {
       const k = e.key.toLowerCase();

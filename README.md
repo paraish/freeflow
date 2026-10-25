@@ -1,6 +1,6 @@
 # FreeFlow
 
-[![Cite this software](https://img.shields.io/badge/cite-CITATION.cff-blue)](CITATION.cff)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23650055.svg)](https://doi.org/10.5281/zenodo.23650055)
 
 
 A free, open-source tool for flow cytometry analysis and figure generation, running in the
@@ -54,14 +54,15 @@ with one click).
   one axis setting.
 - **Plots**: pseudocolor density, dot, and histogram.
 - **Gates**: rectangle, polygon, quadrant, range. Move gates, drag their corners, rename,
-  delete, undo (Ctrl/⌘+Z). Rectangle edges drawn at the plot border stay open-ended, so
+  delete, with **Undo** and **Redo** buttons in the header (Ctrl/⌘+Z, Ctrl/⌘+Shift+Z or Ctrl+Y). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
 - **Population tree** with counts and % of parent.
 - **Folders** (leftmost column): non-exclusive groups of samples. **All samples** and
   **Compensation controls** (recognised from names like "Stained Control" or "Unstained", plus
-  controls picked in the compensation calculator) are built in. **New folder** takes a name and,
-  optionally, text that file names must contain, with a live count of matches; it can keep
-  adding matching files opened later. Clicking a folder shows its samples in the Samples
+  controls picked in the compensation calculator) are built in. The bar at the bottom of the
+  pane makes a folder in one step: a name (blank gives Group 1, Group 2, …) and, optionally,
+  text that file names must contain, with a live count of matches, then **+** or Enter. A folder
+  made with a filter keeps adding matching files opened later. Clicking a folder shows its samples in the Samples
   column. Drag a sample onto a folder to add it, use − to take it out (the sample stays open),
   drag a gate onto a folder to copy it to every sample in it, and repeat a batch layout over one
   folder. Folders are saved in analysis bundles, shared workspaces and .wsp files (as sample
@@ -81,7 +82,8 @@ with one click).
   population in any sample's tree opens it.
 - **Copying gates between populations**:
   - Drag a gate onto any population, in the same sample or any other sample's tree, to
-    copy it (with its sub-gates) there. Quadrant gates travel as their set of four.
+    copy it (with its sub-gates) there. If that population already has a gate with the same
+    name, the dragged gate replaces it (Undo brings the old one back). Quadrant gates travel as their set of four.
   - Select several gates with Ctrl/⌘-click (toggle) or Shift-click (range), then drag any
     of them to copy them all together. A gate whose parent is also selected comes along
     with its parent rather than being copied twice. Esc clears the selection.
@@ -91,6 +93,9 @@ with one click).
   - **Copy to all samples** and **Copy tree to all** copy to every other sample. In these
     and in drops on a sample's name, a population with the same name is updated, not
     duplicated.
+- **Settings pane**: the axis and transform settings on the right of the Gating view are
+  folded away by default to give the plot more room; **Settings** opens them, and the choice
+  is remembered.
 - **Statistics**: per-population median, mean and CV for every channel, and a
   samples × populations table (frequency of parent, frequency of total, count, median or
   mean of a chosen channel). **Copy table** puts it on the clipboard for Excel or Sheets.
@@ -107,6 +112,7 @@ with one click).
 | Delete / Backspace | Delete the selected gate |
 | Ctrl/⌘ + C, Ctrl/⌘ + V | Copy the selected gate, paste it into the population being viewed |
 | Ctrl/⌘ + Z | Undo |
+| Ctrl/⌘ + Shift + Z, Ctrl + Y | Redo |
 
 ## Layouts and figures
 
@@ -256,7 +262,7 @@ Source is plain ES modules in `src/`, bundled into one HTML file by `scripts/bui
 If FreeFlow contributed to your work, please cite it:
 
 > Misra, Paraish S. (2026). FreeFlow: a free, open-source tool for flow cytometry analysis
-> and figure generation (Version 0.1.0) [Computer software]. https://github.com/paraish/freeflow
+> and figure generation (Version 0.1.0) [Computer software]. https://doi.org/10.5281/zenodo.23650055
 
 In author-initial styles: Misra PS (Vancouver) or Misra, P. S. (APA).
 
