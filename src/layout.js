@@ -217,7 +217,7 @@ export function createLayoutEditor(root, env) {
     $('lay-list').innerHTML = layouts().map((x) => `<li><button class="lay-pick${x === l ? ' is-sel' : ''}" data-act="pick-layout" data-id="${x.id}">${escH(x.name)}<span class="sample-meta">${x.items.length} item${x.items.length === 1 ? '' : 's'}${x.batch ? ' · batch' : ''}</span></button></li>`).join('')
       || '<li class="empty">No layouts yet.</li>';
     $('lay-items').innerHTML = l ? l.items.map((it) => `<li><button class="lay-pick${it.id === ui.sel ? ' is-sel' : ''}" data-act="pick-item" data-id="${it.id}">${it.kind === 'text' ? 'Text' : 'Plot'}: ${escH(it.kind === 'text' ? (it.text || '').split('\n')[0].slice(0, 40) : (it.path || []).slice(-1)[0] || 'All Events')}</button></li>`).join('')
-      || '<li class="empty">Add a plot from the gating view (Add to layout) or with the buttons below.</li>' : '';
+      || '<li class="empty">Click or drag a population from Samples to add its plot.</li>' : '';
   }
 
   function renderStage() {
@@ -324,9 +324,70 @@ export function createLayoutEditor(root, env) {
       </section>`;
   }
 
+  // ---------------------------------------------------------------- samples sidebar
+
+  // Samples start collapsed except the one open in Gating.
+  ui.seen = new Set();
+  ui.closed = new Set(); // "s:<key>" for samples, "p:<key>:<path>" for populations
+
+  function renderSamplesSide() {
+    const el = $('lay-samples');
+    const samples = env.samples();
+    if (!samples.length) { el.innerHTML = '<li class="empty">Open samples to add their plots here.</li>'; return; }
+    const active = env.activeSample();
+    for (const s of samples) {
+      const key = env.sampleKey(s);
+      if (!ui.seen.has(key)) { ui.seen.add(key); if (s !== active) ui.closed.add(`s:${key}`); }
+    }
+    const top = el.scrollTop;
+    el.innerHTML = samples.map((s) => {
+      const key = env.sampleKey(s);
+      const shut = ui.closed.has(`s:${key}`);
+      const rows = [];
+      const visit = (p, depth) => {
+        const path = env.pathOf(p);
+        const pkey = `p:${key}:${JSON.stringify(path)}`;
+        const pshut = ui.closed.has(pkey);
+        const st = env.stats(s, p);
+        const twisty = p.children.length
+          ? `<button class="twisty" data-act="ls-pop-twisty" data-key="${escH(pkey)}" aria-expanded="${!pshut}" aria-label="${pshut ? 'Expand' : 'Collapse'} ${escH(p.name)}">${pshut ? '▸' : '▾'}</button>`
+          : '<span class="twisty-space"></span>';
+        rows.push(`<li class="pop-row lay-pop" style="--depth:${depth}" draggable="true" data-sample="${escH(key)}" data-path="${escH(JSON.stringify(path))}">${twisty}
+          <button class="pop-pick" data-act="ls-add" title="Add ${escH(p.name)} to the page">
+            <span class="pop-name">${escH(p.name)}</span><span class="pop-stats"><span class="pop-pct">${p.parent ? escH(st.freq) : ''}</span></span>
+          </button></li>`);
+        if (!pshut) p.children.forEach((c) => visit(c, depth + 1));
+      };
+      if (!shut) visit(s.root, 0);
+      return `<li class="ws-sample${s === active ? ' is-active' : ''}">
+        <div class="sample-row" data-sample="${escH(key)}">
+          <button class="twisty" data-act="ls-sample-twisty" aria-expanded="${!shut}" aria-label="${shut ? 'Show' : 'Hide'} populations of ${escH(s.name)}">${shut ? '▸' : '▾'}</button>
+          <button class="sample-pick" data-act="ls-sample-twisty"><span class="sample-name">${escH(s.name)}</span>
+            <span class="sample-meta">${s.n.toLocaleString('en-US')} events${s.isControl ? ' · control' : ''}</span></button>
+        </div>
+        ${shut ? '' : `<ul class="tree">${rows.join('')}</ul>`}
+      </li>`;
+    }).join('');
+    el.scrollTop = top;
+  }
+
+  function addFromSidebar(key, path, at = null) {
+    const s = env.samples().find((x) => env.sampleKey(x) === key);
+    const pop = s && env.findByPath(s.root, path);
+    if (!pop) return;
+    const l = ensureLayout();
+    // A plot from the page's own sample follows the page (and every sample in
+    // batch mode); one from another sample stays on that sample.
+    const pinned = !l.batch && s !== pageSampleOf(l) ? key : null;
+    addPlot(s, pop, env.viewOf(pop), { at, sampleKey: pinned });
+    render();
+    env.toast(`Added ${pop.name}${pinned ? ` (${s.name})` : ''} to ${l.name}.`);
+  }
+
   function render() {
     if (!current() && layouts().length) ui.layoutId = layouts()[0].id;
     if (current() && !ui.layoutId) ui.layoutId = current().id;
+    renderSamplesSide();
     renderList();
     renderStage();
     const active = document.activeElement;
@@ -374,12 +435,16 @@ export function createLayoutEditor(root, env) {
     return { x: margin, y: margin };
   }
 
-  function addPlot(s, pop, view) {
+  // `at` places the plot's centre at a page position; `sampleKey` pins it to
+  // one sample (null follows the page's sample, or each sample in batch).
+  function addPlot(s, pop, view, { at = null, sampleKey = null } = {}) {
     const l = ensureLayout();
     const w = 300, h = 300;
-    const at = placeFor(l, w, h);
+    const pos = at
+      ? { x: snap(Math.max(0, Math.min(l.width - w, at.x - w / 2))), y: snap(Math.max(0, Math.min(l.height - h, at.y - h / 2))) }
+      : placeFor(l, w, h);
     const item = {
-      id: newId('i'), kind: 'plot', ...at, w, h, sampleKey: null, path: s ? env.pathOf(pop) : [],
+      id: newId('i'), kind: 'plot', ...pos, w, h, sampleKey, path: s ? env.pathOf(pop) : [],
       view: view ? { ...view } : null, title: '{population}', xLabel: '', yLabel: '', fontSize: 11, showGates: true, showLabels: true,
     };
     l.items.push(item);
@@ -468,11 +533,27 @@ export function createLayoutEditor(root, env) {
     if (act === 'pick-layout') { ui.layoutId = b.dataset.id; ui.sel = null; return render(); }
     if (act === 'pick-item') { ui.sel = b.dataset.id; return render(); }
     if (act === 'add-text') return addText();
-    if (act === 'add-plot') {
-      const s = env.activeSample();
-      if (!s) { env.toast('Open a sample first.'); return; }
-      addPlot(s, s.root, env.viewOf(s.root));
-      return render();
+    if (act === 'ls-add') {
+      const row = b.closest('.lay-pop');
+      return addFromSidebar(row.dataset.sample, JSON.parse(row.dataset.path));
+    }
+    if (act === 'ls-sample-twisty') {
+      const k = `s:${b.closest('.sample-row').dataset.sample}`;
+      if (ui.closed.has(k)) ui.closed.delete(k); else ui.closed.add(k);
+      return renderSamplesSide();
+    }
+    if (act === 'ls-pop-twisty') {
+      const k = b.dataset.key;
+      if (ui.closed.has(k)) ui.closed.delete(k); else ui.closed.add(k);
+      return renderSamplesSide();
+    }
+    if (act === 'ls-expand' || act === 'ls-collapse') {
+      for (const s of env.samples()) {
+        const k = `s:${env.sampleKey(s)}`;
+        if (act === 'ls-expand') ui.closed.delete(k); else ui.closed.add(k);
+      }
+      if (act === 'ls-expand') for (const k of [...ui.closed]) if (k.startsWith('p:')) ui.closed.delete(k);
+      return renderSamplesSide();
     }
     if (act === 'del-layout' && l) {
       if (b.dataset.confirm !== '1') {
@@ -579,6 +660,38 @@ export function createLayoutEditor(root, env) {
   root.addEventListener('input', (e) => { if (e.target.closest('#lay-props')) onPropInput(e); });
   root.addEventListener('change', (e) => { if (e.target.closest('#lay-props') && (e.target.tagName === 'SELECT' || e.target.type === 'checkbox')) { /* handled on input */ } });
   root.addEventListener('pointerdown', onPointerDown);
+
+  // Drag a population from the samples sidebar onto the page.
+  let dragged = null;
+  root.addEventListener('dragstart', (e) => {
+    const row = e.target.closest?.('.lay-pop');
+    if (!row) return;
+    dragged = { key: row.dataset.sample, path: JSON.parse(row.dataset.path) };
+    e.dataTransfer.setData('text/plain', row.querySelector('.pop-name').textContent);
+    e.dataTransfer.effectAllowed = 'copy';
+  });
+  root.addEventListener('dragend', () => { dragged = null; $('lay-stage').classList.remove('is-drop-target'); });
+  root.addEventListener('dragover', (e) => {
+    if (!dragged || !e.target.closest('#lay-stage')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    $('lay-stage').classList.add('is-drop-target');
+  });
+  root.addEventListener('dragleave', (e) => { if (!e.relatedTarget || !$('lay-stage').contains(e.relatedTarget)) $('lay-stage').classList.remove('is-drop-target'); });
+  root.addEventListener('drop', (e) => {
+    if (!dragged) return;
+    e.preventDefault();
+    e.stopPropagation();
+    $('lay-stage').classList.remove('is-drop-target');
+    const sheetEl = root.querySelector('.lay-sheet');
+    const src = dragged;
+    dragged = null;
+    if (!sheetEl || !e.target.closest('#lay-stage')) return;
+    const r = sheetEl.getBoundingClientRect();
+    const l = current() || ensureLayout();
+    const at = { x: Math.min(l.width, (e.clientX - r.left) / ui.zoom), y: Math.min(l.height, (e.clientY - r.top) / ui.zoom) };
+    addFromSidebar(src.key, src.path, at);
+  });
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
   document.addEventListener('keydown', onKey);

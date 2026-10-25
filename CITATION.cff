@@ -4,7 +4,7 @@ title: "FreeFlow: browser-based flow cytometry analysis with FlowJo workspace co
 type: software
 authors:
   - family-names: Misra
-    given-names: Paraish
+    given-names: Paraish S.
 version: 0.1.0
 date-released: 2026-10-25
 license: AGPL-3.0-only

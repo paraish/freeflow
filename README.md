@@ -11,10 +11,11 @@ locally in your browser and are never uploaded.
 
 ## Use it
 
-Open `dist/freeflow.html` in any modern browser (download it, then double-click it).
-It is a single self-contained file. It opens with three synthetic example samples
-so you can try everything before loading your own data. Opening your own files
-replaces the examples.
+Use it at **https://paraish.github.io/freeflow/**, or open `dist/freeflow.html` in any
+modern browser (download it, then double-click it); it is a single self-contained file.
+It opens on a welcome screen: open FCS files, open a folder with a FlowJo workspace, or
+**Try sample data** (three synthetic samples with gates and an example figure, removable
+with one click).
 
 ### What works now
 
@@ -91,8 +92,11 @@ replaces the examples.
 
 ## Layouts and figures
 
-Switch to **Layout** (top bar) to arrange figures. In Gating, **Add to layout** places the plot
-you are looking at on the current layout.
+Switch to **Layout** (top bar) to arrange figures. The **Samples** sidebar lists every sample
+with its populations (collapsible, scrolls on its own): click a population to add its plot, or
+drag it to where you want it on the page. A plot taken from another sample stays on that
+sample; one from the page's sample follows the page (and every sample in batch mode). In
+Gating, **Add to layout** places the plot you are looking at.
 
 - Drag items to move them, drag the corner to resize, arrow keys to nudge (Shift for bigger
   steps), Delete to remove.
@@ -197,8 +201,10 @@ Source is plain ES modules in `src/`, bundled into one HTML file by `scripts/bui
 
 If FreeFlow contributed to your work, please cite it:
 
-> Misra P. FreeFlow: browser-based flow cytometry analysis with FlowJo workspace
-> compatibility (version 0.1.0). 2026. https://github.com/paraish/freeflow
+> Misra, Paraish S. (2026). FreeFlow: browser-based flow cytometry analysis with FlowJo
+> workspace compatibility (Version 0.1.0) [Computer software]. https://github.com/paraish/freeflow
+
+In author-initial styles: Misra PS (Vancouver) or Misra, P. S. (APA).
 
 GitHub's **Cite this repository** button (from `CITATION.cff`) gives APA and BibTeX.
 

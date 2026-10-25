@@ -322,9 +322,12 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .plot-head-end { display: inline-flex; gap: 10px; align-items: center; }
 .layout-view {
   display: grid; gap: 12px; align-items: start;
-  grid-template-columns: 230px minmax(0, 1fr) 320px;
+  grid-template-columns: 260px minmax(0, 1fr) 320px;
 }
-.lay-side { position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); }
+.lay-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.lay-samples-side { grid-column: 1; }
+.lay-pop[draggable="true"] .pop-pick { cursor: grab; }
+.lay-stage.is-drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; }
 .lay-sub { margin-top: 10px; }
 .lay-list { list-style: none; margin: 0; padding: 0; }
 .lay-pick { width: 100%; text-align: left; border: 0; background: none; padding: 6px 12px; cursor: pointer; display: flex; flex-direction: column; border-left: 3px solid transparent; }
@@ -350,12 +353,13 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .check-small { font-weight: 400; font-size: 13px; }
 .lay-preview { width: 100%; border: 1px solid var(--line); border-radius: 4px; background: #ffffff; min-height: 40px; }
 @media (max-width: 1240px) {
-  .layout-view { grid-template-columns: 210px minmax(0, 1fr); }
-  .lay-props { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
+  .layout-view { grid-template-columns: 240px minmax(0, 1fr); }
+  .lay-right { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
+  .lay-props { display: contents; }
 }
 @media (max-width: 760px) {
   .layout-view { grid-template-columns: minmax(0, 1fr); }
-  .lay-side { position: static; }
+  .lay-samples-side { grid-column: auto; }
 }
 
 /* ---- compensation calculator */
@@ -371,6 +375,24 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .ok-note { margin: 0; color: var(--ok); font-size: 12px; font-weight: 600; }
 .apply-to { border: 1px solid var(--line); border-radius: var(--r); padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; }
 .apply-to legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+
+/* ---- welcome (no samples open) */
+.welcome { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding-block: 40px 32px; padding-inline: max(16px, 5vw); display: flex; flex-direction: column; gap: 14px; align-items: center; text-align: center; }
+.welcome h1 { margin: 0; font-size: clamp(22px, 3vw, 30px); letter-spacing: -0.01em; text-wrap: balance; }
+.welcome-lede { margin: 0; color: var(--muted); max-width: 60ch; font-size: 15px; }
+.welcome-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; width: min(860px, 100%); margin-top: 10px; }
+.welcome-option {
+  position: relative; display: flex; flex-direction: column; gap: 6px; text-align: left; cursor: pointer;
+  padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--sunk); font: inherit; color: inherit;
+}
+.welcome-option:hover { border-color: var(--accent); }
+.welcome-option input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.welcome-title { font-weight: 700; font-size: 16px; }
+.welcome-text { color: var(--muted); font-size: 13px; }
+.welcome-try { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.welcome-try .welcome-text { color: var(--accent-ink); opacity: 0.85; }
+.welcome-try:hover { filter: brightness(1.08); }
+.welcome-foot { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 
 /* ---- footer */
 .site-foot { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 12px; }

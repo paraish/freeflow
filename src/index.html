@@ -23,7 +23,8 @@
       <button class="seg is-on" data-mode="gating" aria-pressed="true">Gating</button>
       <button class="seg" data-mode="layout" aria-pressed="false">Layout</button>
     </div>
-    <p id="example-note" class="example-note">Showing 3 synthetic example samples. Opening your own files replaces them.</p>
+    <p id="example-note" class="example-note" hidden>Showing sample data (synthetic). Opening your own files replaces it.
+      <button id="remove-examples" class="btn btn-quiet btn-small">Remove sample data</button></p>
     <div class="topbar-actions">
       <button id="undo" class="btn" disabled title="Undo (Ctrl+Z)">Undo</button>
       <button id="comp-btn" class="btn">Compensation</button>
@@ -32,7 +33,28 @@
   </header>
 
   <div id="gating-view" class="gating-view">
-  <main class="work">
+  <section id="welcome" class="welcome" hidden>
+    <h1>Analyse flow cytometry data in your browser</h1>
+    <p class="welcome-lede">Open FCS files to gate, compensate and build figures. Your files stay on your computer: nothing is uploaded.</p>
+    <div class="welcome-options">
+      <label class="welcome-option file-btn">
+        <input id="welcome-files" type="file" accept=".fcs,.lmd,.wsp,.zip,application/octet-stream" multiple>
+        <span class="welcome-title">Open FCS files</span>
+        <span class="welcome-text">FCS 2.0 to 3.2. Pick a FlowJo .wsp too to bring its gates.</span>
+      </label>
+      <label class="welcome-option file-btn">
+        <input id="welcome-folder" type="file" webkitdirectory multiple>
+        <span class="welcome-title">Open a folder</span>
+        <span class="welcome-text">FCS files with one FlowJo workspace (.wsp); samples connect automatically.</span>
+      </label>
+      <button id="try-examples" class="welcome-option welcome-try">
+        <span class="welcome-title">Try sample data</span>
+        <span class="welcome-text">Three synthetic blood samples with gates and a figure already set up.</span>
+      </button>
+    </div>
+    <p class="welcome-foot">You can also drop files or a folder anywhere on this page.</p>
+  </section>
+  <main id="gating-work" class="work">
     <aside class="ws sidebar" aria-label="All samples">
       <section class="panel">
         <header class="panel-head">
@@ -91,7 +113,7 @@
     </aside>
   </main>
 
-  <section class="stats">
+  <section id="stats-section" class="stats">
     <header class="panel-head stats-head">
       <h2>Statistics</h2>
       <label class="axis-pick"><span>Show</span><select id="stat-metric"></select></label>
@@ -104,25 +126,39 @@
   </div>
 
   <section id="layout-view" class="layout-view" hidden aria-label="Layout editor">
-    <aside class="panel lay-side">
-      <header class="panel-head"><h2>Layouts</h2><button class="btn btn-quiet btn-small" data-act="new-layout">New layout</button></header>
-      <ul id="lay-list" class="lay-list"></ul>
-      <header class="panel-head lay-sub"><h2>On this page</h2></header>
-      <ul id="lay-items" class="lay-list"></ul>
-      <div class="btn-row lay-add">
-        <button class="btn btn-small" data-act="add-plot">Add plot</button>
-        <button class="btn btn-small" data-act="add-text">Add text</button>
-        <button class="btn btn-small btn-danger" data-act="del-layout">Delete layout</button>
-      </div>
-      <p class="tree-hint">In Gating, use Add to layout to place the plot you are looking at. Arrow keys nudge the selected item; Shift moves it further.</p>
+    <aside class="sidebar lay-samples-side" aria-label="Samples and their populations">
+      <section class="panel">
+        <header class="panel-head">
+          <h2>Samples</h2>
+          <span class="head-actions">
+            <button class="btn btn-quiet btn-small" data-act="ls-expand">Expand all</button>
+            <button class="btn btn-quiet btn-small" data-act="ls-collapse">Collapse all</button>
+          </span>
+        </header>
+        <ul id="lay-samples" class="ws-list scroll"></ul>
+        <p class="tree-hint">Click a population to add its plot to the page, or drag it to where you want it.</p>
+      </section>
     </aside>
     <div id="lay-stage" class="lay-stage"></div>
-    <aside id="lay-props" class="lay-props"></aside>
+    <div class="lay-right">
+      <section class="panel lay-side">
+        <header class="panel-head"><h2>Layouts</h2><button class="btn btn-quiet btn-small" data-act="new-layout">New layout</button></header>
+        <ul id="lay-list" class="lay-list"></ul>
+        <header class="panel-head lay-sub"><h2>On this page</h2></header>
+        <ul id="lay-items" class="lay-list"></ul>
+        <div class="btn-row lay-add">
+          <button class="btn btn-small" data-act="add-text">Add text</button>
+          <button class="btn btn-small btn-danger" data-act="del-layout">Delete layout</button>
+        </div>
+        <p class="tree-hint">Arrow keys nudge the selected item; Shift moves it further.</p>
+      </section>
+      <aside id="lay-props" class="lay-props"></aside>
+    </div>
   </section>
   <footer class="site-foot">
     <p class="cite">
       <strong>How to cite:</strong> if FreeFlow contributed to your work, please cite
-      <span id="cite-text">Misra P. FreeFlow: browser-based flow cytometry analysis with FlowJo workspace compatibility (version 0.1.0). 2026. https://github.com/paraish/freeflow</span>
+      <span id="cite-text">Misra, Paraish S. (2026). FreeFlow: browser-based flow cytometry analysis with FlowJo workspace compatibility (Version 0.1.0) [Computer software]. https://github.com/paraish/freeflow</span>
       <button id="copy-cite" class="btn btn-small">Copy citation</button>
     </p>
     <p class="legal">For research use only, not for diagnostic procedures. Provided as is, without warranty.

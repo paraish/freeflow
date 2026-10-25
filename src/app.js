@@ -104,7 +104,7 @@ function loadExamples() {
     addSample(parseFCS(buf, `${spec.name}.fcs`), true);
   }
   S.examples = true;
-  S.sampleId = S.samples[0].id;
+  S.sampleId = S.samples.find((x) => x.isExample)?.id ?? S.samples[0].id;
   buildExampleGates();
 }
 
@@ -137,13 +137,14 @@ function buildExampleGates() {
     recompute(other.root, ctxFor(other), other.n);
   }
   S.viewPath = ['Cells', 'Singlets'];
-  S.layouts = [exampleLayout()];
+  S.layouts = [...S.layouts.filter((l) => !l.example), exampleLayout()];
 }
 
 // A figure for the example samples: a title filled in from file keywords and
 // three plots down the gating path. Batch mode repeats it for each sample.
 function exampleLayout() {
   const l = newLayout('Example figure');
+  l.example = true;
   const plot = (id, x, path, view, title) => ({
     id, kind: 'plot', x, y: 96, w: 320, h: 320, sampleKey: null, path, view, title, xLabel: '', yLabel: '', fontSize: 11, showGates: true, showLabels: true,
   });
@@ -214,8 +215,14 @@ async function entriesFromDrop(dt) {
 function dropExamples() {
   if (!S.examples) return;
   S.samples = S.samples.filter((s) => !s.isExample);
+  S.layouts = S.layouts.filter((l) => !l.example);
   S.examples = false;
   S.undo = [];
+  if (!sample()) {
+    S.sampleId = S.samples[0]?.id ?? null;
+    S.viewPath = [];
+    S.selId = null;
+  }
 }
 
 async function openEntries(rawEntries, { folder = false } = {}) {
@@ -1861,6 +1868,11 @@ function focusGateName() {
 function renderAll() {
   if (S.mode === 'layout') { renderHeader(); layoutEditor?.render(); return; }
   renderHeader();
+  const empty = S.samples.length === 0;
+  $('welcome').hidden = !empty;
+  $('gating-work').hidden = empty;
+  $('stats-section').hidden = empty;
+  if (empty) return;
   renderSamples();
   renderTree();
   renderToolbar();
@@ -2370,11 +2382,28 @@ export function start() {
   layoutEditor = createLayoutEditor($('layout-view'), layoutEnv());
   document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
   $('add-to-layout').addEventListener('click', addCurrentToLayout);
-  try {
-    loadExamples();
-  } catch (err) {
-    toast(`Example data failed to load: ${err.message}`, true);
-  }
+  $('try-examples').addEventListener('click', () => {
+    try {
+      loadExamples();
+    } catch (err) {
+      toast(`The sample data could not be made: ${err.message}`, true);
+      return;
+    }
+    renderAll();
+    sizePlot();
+    toast('Loaded sample data: 3 synthetic samples with gates, plus an example figure in Layout.');
+  });
+  $('remove-examples').addEventListener('click', () => {
+    dropExamples();
+    S.version++;
+    renderAll();
+  });
+  $('welcome-files').addEventListener('change', (e) => { openFiles(e.target.files); e.target.value = ''; });
+  $('welcome-folder').addEventListener('change', (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    openEntries(files.map(fileEntry), { folder: true });
+  });
   sizePlot();
   renderAll();
 }
