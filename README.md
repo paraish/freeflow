@@ -166,7 +166,9 @@ Gating, **Add to layout** places the plot you are looking at.
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
 - **Batch** repeats the page for every sample, in a grid: set the number of **Columns** and/or
   **Rows** (leave one empty to fit every sample) and the **Fill order** (across, then down; or
-  down, then across). Each copy fills in its own sample's numbers and keywords. Each copy is only as big as
+  down, then across). Each copy fills in its own sample's numbers and keywords.
+  Double-click a plot in any copy to edit its gates for that copy's sample (the plot being
+  edited is outlined). Each copy is only as big as
   the items on the page (plus a small margin), so a half-filled page gives compact copies.
 - Export: **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
   Illustrator, Inkscape or PowerPoint; density clouds embedded as images), **Download PNG**,

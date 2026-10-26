@@ -35,7 +35,9 @@ export function newLayout(name = 'Layout 1') {
  * }
  */
 export function createLayoutEditor(root, env) {
-  const ui = { layoutId: null, sel: null, zoom: 1, previewUrl: null, previewTimer: null, origin: null }; // origin: page-to-sheet offset of the first copy
+  // origin: page-to-sheet offset of the first copy; blocks: the copies on the
+  // sheet; editMark: the plot open for editing ({ id, block }).
+  const ui = { layoutId: null, sel: null, zoom: 1, previewUrl: null, previewTimer: null, origin: null, blocks: null, editMark: null };
   const imageCache = new Map();
   const $ = (id) => root.querySelector(`#${id}`);
 
@@ -151,7 +153,7 @@ export function createLayoutEditor(root, env) {
   function gridNote(l) {
     const n = env.batchSamples(l).length;
     const g = batchGrid(l, n);
-    return `${n} cop${n === 1 ? 'y' : 'ies'} in ${g.cols} column${g.cols === 1 ? '' : 's'} × ${g.rows} row${g.rows === 1 ? '' : 's'}. Leave columns or rows empty to fit every sample.`;
+    return `${n} cop${n === 1 ? 'y' : 'ies'} in ${g.cols} column${g.cols === 1 ? '' : 's'} × ${g.rows} row${g.rows === 1 ? '' : 's'}. Leave columns or rows empty to fit every sample. Double-click a plot in any copy to edit its gates for that sample.`;
   }
 
   function sheet(layout) {
@@ -274,12 +276,17 @@ export function createLayoutEditor(root, env) {
     ui.zoom = Math.min(1, avail / sh.width);
     const z = ui.zoom;
     ui.origin = sh.origin;
+    ui.blocks = sh.blocks;
     const o = sh.origin;
+    // Outline the plot open for editing below, in whichever copy it is.
+    const em = env.editing() && ui.editMark && l.items.find((x) => x.id === ui.editMark.id);
+    const eb = em && sh.blocks[ui.editMark.block];
+    const editMark = eb ? `<div class="lay-edit-mark" style="left:${(em.x + eb.dx) * z}px;top:${(em.y + eb.dy) * z}px;width:${em.w * z}px;height:${em.h * z}px"></div>` : '';
     const overlays = l.items.map((it) => `<div class="lay-box${it.id === ui.sel ? ' is-sel' : ''}" data-id="${it.id}" style="left:${(it.x + o.dx) * z}px;top:${(it.y + o.dy) * z}px;width:${it.w * z}px;height:${it.h * z}px">${it.id === ui.sel ? '<span class="lay-resize" data-act="resize" aria-hidden="true"></span>' : ''}</div>`).join('');
     stage.innerHTML = `<div class="lay-sheet" style="width:${sh.width * z}px;height:${sh.height * z}px">
       <div class="lay-svg">${sh.svg}</div>
       ${l.batch ? `<div class="lay-block-hint" style="width:${sh.cell.w * z}px;height:${sh.cell.h * z}px"></div>` : ''}
-      <div class="lay-overlay">${overlays}</div></div>`;
+      <div class="lay-overlay">${editMark}${overlays}</div></div>`;
     const svg = stage.querySelector('.lay-svg svg');
     svg.setAttribute('width', sh.width * z);
     svg.setAttribute('height', sh.height * z);
@@ -645,12 +652,51 @@ export function createLayoutEditor(root, env) {
 
   // Dragging and resizing items on the page.
   let drag = null;
-  let lastDown = { id: null, t: 0 };
+  let lastDown = { id: null, t: 0 }; // "<copy>:<item id>" of the last press, for double-clicks
+
+  // The plot item under a pointer event on the sheet, and which batch copy.
+  function plotAt(sheetEl, e) {
+    const l = current();
+    if (!l || !ui.blocks) return null;
+    const r = sheetEl.getBoundingClientRect();
+    const X = (e.clientX - r.left) / ui.zoom, Y = (e.clientY - r.top) / ui.zoom;
+    for (let b = 0; b < ui.blocks.length; b++) {
+      const x = X - ui.blocks[b].dx, y = Y - ui.blocks[b].dy;
+      const it = l.items.find((i) => i.kind === 'plot' && x >= i.x && x <= i.x + i.w && y >= i.y && y <= i.y + i.h);
+      if (it) return { it, block: b };
+    }
+    return null;
+  }
+
+  // Opens a plot for editing, for the sample of the given copy (batch) or
+  // the page's sample.
+  function openEditor(it, block) {
+    const l = current();
+    const pageSample = l.batch ? ui.blocks?.[block]?.sample : pageSampleOf(l);
+    const s = sampleFor(it, pageSample);
+    if (!s) return;
+    ui.editMark = { id: it.id, block };
+    env.editPlot(it, s);
+    renderStage();
+  }
+
   function onPointerDown(e) {
     const box = e.target.closest('.lay-box');
     const stage = $('lay-stage');
     if (!box) {
-      if (e.target.closest('.lay-sheet') && ui.sel) { ui.sel = null; render(); }
+      const sheetEl = e.target.closest('.lay-sheet');
+      if (!sheetEl) return;
+      // In batch, the other copies are part of the picture: a double-click on
+      // a plot there opens it for that copy's sample.
+      const hit = plotAt(sheetEl, e);
+      const now = Date.now();
+      if (hit && lastDown.id === `${hit.block}:${hit.it.id}` && now - lastDown.t < 400) {
+        lastDown = { id: null, t: 0 };
+        openEditor(hit.it, hit.block);
+        return;
+      }
+      lastDown = hit ? { id: `${hit.block}:${hit.it.id}`, t: now } : { id: null, t: 0 };
+      if (ui.sel) { ui.sel = null; render(); }
       return;
     }
     const it = itemById(box.dataset.id);
@@ -658,13 +704,12 @@ export function createLayoutEditor(root, env) {
     e.preventDefault();
     // A double-click on a plot opens it for editing its gates.
     const now = Date.now();
-    if (it.kind === 'plot' && lastDown.id === it.id && now - lastDown.t < 400 && !e.target.closest('[data-act="resize"]')) {
+    if (it.kind === 'plot' && lastDown.id === `0:${it.id}` && now - lastDown.t < 400 && !e.target.closest('[data-act="resize"]')) {
       lastDown = { id: null, t: 0 };
-      const s = sampleFor(it, pageSampleOf(current()));
-      if (s) env.editPlot(it, s);
+      openEditor(it, 0);
       return;
     }
-    lastDown = { id: it.id, t: now };
+    lastDown = { id: `0:${it.id}`, t: now };
     if (ui.sel !== it.id) { ui.sel = it.id; render(); }
     const resize = !!e.target.closest('[data-act="resize"]');
     drag = { it, resize, sx: e.clientX, sy: e.clientY, ox: it.x, oy: it.y, ow: it.w, oh: it.h, moved: false };
