@@ -84,8 +84,8 @@ with one click).
   (or use the X and Y menus above the plot). **Dot size** (beside the plot types) makes each
   event bigger; figures in Layout have their own Dot size.
 - **Gates**: rectangle, polygon, quadrant, range. A name box opens as soon as a gate is drawn
-  (Enter to keep the name, Esc to keep the default), and ✎ beside any gate in the trees
-  renames it. Move gates, drag their corners, rename,
+  (Enter to keep the name, Esc to keep the default). Hover a gate in the trees for ✎ (rename)
+  and × (delete, with the gates under it; click twice to confirm, Ctrl/⌘+Z to undo). Move gates, drag their corners, rename,
   delete, with **Undo** and **Redo** buttons in the header (Ctrl/⌘+Z, Ctrl/⌘+Shift+Z or Ctrl+Y). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
 - **Population tree** with counts and % of parent.

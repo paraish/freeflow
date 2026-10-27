@@ -541,10 +541,16 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .dot-size { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .dot-size input { width: 90px; accent-color: var(--accent); }
 /* Rename button on gate rows, and the floating name box. */
-.row-edit { flex: none; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 6px; font-size: 13px; opacity: 0; }
-.pop-row:hover .row-edit, .row-edit:focus-visible, .pop-row.is-view .row-edit { opacity: 1; }
+/* Rename and delete appear over the right end of a gate row while it is hovered. */
+.pop-row { position: relative; }
+.row-tools { position: absolute; right: 0; top: 0; bottom: 0; display: none; align-items: center; background: inherit; padding-left: 4px; }
+.pop-row:hover .row-tools, .row-tools:focus-within, .row-tools:has(.is-confirm) { display: flex; }
+.row-edit { flex: none; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 6px; font-size: 13px; }
 .row-edit:hover { color: var(--accent); }
-@media (hover: none) { .row-edit { opacity: 0.6; } }
+.row-del { padding: 0 8px 0 2px; font-size: 15px; }
+.row-del:hover, .row-del.is-confirm { color: var(--danger); }
+.row-del.is-confirm { font-size: 11px; font-weight: 600; white-space: nowrap; }
+@media (hover: none) { .row-tools { position: static; display: flex; } }
 .name-pop {
   position: fixed; z-index: 60; display: flex; gap: 6px; align-items: center; padding: 6px;
   background: var(--surface); border: 1px solid var(--accent); border-radius: var(--r); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);

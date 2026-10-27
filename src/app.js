@@ -1772,16 +1772,20 @@ function deleteGate(pop) {
   const linked = S.mode === 'group' ? pops.filter((q) => q.link?.group === S.groupId) : [];
   if (linked.length) { deleteFolderGate(S.groupId, linked.map((q) => q.link.gid), true); return; }
   pushUndo();
+  // The gate may be in any sample's tree, not only the one open.
+  const owner = findPop(pop.id)?.sample || sample();
   for (const q of pops) {
     const t = templateFor(q);
-    if (t) { t.node.omit = [...new Set([...(t.node.omit || []), sampleKey(sample())])]; }
+    if (t) { t.node.omit = [...new Set([...(t.node.omit || []), sampleKey(owner)])]; }
   }
   const parent = pop.parent;
   parent.children = parent.children.filter((c) => !pops.includes(c));
+  for (const q of pops) S.multi.delete(q.id);
   S.viewPath = pathOf(viewedPop());
   S.selId = null;
   S.version++;
   renderAll();
+  toast(`Deleted “${pops.length > 1 ? `${pops.length} quadrant gates` : pop.name}”${owner === sample() ? '' : ` from ${owner.name}`}. Undo (Ctrl+Z) brings it back.`);
 }
 
 // ---------------------------------------------------------------- rendering: header & samples
@@ -1819,7 +1823,7 @@ function treeRows(s, list) {
       <button class="pop-pick" data-act="view" title="${p.gate ? 'Click to open. Drag to copy. Ctrl/⌘- or Shift-click to select several.' : 'Click to open'}">
         <span class="pop-name">${esc(p.name)}${p.link ? `<span class="fg-mark${p.custom ? ' is-custom' : ''}" title="${esc(p.custom ? `Folder gate from ${folderGateName(p.link)}, adjusted for this sample only` : `Folder gate from ${folderGateName(p.link)}`)}">${p.custom ? 'adjusted' : ''}</span>` : ''}</span>
         <span class="pop-stats"><span class="pop-num">${fmtInt(p.indices.length)}</span><span class="pop-pct">${par}</span></span>
-      </button>${p.gate ? `<button class="row-edit" data-act="rename" aria-label="Rename ${esc(p.name)}" title="Rename">✎</button>` : ''}</li>`);
+      </button>${p.gate ? `<span class="row-tools"><button class="row-edit" data-act="rename" aria-label="Rename ${esc(p.name)}" title="Rename">✎</button><button class="row-edit row-del" data-act="delete" aria-label="Delete ${esc(p.name)}" title="Delete this gate and the gates under it">×</button></span>` : ''}</li>`);
     if (!collapsed) for (const c of p.children) visit(c, depth + 1);
   };
   visit(s.root, 0);
@@ -3207,6 +3211,19 @@ function bind() {
     const found = findPop(row.dataset.id);
     if (!found) return;
     const { id, list } = row.dataset;
+    const del = e.target.closest('[data-act="delete"]');
+    if (del) {
+      // Two clicks, like removing a sample: the first asks.
+      if (del.dataset.confirm !== '1') {
+        del.dataset.confirm = '1';
+        del.textContent = 'Delete?';
+        del.classList.add('is-confirm');
+        setTimeout(() => { if (del.isConnected) { del.dataset.confirm = ''; del.textContent = '×'; del.classList.remove('is-confirm'); } }, 3000);
+        return;
+      }
+      deleteGate(found.pop);
+      return;
+    }
     if (e.target.closest('[data-act="rename"]')) {
       const r = row.querySelector('.pop-name').getBoundingClientRect();
       openNamePop(found.pop, r.left - 6, r.top - 6);
