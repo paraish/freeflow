@@ -1437,24 +1437,41 @@ function onTilePointerDown(ev) {
   const a = tileAt(ev);
   if (!a) return;
   // A click away from the gates shows this sample on the main plot.
-  if (!a.hit) { showMain(a.s); return; }
+  if (!a.hit) { tilePress = null; showMain(a.s); return; }
+  // A second press on the same gate soon after opens that population (the
+  // tiles may have been redrawn in between, so this is not a dblclick).
+  // Event times, not the clock: the first click may have redrawn everything.
+  const now = ev.timeStamp;
+  if (tilePress?.id === a.hit.pop.id && now - tilePress.t < 400) {
+    tilePress = null;
+    S.viewPath = pathOf(a.hit.pop);
+    S.selId = null;
+    renderAll();
+    return;
+  }
+  // A click on a gate that is not dragged also shows this sample on the
+  // main plot (see onTilePointerUp); dragging adjusts it here.
+  tilePress = { s: a.s, id: a.hit.pop.id, t: now };
   S.selId = a.hit.pop.id;
+  a.t.canvas.setPointerCapture(ev.pointerId);
   if (a.hit.mode !== 'select') {
     const csx = Math.max(0, Math.min(1, a.sx)), csy = Math.max(0, Math.min(1, a.sy));
     drag = {
       mode: a.hit.mode, index: a.hit.index, pop: a.hit.pop, start: a.hit.shape.swap ? [csy, csx] : [csx, csy], orig: cloneGate(a.hit.pop.gate),
       undoSnap: snapshot(), undoPushed: false, sample: a.s, tile: a.t, swap: !!a.hit.shape.swap,
     };
-    a.t.canvas.setPointerCapture(ev.pointerId);
   }
   drawTiles();
   requestPlot();
   renderSide();
 }
 
-function showMain(s) {
+let tilePress = null; // the gate last pressed in a tile: { s, id, t }
+
+// Shows a sample on the main plot, optionally with one of its gates selected.
+function showMain(s, selId = null) {
   S.sampleId = s.id;
-  S.selId = null;
+  S.selId = selId;
   S.draft = null;
   renderAll();
 }
@@ -1473,11 +1490,11 @@ function onTilePointerMove(ev) {
 }
 
 function onTilePointerUp() {
-  if (!drag?.tile) return;
-  const moved = drag.undoPushed;
-  drag = null;
-  if (moved) renderAll();
-  flushRemoteQueue();
+  const moved = !!drag?.tile && drag.undoPushed;
+  if (drag?.tile) { drag = null; flushRemoteQueue(); }
+  if (moved) { if (tilePress) tilePress.t = -1e9; renderAll(); return; }
+  // A plain click on a gate: show this sample on the main plot, gate selected.
+  if (tilePress && tilePress.s.id !== S.sampleId) showMain(tilePress.s, tilePress.id);
 }
 
 // ---------------------------------------------------------------- pointer interaction
@@ -3608,13 +3625,6 @@ function bind() {
   $('tiles').addEventListener('pointermove', onTilePointerMove);
   $('tiles').addEventListener('pointerup', onTilePointerUp);
   $('tiles').addEventListener('pointercancel', () => { if (drag?.tile) { drag = null; renderAll(); } });
-  $('tiles').addEventListener('dblclick', (ev) => {
-    const a = tileAt(ev);
-    if (!a?.hit) return;
-    S.viewPath = pathOf(a.hit.pop);
-    S.selId = null;
-    renderAll();
-  });
   $('tiles').addEventListener('click', (ev) => {
     const act = ev.target.closest('[data-act]')?.dataset.act;
     const fig = ev.target.closest('.tile');

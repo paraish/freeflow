@@ -163,8 +163,25 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 @media (max-width: 760px) { .work.is-group { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "groups" "ws" "right"; grid-template-rows: auto; } }
 .pop-row.is-context .pop-name { color: var(--muted); }
 .group-gate:empty, .group-gate #inspector:empty { display: none; }
-.group-gate .card { max-width: 760px; align-self: center; width: 100%; }
+.group-gate .card { width: 100%; }
 .group-gate { display: flex; flex-direction: column; }
+/* In group gating the gate card sits beside the main plot, so selecting a
+   gate never moves the tiles below. */
+.work.is-group .center {
+  display: grid; align-items: start; column-gap: 16px;
+  grid-template-columns: minmax(0, 620px) minmax(240px, 1fr);
+  grid-template-areas: "tb tb" "ax ax" "ph ph" "plot gate" "hint hint" "tiles tiles";
+}
+.work.is-group .center > .toolbar { grid-area: tb; }
+.work.is-group .center > .axis-row { grid-area: ax; }
+.work.is-group .center > .plot-head { grid-area: ph; }
+.work.is-group .center > #plot-wrap { grid-area: plot; }
+.work.is-group .center > #hint { grid-area: hint; }
+.work.is-group .center > #group-gate { grid-area: gate; }
+.work.is-group .center > #tiles-section { grid-area: tiles; }
+@media (max-width: 900px) {
+  .work.is-group .center { display: flex; }
+}
 .tiles-section { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .tiles-head { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
 .tiles-head h2 { margin: 0; font-size: 13px; font-weight: 600; }

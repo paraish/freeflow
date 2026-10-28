@@ -27,8 +27,9 @@ folder's gates back.
 How it works:
 
 - Folders sit above the samples on the left. One sample is shown large; below it, every
-  sample in the folder shows the same population on the same axes. Click a tile (anywhere
-  but on a gate) or a sample on the left to show it large.
+  sample in the folder shows the same population on the same axes. Click a tile, anywhere
+  including on a gate, or a sample on the left to show it large; dragging a gate in a tile
+  adjusts it for that sample instead.
 - Gates drawn on the large plot are added to every sample in the folder, nested under the
   population that is open. Moving, reshaping, renaming or deleting a gate there changes it
   for the whole folder.
