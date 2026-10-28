@@ -8,7 +8,7 @@ import { xhr } from './storage/http.js';
 import { PUBLIC_SITE, makeShareLink, sharedFileFrom } from './links.js';
 import { EXAMPLE_CONTROLS, EXAMPLE_SAMPLES, makeSyntheticControl, makeSyntheticFCS } from './synth.js';
 import { computeSpillover, detectControls } from './compcalc.js';
-import { ALL, CONTROLS, addMember, members, nameMatches, newGroup, removeMember, setRule } from './groups.js';
+import { ALL, CONTROLS, NONCONTROLS, addMember, members, nameMatches, newGroup, orderSamples, removeMember, runTime, setRule } from './groups.js';
 import { applyTemplates, findTemplate, removeLinkedPops, subtreeGids, templateFrom, unlinkPops, walkTemplate } from './groupgates.js';
 import { applyCompensation, buildChannels, createSample, gatingContext, sampleKey } from './model.js';
 import {
@@ -46,6 +46,10 @@ const S = {
   multi: new Set(), // ids of gates selected together in the trees (any sample)
   anchor: null, // { id, list } of the last clicked tree row, for Shift-click ranges
   collapsed: new Set(), // "<list>:<population id>" and "sample:<sample id>" keys
+  orders: {}, // folder id -> sample keys in the order set by hand; see groups.js
+  sampleSel: new Set(), // ids of samples selected together in the Samples pane
+  sampleAnchor: null, // the last clicked sample, for Shift-click ranges
+  focus: 'gates', // what Delete acts on: 'samples' (the selected samples) or 'gates'
   dotSize: 1, // pixels per event on pseudocolor and dot plots
 };
 
@@ -296,6 +300,7 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
         const names = new Set(info.groups.map((g) => g.name));
         S.groups = [...S.groups.filter((g) => !ids.has(g.id) && !names.has(g.name)), ...info.groups];
       }
+      if (info.orders && typeof info.orders === 'object') S.orders = { ...S.orders, ...info.orders };
       if (info.groupGates && typeof info.groupGates === 'object') {
         // Folder ids in the bundle match the folders restored just above.
         S.groupGates = { ...S.groupGates, ...info.groupGates };
@@ -575,7 +580,7 @@ function analysisParts(named, created = new Date().toISOString()) {
   const wrapped = named.map(({ s, fn }) => ({ ...s, fileName: fn }));
   const wrap = new Map(named.map(({ s }, i) => [s, wrapped[i]]));
   const wspText = exportWSP({ samples: wrapped, transformOf: getTransform, groups: wspGroups(samples).map((g) => ({ name: g.name, members: g.members.map((m) => wrap.get(m)).filter(Boolean) })) });
-  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, links: bundleLinks(named) }, null, 1);
+  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, links: bundleLinks(named) }, null, 1);
   return { wspText, json };
 }
 
@@ -845,8 +850,9 @@ function flushRemoteQueue() {
   for (const core of list) onRemoteSample(core);
 }
 
-function onRemoteMeta({ transforms, layouts, groups, groupGates }) {
+function onRemoteMeta({ transforms, layouts, groups, groupGates, orders }) {
   S.groupGates = JSON.parse(JSON.stringify(groupGates || {}));
+  S.orders = JSON.parse(JSON.stringify(orders || {}));
   S.transforms = { ...transforms };
   S.layouts = JSON.parse(JSON.stringify(layouts || []));
   S.groups = JSON.parse(JSON.stringify(groups || []));
@@ -1131,6 +1137,7 @@ function snapshot() {
     trees: new Map(S.samples.map((s) => [s.id, serialize(s.root)])),
     viewPath: [...S.viewPath],
     groupGates: JSON.parse(JSON.stringify(S.groupGates)),
+    orders: JSON.parse(JSON.stringify(S.orders)),
   };
 }
 
@@ -1176,6 +1183,7 @@ function restoreSnapshot(snap) {
   }
   S.viewPath = snap.viewPath;
   if (snap.groupGates) S.groupGates = snap.groupGates;
+  if (snap.orders) S.orders = snap.orders;
   S.selId = null;
   S.draft = null;
   S.version++;
@@ -1416,6 +1424,7 @@ function tileAt(ev) {
 
 function onTilePointerDown(ev) {
   if (ev.button !== 0) return;
+  S.focus = 'gates';
   const a = tileAt(ev);
   if (!a) return;
   // A click away from the gates shows this sample on the main plot.
@@ -1588,6 +1597,7 @@ function commitFolderDrag(d) {
 
 function onPointerDown(ev) {
   plot.last = { x: ev.clientX, y: ev.clientY };
+  S.focus = 'gates';
   if (!sample() || ev.button !== 0) return;
   const { px, py, sx, sy } = eventScale(ev);
   const v = viewOf(viewedPop());
@@ -1848,12 +1858,15 @@ function keepScroll(el, fn) {
 
 // ---------------------------------------------------------------- folders
 
-const BUILT_IN = [{ id: ALL, name: 'All samples' }, { id: CONTROLS, name: 'Compensation controls' }];
+const BUILT_IN = [{ id: ALL, name: 'All samples' }, { id: CONTROLS, name: 'Compensation controls' }, { id: NONCONTROLS, name: 'Non-control samples' }];
 const groupById = (id) => BUILT_IN.find((g) => g.id === id) || S.groups.find((g) => g.id === id) || null;
-const groupMembers = (g) => members(g, S.samples, sampleKey);
+// A folder's samples in its order: positions set by hand, then run time.
+const sampleTime = (s) => (s.runTime ??= runTime(s.keywords));
+const groupMembers = (g) => orderSamples(members(g, S.samples, sampleKey), g && S.orders[g.id], sampleKey, sampleTime, (s) => s.name);
+const allInOrder = () => groupMembers(BUILT_IN[0]);
 const currentGroup = () => groupById(S.groupId) || BUILT_IN[0];
 const visibleSamples = () => groupMembers(currentGroup());
-const isUserGroup = (g) => !!g && g.id !== ALL && g.id !== CONTROLS;
+const isUserGroup = (g) => !!g && !BUILT_IN.some((b) => b.id === g.id);
 
 const GF = { editing: null, open: false, confirm: null }; // the new/edit folder form, and a pending folder-gate delete
 
@@ -2002,12 +2015,14 @@ function dropOnGroup(src, gid) {
   const g = groupById(gid);
   if (!g) return;
   if (src.sampleDrag) {
-    const s = src.sampleDrag;
-    if (g.id === ALL) return;
-    if (g.id === CONTROLS) { s.controlManual = true; s.isControl = true; } else addMember(g, sampleKey(s));
+    const list = src.sampleDrag;
+    if (g.id === ALL || g.id === NONCONTROLS) return;
+    for (const s of list) {
+      if (g.id === CONTROLS) { s.controlManual = true; s.isControl = true; } else addMember(g, sampleKey(s));
+    }
     syncFolderGates();
     renderAll();
-    toast(`Added ${s.name} to ${g.name}.`);
+    toast(`Added ${list.length === 1 ? list[0].name : `${list.length} samples`} to ${g.name}.`);
     return;
   }
   makeFolderGates(g, src.items);
@@ -2091,11 +2106,87 @@ function deleteFolderGate(groupId, gid, everywhere) {
 const templateFor = (pop) => (pop?.link ? findTemplate(templatesOf(pop.link.group), pop.link.gid) : null);
 
 
+// The time of day a sample was run, as the file states it (hh:mm).
+function runClock(s) {
+  const kw = s.keywords || {};
+  const key = Object.keys(kw).find((k) => /^\$(BTIM|BEGINDATETIME)$/i.test(k));
+  return (String(kw[key] ?? '').match(/(\d{1,2}):(\d{2})/) || [''])[0];
+}
+
+// What a sample row's button does in the folder shown: take it out of the
+// folder, unmark it as a control, or close the sample.
+function rowAction(g, s) {
+  if (isUserGroup(g)) return 'unfolder';
+  if (g.id === CONTROLS && s.controlManual) return 'uncontrol';
+  return 'remove';
+}
+
+// The samples a row's button acts on: every selected sample if the row is
+// one of several selected, otherwise that sample.
+function rowTargets(s) {
+  return S.sampleSel.has(s.id) && S.sampleSel.size > 1 ? visibleSamples().filter((x) => S.sampleSel.has(x.id)) : [s];
+}
+
+function applyRowAction(list) {
+  const g = currentGroup();
+  const by = { unfolder: [], uncontrol: [], remove: [] };
+  for (const s of list) by[rowAction(g, s)].push(s);
+  for (const s of by.unfolder) removeMember(g, sampleKey(s));
+  for (const s of by.uncontrol) s.controlManual = false;
+  if (by.uncontrol.length) markControls();
+  if (by.remove.length) {
+    const ids = new Set(by.remove.map((s) => s.id));
+    S.samples = S.samples.filter((s) => !ids.has(s.id));
+    clearHistory();
+    S.multi.clear();
+    if (ids.has(S.sampleId)) S.sampleId = visibleSamples()[0]?.id ?? S.samples[0]?.id ?? null;
+    if (!S.samples.some((s) => s.isExample)) S.examples = false;
+    S.selId = null;
+  }
+  S.sampleSel.clear();
+  syncFolderGates();
+  renderAll();
+  const names = (xs) => (xs.length === 1 ? xs[0].name : `${xs.length} samples`);
+  if (by.unfolder.length) toast(`Took ${names(by.unfolder)} out of ${g.name}. ${by.unfolder.length === 1 ? 'It is' : 'They are'} still open in All samples.`);
+  else if (by.remove.length) toast(`Removed ${names(by.remove)}. The files on your computer are not changed.`);
+}
+
+// Delete or Backspace with samples selected: the same as their row buttons,
+// asking first (a second press) before closing samples.
+const KD = { sig: '', t: 0 };
+function deleteSelectedSamples() {
+  const g = currentGroup();
+  const list = visibleSamples().filter((s) => S.sampleSel.has(s.id));
+  if (!list.length) return;
+  const sig = list.map((s) => s.id).join();
+  if (list.some((s) => rowAction(g, s) === 'remove') && !(KD.sig === sig && Date.now() - KD.t < 4000)) {
+    KD.sig = sig;
+    KD.t = Date.now();
+    toast(`Press Delete again to remove ${list.length === 1 ? list[0].name : `${list.length} samples`}. The files on your computer are not changed.`);
+    return;
+  }
+  KD.sig = '';
+  applyRowAction(list);
+}
+
+// Moves a sample to a position in one folder; other folders keep their order.
+function setSampleOrder(g, s, raw) {
+  const list = groupMembers(g);
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || list.indexOf(s) === n - 1) { renderSamples(); return; }
+  const rest = list.filter((x) => x !== s);
+  rest.splice(Math.max(0, Math.min(rest.length, n - 1)), 0, s);
+  pushUndo();
+  S.orders[g.id] = rest.map(sampleKey);
+  renderAll();
+}
+
 function renderSamples() {
   const el = $('samples');
   const g = currentGroup();
   const shown = visibleSamples();
   $('samples-title').textContent = g.id === ALL ? 'Samples' : g.name;
+  $('ws-runorder').hidden = !S.orders[g.id]?.length;
   if (!S.samples.length) {
     el.innerHTML = '<li class="empty">No samples yet. Open FCS files or drop them anywhere on the page.</li>';
     return;
@@ -2103,19 +2194,23 @@ function renderSamples() {
   if (!shown.length) {
     el.innerHTML = `<li class="empty">${g.id === CONTROLS
       ? 'No compensation controls found. Controls are recognised by names like “Stained Control” or “Unstained”; you can also drag samples here.'
-      : 'No samples in this folder yet. Drag samples here from All samples, or edit the folder’s rule.'}</li>`;
+      : g.id === NONCONTROLS ? 'Every open sample is a compensation control.'
+        : 'No samples in this folder yet. Drag samples here from All samples, or edit the folder’s rule.'}</li>`;
     return;
   }
   const inFolder = isUserGroup(g);
   keepScroll(el, () => {
-    el.innerHTML = shown.map((s) => {
+    el.innerHTML = shown.map((s, i) => {
       const collapsed = S.collapsed.has(`sample:${s.id}`);
-      return `<li class="ws-sample${s.id === S.sampleId ? ' is-active' : ''}">
-        <div class="sample-row" data-id="${s.id}" draggable="true" title="Drag onto a folder to add it there">
+      const picked = S.sampleSel.has(s.id) && (S.sampleSel.size > 1 || s.id !== S.sampleId);
+      const when = runClock(s);
+      return `<li class="ws-sample${s.id === S.sampleId ? ' is-active' : ''}${picked ? ' is-picked' : ''}">
+        <div class="sample-row" data-id="${s.id}" draggable="true" title="Drag onto a folder to add it there. Ctrl/⌘- or Shift-click to select several.">
           <button class="twisty" data-act="twisty-sample" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Show' : 'Hide'} gates of ${esc(s.name)}">${collapsed ? '▸' : '▾'}</button>
+          <input class="order-box" type="text" inputmode="numeric" value="${i + 1}" aria-label="Position of ${esc(s.name)} in ${esc(g.name)}" title="Position in ${esc(g.name)} only. Type a number to move it.">
           <button class="sample-pick" data-act="pick" title="${esc(s.fileName)}">
             <span class="sample-name">${esc(s.name)}</span>
-            <span class="sample-meta">${fmtInt(s.n)} events${s.comp ? ` · ${s.comp.enabled ? 'comp' : 'comp off'}` : ''}${s.isControl ? ' · control' : ''}</span>
+            <span class="sample-meta">${fmtInt(s.n)} events${s.comp ? ` · ${s.comp.enabled ? 'comp' : 'comp off'}` : ''}${s.isControl ? ' · control' : ''}${when ? ` · run ${when}` : ''}</span>
           </button>
           ${inFolder
     ? `<button class="icon-btn" data-act="unfolder" aria-label="Remove ${esc(s.name)} from ${esc(g.name)}" title="Remove from this folder (the sample stays open)">−</button>`
@@ -2411,7 +2506,7 @@ function renderStats() {
     const parent = path.slice(0, -1).join(' / ');
     return `<th scope="col" title="${esc(key)}"><span class="col-parent">${esc(parent || '')}</span><span class="col-leaf">${esc(leaf)}</span></th>`;
   }).join('')}</tr></thead>`;
-  const body = S.samples.map((s) => `<tr class="${s.id === S.sampleId ? 'is-sel' : ''}"><th scope="row" class="sticky">${esc(s.name)}</th>${cols.map(([, path]) => `<td>${formatStat(statValue(s, path))}</td>`).join('')}</tr>`).join('');
+  const body = allInOrder().map((s) => `<tr class="${s.id === S.sampleId ? 'is-sel' : ''}"><th scope="row" class="sticky">${esc(s.name)}</th>${cols.map(([, path]) => `<td>${formatStat(statValue(s, path))}</td>`).join('')}</tr>`).join('');
   table.innerHTML = head + `<tbody>${body}</tbody>`;
 }
 
@@ -2615,12 +2710,10 @@ let layoutEditor = null;
 
 function layoutEnv() {
   return {
-    samples: () => S.samples,
+    samples: allInOrder,
     batchSamples: (layout) => {
       const g = layout?.batchGroup && groupById(layout.batchGroup);
-      if (g) return groupMembers(g);
-      const controls = new Set(groupMembers({ id: CONTROLS }));
-      return S.samples.filter((x) => !controls.has(x));
+      return groupMembers(g || groupById(NONCONTROLS));
     },
     folders: () => [...S.groups.map((g) => ({ id: g.id, name: g.name })), { id: CONTROLS, name: 'Compensation controls' }],
     activeSample: () => (LE.item ? S.samples.find((x) => x.id === LE.saved.sampleId) || sample() : sample()),
@@ -3148,7 +3241,7 @@ function bind() {
 
   $('samples').addEventListener('click', (e) => {
     const row = e.target.closest('.sample-row');
-    if (!row) return;
+    if (!row || e.target.closest('.order-box')) return;
     const btn = e.target.closest('[data-act]');
     if (btn?.dataset.act === 'twisty-sample') {
       const key = `sample:${row.dataset.id}`;
@@ -3156,44 +3249,65 @@ function bind() {
       renderSamples();
       return;
     }
-    if (btn?.dataset.act === 'unfolder') {
-      const g = currentGroup();
-      const s = S.samples.find((x) => x.id === row.dataset.id);
-      removeMember(g, sampleKey(s));
-      syncFolderGates();
-      renderAll();
-      toast(`Removed ${s.name} from ${g.name}. It is still open in All samples.`);
-      return;
-    }
-    if (btn?.dataset.act === 'uncontrol') {
-      const s = S.samples.find((x) => x.id === row.dataset.id);
-      s.controlManual = false;
-      markControls();
-      syncFolderGates();
-      renderAll();
-      return;
-    }
-    if (btn?.dataset.act === 'remove') {
+    const s = S.samples.find((x) => x.id === row.dataset.id);
+    if (!s) return;
+    const act = btn?.dataset.act;
+    if (act === 'unfolder' || act === 'uncontrol') { applyRowAction(rowTargets(s)); return; }
+    if (act === 'remove') {
+      const list = rowTargets(s);
       if (btn.dataset.confirm !== '1') {
         btn.dataset.confirm = '1';
-        btn.textContent = 'Remove?';
+        btn.textContent = list.length > 1 ? `Remove ${list.length}?` : 'Remove?';
         btn.classList.add('is-confirm');
         setTimeout(() => { if (btn.isConnected) { btn.dataset.confirm = ''; btn.textContent = '×'; btn.classList.remove('is-confirm'); } }, 3000);
         return;
       }
-      S.samples = S.samples.filter((s) => s.id !== row.dataset.id);
-      clearHistory();
-      S.multi.clear();
-      if (S.sampleId === row.dataset.id) S.sampleId = S.samples[0]?.id ?? null;
-      if (!S.samples.some((s) => s.isExample)) S.examples = false;
-      S.selId = null;
-      renderAll();
+      applyRowAction(list);
       return;
     }
-    S.sampleId = row.dataset.id;
+    S.focus = 'samples';
+    // Ctrl/⌘-click and Shift-click select several samples; a plain click
+    // selects one and shows it.
+    if (e.ctrlKey || e.metaKey) {
+      if (S.sampleSel.has(s.id)) S.sampleSel.delete(s.id); else S.sampleSel.add(s.id);
+      S.sampleAnchor = s.id;
+      renderSamples();
+      return;
+    }
+    if (e.shiftKey) {
+      const shown = visibleSamples();
+      const from = shown.findIndex((x) => x.id === S.sampleAnchor);
+      const to = shown.indexOf(s);
+      const [lo, hi] = from < 0 ? [to, to] : [Math.min(from, to), Math.max(from, to)];
+      for (const x of shown.slice(lo, hi + 1)) S.sampleSel.add(x.id);
+      if (from < 0) S.sampleAnchor = s.id;
+      renderSamples();
+      return;
+    }
+    S.sampleSel = new Set([s.id]);
+    S.sampleAnchor = s.id;
+    S.sampleId = s.id;
     S.selId = null;
     S.draft = null;
     renderAll();
+  });
+  // A sample's position in the folder being shown.
+  $('samples').addEventListener('change', (e) => {
+    if (!e.target.matches('.order-box')) return;
+    const s = S.samples.find((x) => x.id === e.target.closest('.sample-row')?.dataset.id);
+    if (s) setSampleOrder(currentGroup(), s, e.target.value);
+  });
+  $('samples').addEventListener('keydown', (e) => {
+    if (!e.target.matches('.order-box')) return;
+    if (e.key === 'Enter') e.target.blur();
+    if (e.key === 'Escape') { renderSamples(); }
+  });
+  $('ws-runorder').addEventListener('click', () => {
+    const g = currentGroup();
+    pushUndo();
+    delete S.orders[g.id];
+    renderAll();
+    toast(`${g.name} is in run order again (from the time stamps in the files).`);
   });
   $('ws-expand').addEventListener('click', () => {
     for (const k of [...S.collapsed]) if (k.startsWith('sample:') || k.startsWith('ws-')) S.collapsed.delete(k);
@@ -3208,6 +3322,7 @@ function bind() {
   const onPopRowClick = (e) => {
     const row = e.target.closest('.pop-row');
     if (!row) return;
+    S.focus = 'gates';
     const found = findPop(row.dataset.id);
     if (!found) return;
     const { id, list } = row.dataset;
@@ -3266,7 +3381,7 @@ function bind() {
   $('tree').addEventListener('click', onPopRowClick);
   // Keep Shift-click from selecting page text.
   for (const list of [$('samples'), $('tree')]) {
-    list.addEventListener('mousedown', (e) => { if (e.shiftKey && e.target.closest('.pop-row')) e.preventDefault(); });
+    list.addEventListener('mousedown', (e) => { if (e.shiftKey && e.target.closest('.pop-row, .sample-pick')) e.preventDefault(); });
   }
   $('popstats').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="paste-gate"]')) pasteGate();
@@ -3282,10 +3397,12 @@ function bind() {
     if (srow && !e.target.closest('.pop-row')) {
       const s = S.samples.find((x) => x.id === srow.dataset.id);
       if (!s) { e.preventDefault(); return; }
-      dragSrc = { sampleDrag: s, ids: new Set() };
-      e.dataTransfer.setData('text/plain', s.name);
+      // Dragging one of several selected samples drags them all.
+      const list = S.sampleSel.has(s.id) && S.sampleSel.size > 1 ? visibleSamples().filter((x) => S.sampleSel.has(x.id)) : [s];
+      dragSrc = { sampleDrag: list, ids: new Set() };
+      e.dataTransfer.setData('text/plain', list.map((x) => x.name).join(', '));
       e.dataTransfer.effectAllowed = 'copy';
-      $('drag-ghost').textContent = s.name;
+      $('drag-ghost').textContent = list.length === 1 ? s.name : `${list.length} samples`;
       e.dataTransfer.setDragImage($('drag-ghost'), 12, 12);
       return;
     }
@@ -3315,7 +3432,7 @@ function bind() {
       const row = e.target.closest?.('.pop-row, .sample-row, .group-row');
       const bad = !row
         || (row.classList.contains('pop-row') && dragSrc.ids.has(row.dataset.id))
-        || (dragSrc.sampleDrag && (!row.classList.contains('group-row') || row.dataset.group === ALL));
+        || (dragSrc.sampleDrag && (!row.classList.contains('group-row') || row.dataset.group === ALL || row.dataset.group === NONCONTROLS));
       if (bad) { clearDrop(); return; }
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
@@ -3357,6 +3474,7 @@ function bind() {
     if (!row) return;
     if (act === 'edit-group') { GF.open = true; GF.editing = row.dataset.group; renderGroupForm(); $('gf-name')?.focus(); return; }
     S.groupId = row.dataset.group;
+    S.sampleSel.clear();
     const shown = visibleSamples();
     if (shown.length && !shown.some((x) => x.id === S.sampleId)) { S.sampleId = shown[0].id; S.selId = null; S.draft = null; }
     renderAll();
@@ -3611,10 +3729,16 @@ function bind() {
     if (e.target.matches('input, textarea, select')) return;
     if (e.key === 'Escape') {
       if (S.multi.size) { S.multi.clear(); renderTrees(); return; }
+      if (S.focus === 'samples' && S.sampleSel.size > 1) { S.sampleSel.clear(); renderSamples(); return; }
       if (S.draft) { S.draft = null; requestPlot(); } else if (!$('comp-panel').hidden) $('comp-panel').hidden = true;
       else if (!$('share-panel').hidden) $('share-panel').hidden = true;
       else if (S.selId) { S.selId = null; renderSide(); requestPlot(); }
       else if (LE.item) closeLayoutEdit();
+      return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && S.focus === 'samples' && S.sampleSel.size) {
+      e.preventDefault();
+      deleteSelectedSamples();
       return;
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.selId) {
@@ -3654,7 +3778,7 @@ export function start() {
   bind();
   S.shared = new SharedWorkspaces({
     localSamples: () => S.samples.map(sharedState),
-    localMeta: () => ({ transforms: { ...S.transforms }, layouts: JSON.parse(JSON.stringify(S.layouts)), groups: JSON.parse(JSON.stringify(S.groups)), groupGates: JSON.parse(JSON.stringify(S.groupGates)) }),
+    localMeta: () => ({ transforms: { ...S.transforms }, layouts: JSON.parse(JSON.stringify(S.layouts)), groups: JSON.parse(JSON.stringify(S.groups)), groupGates: JSON.parse(JSON.stringify(S.groupGates)), orders: JSON.parse(JSON.stringify(S.orders)) }),
     applySample: onRemoteSample,
     applyMeta: onRemoteMeta,
     isBusy: () => !!drag || !!S.draft,

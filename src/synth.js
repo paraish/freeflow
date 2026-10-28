@@ -61,7 +61,7 @@ function populations(condition) {
   ];
 }
 
-export function makeSyntheticFCS({ name, donor, condition, events, seed }) {
+export function makeSyntheticFCS({ name, donor, condition, events, seed, btim }) {
   const r = rng(seed);
   const pops = populations(condition);
   const total = pops.reduce((a, p) => a + p.f, 0);
@@ -103,6 +103,7 @@ export function makeSyntheticFCS({ name, donor, condition, events, seed }) {
   const keywords = {
     $FIL: `${name}.fcs`,
     $DATE: '25-OCT-2026',
+    $BTIM: btim,
     $CYT: 'Example cytometer (synthetic data)',
     $SRC: donor,
     'TUBE NAME': name,
@@ -114,9 +115,9 @@ export function makeSyntheticFCS({ name, donor, condition, events, seed }) {
 }
 
 export const EXAMPLE_SAMPLES = [
-  { name: 'D01_Unstim', donor: 'D01', condition: 'Unstim', events: 60000, seed: 11 },
-  { name: 'D01_PMA', donor: 'D01', condition: 'PMA/Iono', events: 60000, seed: 12 },
-  { name: 'D02_Unstim', donor: 'D02', condition: 'Unstim', events: 60000, seed: 13 },
+  { name: 'D01_Unstim', donor: 'D01', condition: 'Unstim', events: 60000, seed: 11, btim: '10:04:12' },
+  { name: 'D01_PMA', donor: 'D01', condition: 'PMA/Iono', events: 60000, seed: 12, btim: '10:09:47' },
+  { name: 'D02_Unstim', donor: 'D02', condition: 'Unstim', events: 60000, seed: 13, btim: '10:15:30' },
 ];
 
 // Compensation controls in the style BD FACSDiva exports them: an unstained
@@ -154,7 +155,7 @@ export function makeSyntheticControl({ stain, events = 20000, seed }) {
   ];
   const spill = [FLUORS.length, ...FLUORS.map((f) => f.name), ...SPILLOVER.flat()].join(',');
   const keywords = {
-    $FIL: `${name}.fcs`, $DATE: '25-OCT-2026', $CYT: 'Example cytometer (synthetic data)',
+    $FIL: `${name}.fcs`, $DATE: '25-OCT-2026', $BTIM: `09:${String(40 + 3 * (stain ?? -1)).padStart(2, '0')}:00`, $CYT: 'Example cytometer (synthetic data)',
     $SRC: 'Compensation Controls', 'TUBE NAME': label, $SPILLOVER: spill,
   };
   return { name, buffer: writeFCS({ params, columns: cols, keywords }) };

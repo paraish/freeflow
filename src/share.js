@@ -23,7 +23,7 @@ export class SharedWorkspaces {
   /**
    * hooks: {
    *   localSamples(): [{ key, fileName, n, tree, comp }]
-   *   localMeta(): { transforms, layouts, groups }   settings shared by the whole workspace
+   *   localMeta(): { transforms, layouts, groups, groupGates, orders }   settings shared by the whole workspace
    *   applySample(core)            remote change to one sample
    *   applyMeta({ transforms, layouts })  remote change to those settings
    *   isBusy(): boolean            true while the user is mid-drag
@@ -84,7 +84,7 @@ export class SharedWorkspaces {
   }
 
   metaJson(m) {
-    return stableStringify({ transforms: m.transforms || {}, layouts: m.layouts || [], groups: m.groups || [], groupGates: m.groupGates || {}, samples: m.samples || [] });
+    return stableStringify({ transforms: m.transforms || {}, layouts: m.layouts || [], groups: m.groups || [], groupGates: m.groupGates || {}, orders: m.orders || {}, samples: m.samples || [] });
   }
 
   async create(name) {
@@ -129,7 +129,7 @@ export class SharedWorkspaces {
       const json = this.metaJson(data);
       if (json !== this.written.get('meta')) {
         this.written.set('meta', json);
-        this.hooks.applyMeta({ transforms: data.transforms || {}, layouts: data.layouts || [], groups: data.groups || [], groupGates: data.groupGates || {} });
+        this.hooks.applyMeta({ transforms: data.transforms || {}, layouts: data.layouts || [], groups: data.groups || [], groupGates: data.groupGates || {}, orders: data.orders || {} });
       }
       if (!snap.metadata.fromCache) { gotMeta = true; markReady(); }
       this.hooks.onChange();

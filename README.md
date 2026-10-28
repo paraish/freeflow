@@ -89,9 +89,10 @@ with one click).
   delete, with **Undo** and **Redo** buttons in the header (Ctrl/⌘+Z, Ctrl/⌘+Shift+Z or Ctrl+Y). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
 - **Population tree** with counts and % of parent.
-- **Folders** (leftmost column): non-exclusive groups of samples. **All samples** and
+- **Folders** (leftmost column): non-exclusive groups of samples. **All samples**,
   **Compensation controls** (recognised from names like "Stained Control" or "Unstained", plus
-  controls picked in the compensation calculator) are built in. The bar at the bottom of the
+  controls picked in the compensation calculator) and **Non-control samples** (everything
+  else) are built in. The bar at the bottom of the
   pane makes a folder in one step: a name (blank gives Group 1, Group 2, …) and, optionally,
   text that file names must contain, with a live count of matches, then **+** or Enter. A folder
   made with a filter keeps adding matching files opened later. Clicking a folder shows its samples in the Samples
@@ -112,6 +113,17 @@ with one click).
   per population, or **Expand all** / **Collapse all**). It scrolls separately from the
   active sample's **Populations** column, so you can drag between any two trees. Clicking a
   population in any sample's tree opens it.
+  - **Order**: samples are listed in the order they were run, from the time stamps in the
+    files (`$DATE` and `$BTIM`, or `$BEGINDATETIME`); files without one go last, by name. The
+    box beside each sample is its position: type a number to move it. Each folder keeps its own
+    order, so the same sample can be first in one folder and last in another; **Run order**
+    puts a folder back in run order. Group gating tiles and batch layouts follow the folder's
+    order.
+  - **Selecting several**: Ctrl/⌘-click or Shift-click samples, then drag any of them onto a
+    folder to add them all, or use a row's − / × or the Delete key on all of them at once.
+  - **Delete / Backspace** with samples selected does what their row button does: in a folder
+    you made it takes them out of the folder; elsewhere it closes them (press twice to
+    confirm). Your files are never changed.
 - **Copying gates between populations**:
   - Drag a gate onto any population, in the same sample or any other sample's tree, to
     copy it (with its sub-gates) there. If that population already has a gate with the same
@@ -140,7 +152,7 @@ with one click).
 | Enter or double-click | Close a polygon |
 | Ctrl/⌘-click, Shift-click | Select several gates in a tree |
 | Esc | Cancel drawing / clear selection / deselect |
-| Delete / Backspace | Delete the selected gate |
+| Delete / Backspace | Delete the selected gate, or the selected samples (see Samples column) |
 | Ctrl/⌘ + C, Ctrl/⌘ + V | Copy the selected gate, paste it into the population being viewed |
 | Ctrl/⌘ + Z | Undo |
 | Ctrl/⌘ + Shift + Z, Ctrl + Y | Redo |
