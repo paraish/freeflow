@@ -88,6 +88,9 @@ with one click).
   and × (delete, with the gates under it; click twice to confirm, Ctrl/⌘+Z to undo). Move gates, drag their corners, rename,
   delete, with **Undo** and **Redo** buttons in the header (Ctrl/⌘+Z, Ctrl/⌘+Shift+Z or Ctrl+Y). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
+  A gate stays visible and editable when the plot shows its two channels the other way round
+  (for example APC vs FITC for a FITC vs APC gate): it is drawn mirrored, and moving it there
+  changes the same gate.
 - **Population tree** with counts and % of parent.
 - **Folders** (leftmost column): non-exclusive groups of samples. **All samples**,
   **Compensation controls** (recognised from names like "Stained Control" or "Unstained", plus

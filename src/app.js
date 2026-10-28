@@ -1223,21 +1223,28 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
       out.push({ kind: 'range', pop: c, lo: fx(g.lo), hi: fx(g.hi), level: g.level ?? 0.82, label: c.name, sub, selected: c.id === S.selId });
       continue;
     }
-    if (g.type === 'range' || g.x !== v.x || g.y !== v.y) continue;
+    // A gate drawn on the same two channels with the axes the other way round
+    // is shown mirrored across the diagonal (`swap`).
+    const same = g.x === v.x && g.y === v.y;
+    const swap = !same && g.x === v.y && g.y === v.x;
+    if (g.type === 'range' || (!same && !swap)) continue;
+    const T = (pts) => (swap ? pts.map(([a, b]) => [b, a]) : pts);
     if (g.type === 'rect') {
-      out.push({ kind: 'poly', pop: c, pts: rectCorners(g), label: c.name, sub, selected: c.id === S.selId });
+      out.push({ kind: 'poly', pop: c, pts: T(rectCorners(g)), label: c.name, sub, selected: c.id === S.selId, swap });
     } else if (g.type === 'polygon') {
       const fx = scalerFor(g.x).fwd, fy = scalerFor(g.y).fwd;
-      out.push({ kind: 'poly', pop: c, pts: g.points.map(([a, b]) => [fx(a), fy(b)]), label: c.name, sub, selected: c.id === S.selId });
+      out.push({ kind: 'poly', pop: c, pts: T(g.points.map(([a, b]) => [fx(a), fy(b)])), label: c.name, sub, selected: c.id === S.selId, swap });
     } else if (g.type === 'quad') {
       if (seenQuad.has(g.link)) continue;
       seenQuad.add(g.link);
       const sibs = quadSiblings(c);
+      const [cx, cy] = T([[scalerFor(g.x).fwd(g.cx), scalerFor(g.y).fwd(g.cy)]])[0];
       out.push({
-        kind: 'quad', pop: c, cx: scalerFor(g.x).fwd(g.cx), cy: scalerFor(g.y).fwd(g.cy),
+        kind: 'quad', pop: c, cx, cy, swap,
         selected: sibs.some((q) => q.id === S.selId),
         quads: sibs.map((q) => ({
-          pop: q, quadrant: q.gate.quadrant, label: q.name, selected: q.id === S.selId,
+          // Mirrored, upper left and lower right trade places.
+          pop: q, quadrant: swap ? { UL: 'LR', LR: 'UL' }[q.gate.quadrant] || q.gate.quadrant : q.gate.quadrant, label: q.name, selected: q.id === S.selId,
           sub: fmtPct(pct(q.indices.length, pop.indices.length)),
         })),
       });
@@ -1433,8 +1440,8 @@ function onTilePointerDown(ev) {
   if (a.hit.mode !== 'select') {
     const csx = Math.max(0, Math.min(1, a.sx)), csy = Math.max(0, Math.min(1, a.sy));
     drag = {
-      mode: a.hit.mode, index: a.hit.index, pop: a.hit.pop, start: [csx, csy], orig: cloneGate(a.hit.pop.gate),
-      undoSnap: snapshot(), undoPushed: false, sample: a.s, tile: a.t,
+      mode: a.hit.mode, index: a.hit.index, pop: a.hit.pop, start: a.hit.shape.swap ? [csy, csx] : [csx, csy], orig: cloneGate(a.hit.pop.gate),
+      undoSnap: snapshot(), undoPushed: false, sample: a.s, tile: a.t, swap: !!a.hit.shape.swap,
     };
     a.t.canvas.setPointerCapture(ev.pointerId);
   }
@@ -1528,6 +1535,8 @@ let drag = null;
 
 function applyDrag(sx, sy) {
   const d = drag;
+  // On a mirrored gate, the plot's x is the gate's y and the other way round.
+  if (d.swap) [sx, sy] = [sy, sx];
   const g = d.pop.gate;
   const o = d.orig;
   const dx = sx - d.start[0], dy = sy - d.start[1];
@@ -1637,8 +1646,8 @@ function onPointerDown(ev) {
   S.selId = hit.pop.id;
   if (hit.mode !== 'select') {
     drag = {
-      mode: hit.mode, index: hit.index, pop: hit.pop, start: [sx, sy], orig: cloneGate(hit.pop.gate),
-      undoSnap: snapshot(), undoPushed: false, sample: sample(),
+      mode: hit.mode, index: hit.index, pop: hit.pop, start: hit.shape.swap ? [sy, sx] : [sx, sy], orig: cloneGate(hit.pop.gate),
+      undoSnap: snapshot(), undoPushed: false, sample: sample(), swap: !!hit.shape.swap,
       forFolder: S.mode === 'group' && hit.pop.link?.group === S.groupId,
     };
     plot.canvas.setPointerCapture(ev.pointerId);
