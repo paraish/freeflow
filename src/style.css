@@ -501,6 +501,9 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .fg-row { display: flex; align-items: center; gap: 4px; padding: 3px 4px 3px calc(36px + var(--depth) * 12px); font-size: 12px; }
 .fg-row:hover { background: var(--sunk); }
 .fg-row.is-confirm { background: var(--multi-soft); }
+.fg-row[draggable="true"] { cursor: grab; }
+.fg-row.is-picked { background: var(--multi-soft); box-shadow: inset 3px 0 0 var(--gate-sel); }
+.fg-row.is-picked .fg-name { color: var(--gate-sel); font-weight: 600; }
 .fg-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .fg-name::before { content: "↳ "; color: var(--muted); }
 .fg-adj { color: var(--gate-sel); font-size: 11px; white-space: nowrap; }

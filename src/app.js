@@ -49,7 +49,9 @@ const S = {
   orders: {}, // folder id -> sample keys in the order set by hand; see groups.js
   sampleSel: new Set(), // ids of samples selected together in the Samples pane
   sampleAnchor: null, // the last clicked sample, for Shift-click ranges
-  focus: 'gates', // what Delete acts on: 'samples' (the selected samples) or 'gates'
+  focus: 'gates', // what Delete acts on: 'samples' (the selected samples), 'gates', or nothing ('folders')
+  fgSel: new Set(), // folder gates selected in the Folders pane, as "<folder id>|<gid>"
+  fgAnchor: null, // the last clicked folder gate, for Shift-click ranges
   dotSize: 1, // pixels per event on pseudocolor and dot plots
 };
 
@@ -1895,12 +1897,13 @@ function renderGroups() {
         depthOf.set(node.gid, depth);
         const adj = adjusted(node.gid);
         const confirming = GF.confirm?.group === g.id && GF.confirm.gid === node.gid;
-        gateRows.push(`<li class="fg-row${confirming ? ' is-confirm' : ''}" style="--depth:${depth}" data-group="${esc(g.id)}" data-gid="${esc(node.gid)}">
+        const picked = S.fgSel.has(`${g.id}|${node.gid}`);
+        gateRows.push(`<li class="fg-row${confirming ? ' is-confirm' : ''}${picked ? ' is-picked' : ''}" style="--depth:${depth}" data-group="${esc(g.id)}" data-gid="${esc(node.gid)}" draggable="true" title="Click to select (Ctrl/⌘- or Shift-click for several). Drag onto a sample, a population or another folder to copy.">
           <span class="fg-name" title="${esc(['All Events', ...e.parentPath, node.name].join(' / '))}">${esc(node.name)}${adj ? ` <span class="fg-adj">${adj} adjusted</span>` : ''}</span>
           <button class="icon-btn" data-act="fg-delete" aria-label="Delete folder gate ${esc(node.name)}" title="Delete…">×</button></li>`);
         if (confirming) {
           gateRows.push(`<li class="fg-confirm" data-group="${esc(g.id)}" data-gid="${esc(node.gid)}">
-            <p>Delete “${esc(node.name)}”${node.children.length ? ' and its sub-gates' : ''}:</p>
+            <p>Delete ${node.gate?.type === 'quad' ? 'the quadrant gate (all four quadrants)' : `“${esc(node.name)}”`}${node.children.length ? ' and its sub-gates' : ''}:</p>
             <button class="btn btn-small btn-danger" data-act="fg-del-all">Delete gate for all samples</button>
             <button class="btn btn-small" data-act="fg-del-group">Delete only the grouping</button>
             <button class="btn btn-small btn-quiet" data-act="fg-cancel">Cancel</button></li>`);
@@ -2034,7 +2037,7 @@ function dropOnGroup(src, gid) {
     toast(`Added ${list.length === 1 ? list[0].name : `${list.length} samples`} to ${g.name}.`);
     return;
   }
-  makeFolderGates(g, src.items);
+  makeFolderGates(g, src.items, { relink: !!src.fromFolder });
 }
 
 // ---------------------------------------------------------------- folder gates
@@ -2068,12 +2071,23 @@ function syncFolderGates() {
   return [...missing];
 }
 
-function makeFolderGates(g, items) {
+function makeFolderGates(g, items, { relink = false } = {}) {
   const entries = S.groupGates[g.id] || (S.groupGates[g.id] = []);
   const fresh = items.filter(({ pop }) => pop.link?.group !== g.id);
   if (!fresh.length) { toast(`${itemsLabel(items)} is already a folder gate in ${g.name}.`); return; }
   pushUndo();
-  for (const { pop } of fresh) entries.push({ parentPath: pathOf(pop.parent), node: templateFrom(pop) });
+  const made = fresh.map(({ pop }) => ({ parentPath: pathOf(pop.parent), node: templateFrom(pop) }));
+  // Gates copied from another folder get quadrant links of their own, so a
+  // sample in both folders keeps the two sets apart.
+  if (relink) {
+    const links = new Map();
+    walkTemplate(made.map((e) => e.node), (node) => {
+      if (node.gate?.type !== 'quad') return;
+      if (!links.has(node.gate.link)) links.set(node.gate.link, newId('q'));
+      node.gate.link = links.get(node.gate.link);
+    });
+  }
+  entries.push(...made);
   const missing = syncFolderGates();
   renderAll();
   const n = groupMembers(g).length - missing.length;
@@ -2113,6 +2127,56 @@ function deleteFolderGate(groupId, gid, everywhere) {
 
 // The template node behind a linked population.
 const templateFor = (pop) => (pop?.link ? findTemplate(templatesOf(pop.link.group), pop.link.gid) : null);
+
+// Every folder gate of a folder by gid: its node, the path of the population
+// it sits under, and the list of gates beside it.
+function indexTemplates(groupId) {
+  const out = new Map();
+  const entries = templatesOf(groupId);
+  const same = (a, b) => a.join('\u0000') === b.join('\u0000');
+  for (const e of entries) {
+    const visit = (node, parentPath, siblings) => {
+      out.set(node.gid, { node, parentPath, siblings });
+      for (const c of node.children) visit(c, [...parentPath, node.name], node.children);
+    };
+    visit(e.node, e.parentPath, entries.filter((x) => same(x.parentPath, e.parentPath)).map((x) => x.node));
+  }
+  return out;
+}
+
+// A quadrant folder gate goes with its set of four.
+function templateSet(loc) {
+  const g = loc.node.gate;
+  return g?.type === 'quad' ? loc.siblings.filter((n) => n.gate?.type === 'quad' && n.gate.link === g.link) : [loc.node];
+}
+
+// Folder gates selected in the Folders pane, as detached populations placed
+// under their parent path, ready to copy like gates dragged from a tree.
+function folderGateItems(keys) {
+  const picked = [];
+  const seen = new Set();
+  for (const key of keys) {
+    const [group, gid] = key.split('|');
+    const idx = indexTemplates(group);
+    const loc = idx.get(gid);
+    if (!loc) continue;
+    for (const n of templateSet(loc)) {
+      if (seen.has(`${group}|${n.gid}`)) continue;
+      seen.add(`${group}|${n.gid}`);
+      picked.push({ group, node: n, parentPath: idx.get(n.gid).parentPath });
+    }
+  }
+  // A gate whose parent is also picked comes along with the parent.
+  const keep = picked.filter((x) => !picked.some((y) => y !== x && y.group === x.group && y.node !== x.node && subtreeGids(y.node).has(x.node.gid)));
+  const toObj = (n) => ({ name: n.name, gate: cloneGate(n.gate), view: null, children: n.children.map(toObj) });
+  return keep.map(({ group, node, parentPath }) => {
+    let parent = makePopulation('All Events', null, null);
+    for (const name of parentPath) parent = makePopulation(name, null, parent);
+    const pop = deserialize(toObj(node), parent);
+    pop.link = { group, gid: node.gid }; // so a drop on its own folder is recognised
+    return { sample: null, pop };
+  });
+}
 
 
 // The time of day a sample was run, as the file states it (hh:mm).
@@ -3392,6 +3456,7 @@ function bind() {
   for (const list of [$('samples'), $('tree')]) {
     list.addEventListener('mousedown', (e) => { if (e.shiftKey && e.target.closest('.pop-row, .sample-pick')) e.preventDefault(); });
   }
+  $('groups').addEventListener('mousedown', (e) => { if (e.shiftKey && e.target.closest('.fg-row')) e.preventDefault(); });
   $('popstats').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="paste-gate"]')) pasteGate();
   });
@@ -3402,6 +3467,20 @@ function bind() {
   let dragSrc = null;
   const clearDrop = () => document.querySelectorAll('.is-drop').forEach((n) => n.classList.remove('is-drop'));
   const onDragStart = (e) => {
+    const fgRow = e.target.closest?.('.fg-row');
+    if (fgRow) {
+      // Folder gates: the selected ones if this is one of them, else this one.
+      const key = `${fgRow.dataset.group}|${fgRow.dataset.gid}`;
+      const keys = S.fgSel.has(key) ? [...S.fgSel] : [key];
+      const items = folderGateItems(keys);
+      if (!items.length) { e.preventDefault(); return; }
+      dragSrc = { items, ids: new Set(), label: itemsLabel(items), fromFolder: fgRow.dataset.group };
+      e.dataTransfer.setData('text/plain', items.map((i) => i.pop.name).join(', '));
+      e.dataTransfer.effectAllowed = 'copy';
+      $('drag-ghost').textContent = items.length === 1 ? items[0].pop.name : dragSrc.label;
+      e.dataTransfer.setDragImage($('drag-ghost'), 12, 12);
+      return;
+    }
     const srow = e.target.closest?.('.sample-row');
     if (srow && !e.target.closest('.pop-row')) {
       const s = S.samples.find((x) => x.id === srow.dataset.id);
@@ -3473,10 +3552,31 @@ function bind() {
     const fg = e.target.closest('.fg-row, .fg-confirm');
     if (fg) {
       const { group, gid } = fg.dataset;
+      // A quadrant goes with its set of four.
+      const set = () => { const loc = indexTemplates(group).get(gid); return loc ? templateSet(loc).map((n) => n.gid) : [gid]; };
       if (act === 'fg-delete') { GF.confirm = { group, gid }; renderGroups(); }
       if (act === 'fg-cancel') { GF.confirm = null; renderGroups(); }
-      if (act === 'fg-del-all') deleteFolderGate(group, gid, true);
-      if (act === 'fg-del-group') deleteFolderGate(group, gid, false);
+      if (act === 'fg-del-all') { S.fgSel.clear(); deleteFolderGate(group, set(), true); }
+      if (act === 'fg-del-group') { S.fgSel.clear(); deleteFolderGate(group, set(), false); }
+      if (!act && fg.classList.contains('fg-row')) {
+        // Select folder gates: click, Ctrl/⌘-click to add or remove, Shift-click for a range.
+        const key = `${group}|${gid}`;
+        S.focus = 'folders';
+        if (e.ctrlKey || e.metaKey) {
+          if (S.fgSel.has(key)) S.fgSel.delete(key); else S.fgSel.add(key);
+          S.fgAnchor = key;
+        } else if (e.shiftKey) {
+          const rows = [...$('groups').querySelectorAll('.fg-row')].map((r) => `${r.dataset.group}|${r.dataset.gid}`);
+          const from = rows.indexOf(S.fgAnchor), to = rows.indexOf(key);
+          const [lo, hi] = from < 0 ? [to, to] : [Math.min(from, to), Math.max(from, to)];
+          for (const k of rows.slice(lo, hi + 1)) S.fgSel.add(k);
+          if (from < 0) S.fgAnchor = key;
+        } else {
+          S.fgSel = new Set([key]);
+          S.fgAnchor = key;
+        }
+        renderGroups();
+      }
       return;
     }
     const row = e.target.closest('.group-row');
@@ -3739,6 +3839,7 @@ function bind() {
     if (e.key === 'Escape') {
       if (S.multi.size) { S.multi.clear(); renderTrees(); return; }
       if (S.focus === 'samples' && S.sampleSel.size > 1) { S.sampleSel.clear(); renderSamples(); return; }
+      if (S.fgSel.size) { S.fgSel.clear(); renderGroups(); return; }
       if (S.draft) { S.draft = null; requestPlot(); } else if (!$('comp-panel').hidden) $('comp-panel').hidden = true;
       else if (!$('share-panel').hidden) $('share-panel').hidden = true;
       else if (S.selId) { S.selId = null; renderSide(); requestPlot(); }
@@ -3750,7 +3851,7 @@ function bind() {
       deleteSelectedSamples();
       return;
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && S.selId) {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && S.selId && S.focus !== 'folders') {
       const pop = popById(S.selId);
       if (pop?.gate) { e.preventDefault(); deleteGate(pop); }
       return;
