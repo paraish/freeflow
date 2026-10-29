@@ -2159,11 +2159,11 @@ function folderGateName(link) {
 
 // Deleting a folder gate from the Folders pane: for every sample, or only
 // the folder's management of it (each sample keeps its copy).
-function deleteFolderGate(groupId, gid, everywhere) {
+// Removes folder gates (with their sub-gates) from a folder, and from its
+// samples too when `everywhere`; returns the template nodes removed.
+function removeFolderGates(groupId, gid, everywhere) {
   const found = [].concat(gid).map((x) => findTemplate(templatesOf(groupId), x)).filter(Boolean);
-  if (!found.length) return;
-  const t = found[0];
-  pushUndo();
+  if (!found.length) return [];
   const gids = new Set(found.flatMap((f) => [...subtreeGids(f.node)]));
   // Found again each time: removing one shifts the places of the others.
   for (const f of found) findTemplate(templatesOf(groupId), f.node.gid)?.remove();
@@ -2175,6 +2175,38 @@ function deleteFolderGate(groupId, gid, everywhere) {
     }
   }
   if (!templatesOf(groupId).length) delete S.groupGates[groupId];
+  return found;
+}
+
+// Delete or Backspace with folder gates selected in the Folders pane: they
+// go from every sample in their folders, as one step to undo.
+function deleteSelectedFolderGates() {
+  const byGroup = new Map();
+  for (const key of S.fgSel) {
+    const [group, gid] = key.split('|');
+    const loc = indexTemplates(group).get(gid);
+    if (!loc) continue;
+    if (!byGroup.has(group)) byGroup.set(group, new Set());
+    for (const n of templateSet(loc)) byGroup.get(group).add(n.gid);
+  }
+  if (!byGroup.size) return;
+  pushUndo();
+  let n = 0;
+  for (const [group, gids] of byGroup) n += removeFolderGates(group, [...gids], true).length;
+  S.fgSel.clear();
+  S.viewPath = pathOf(viewedPop());
+  S.selId = null;
+  S.version++;
+  GF.confirm = null;
+  renderAll();
+  toast(`Deleted ${n} folder gate${n === 1 ? '' : 's'}${byGroup.size > 1 ? ` from ${byGroup.size} folders` : ''}, with any sub-gates, from every sample. Undo (Ctrl+Z) brings ${n === 1 ? 'it' : 'them'} back.`);
+}
+
+function deleteFolderGate(groupId, gid, everywhere) {
+  if (!findTemplate(templatesOf(groupId), [].concat(gid)[0])) return;
+  pushUndo();
+  const found = removeFolderGates(groupId, gid, everywhere);
+  const t = found[0];
   S.viewPath = pathOf(viewedPop());
   S.selId = null;
   S.version++;
@@ -3902,6 +3934,11 @@ function bind() {
       else if (!$('share-panel').hidden) $('share-panel').hidden = true;
       else if (S.selId) { S.selId = null; renderSide(); requestPlot(); }
       else if (LE.item) closeLayoutEdit();
+      return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && S.focus === 'folders' && S.fgSel.size) {
+      e.preventDefault();
+      deleteSelectedFolderGates();
       return;
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.focus === 'samples' && S.sampleSel.size) {

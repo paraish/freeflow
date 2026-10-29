@@ -115,7 +115,9 @@ with one click).
   Shift-click for several) and dragged onto a sample's name (copied to the same place in that
   sample), onto any population (copied under it), onto another folder (they become that
   folder's gates too), or onto another folder gate (they become its sub-gates, in every sample
-  of that folder; gates from the sample trees can be dropped there too). A quadrant gate always goes as its set of four, when selected, copied or
+  of that folder; gates from the sample trees can be dropped there too). Delete or Backspace deletes the
+  selected folder gates (with their sub-gates) from every sample in their folders, in one step
+  that Ctrl/⌘+Z undoes. A quadrant gate always goes as its set of four, when selected, copied or
   deleted. Folder gates and adjustments are kept in bundles and shared
   workspaces; .wsp files carry each sample's full gates plus the folder memberships.
 - **Samples column**: every sample with its own gating tree, each collapsible (per sample,
