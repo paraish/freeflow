@@ -366,20 +366,34 @@ export function createLayoutEditor(root, env) {
 
   // The text settings of a plot: title, axis titles, sizes, and the numbers
   // shown with each gate.
-  function plotTextHTML(it, view) {
+  function plotTextHTML(it, view, s) {
     const field = (id, label, input) => `<label class="field"><span>${label}</span>${input}</label>`;
     const num = (id, v, attrs = '') => `<input id="${id}" type="number" value="${+(+v).toFixed(1)}" ${attrs}>`;
     const txt = (id, v, ph = '') => `<input id="${id}" type="text" value="${escH(v ?? '')}" placeholder="${escH(ph)}" autocomplete="off">`;
     const check = (id, v, label) => `<label class="check check-small"><input id="${id}" type="checkbox" ${v ? 'checked' : ''}> ${label}</label>`;
     const z = plotSizes(it.fontSize || 11, it.sizes || {});
     const st = statsOf(it);
-    const presets = [['{population}', 'Population'], ['{label}', 'Sample name'], ['{sample}', 'File name'], ['{label}: {population}', 'Sample name: population'], ['', 'None']];
     const title = it.title ?? '';
-    const preset = presets.some(([v]) => v === title) ? title : 'custom';
+    // The title is typed, or picked from a list (▾) of common titles and the
+    // sample's own keywords, each shown with what it gives for this plot.
+    const pop = s && env.findByPath(s.root, it.path || []);
+    const tk = tokensFor(s, pop, view);
+    const shown = (v) => { const t = fillTokens(v, tk); return t.length > 40 ? `${t.slice(0, 39)}…` : t; };
+    const presets = [['{population}', 'Population'], ['{label}', 'Sample name'], ['{sample}', 'File name'],
+      ['{label}: {population}', 'Sample name: population'], ['{sample}: {population}', 'File name: population'],
+      ['{population}: {freq} of {parent}', 'Population: % of parent'], ['{population} ({count} events)', 'Population and count']];
+    const kw = s?.keywords || {};
+    const keys = Object.keys(kw).filter((k) => !k.startsWith('$') && !/^(P\d|SPILL|COMP)/i.test(k)).slice(0, 40);
+    for (const k of ['$DATE', '$BTIM', '$CYT', '$SRC', '$OP', '$INST']) if (kw[k] !== undefined) keys.push(k);
+    const opt = (v, name) => `<option value="${escH(v)}">${escH(name)}${v ? ` → ${escH(shown(v) || '(empty)')}` : ''}</option>`;
+    const picker = `<select id="lp-title-pick" class="combo-pick" aria-label="Choose a title" title="Choose a title">
+        <option value="" selected disabled hidden>Choose</option>
+        <optgroup label="Titles">${presets.map(([v, t]) => opt(v, t)).join('')}<option value="__none">None</option></optgroup>
+        ${keys.length ? `<optgroup label="Keywords of this sample">${keys.map((k) => opt(`{${k}}`, k)).join('')}</optgroup>` : ''}
+      </select>`;
     return `
         <div class="fields">
-          ${field('', 'Title', `<select id="lp-title-preset">${presets.map(([v, t]) => `<option value="${escH(v)}" ${preset === v ? 'selected' : ''}>${t}</option>`).join('')}<option value="custom" ${preset === 'custom' ? 'selected' : ''}>Custom…</option></select>`)}
-          ${field('', 'Title text', txt('lp-title', title, 'No title'))}
+          ${field('', 'Title', `<span class="combo">${txt('lp-title', title, 'No title')}${picker}</span>`)}
           ${field('', 'X axis title', txt('lp-xlabel', it.xLabel, 'Channel name'))}
           ${field('', 'Y axis title', txt('lp-ylabel', it.yLabel, view.type === 'histogram' ? '% of max' : 'Channel name'))}
           <p class="field-head">Sizes</p>
@@ -439,7 +453,7 @@ export function createLayoutEditor(root, env) {
       </section>
       <section class="card">
         <header class="card-head"><span class="eyebrow">Plot text</span></header>
-        ${plotTextHTML(it, view)}`;
+        ${plotTextHTML(it, view, s)}`;
     } else if (it?.kind === 'text') {
       itemHTML = `
         <div class="fields">
@@ -668,7 +682,7 @@ export function createLayoutEditor(root, env) {
     const n = parseFloat(val);
     switch (t.id) {
       case 'lpg-name': l.name = val || 'Layout'; return changed();
-      case 'lp-title-preset': if (it && val !== 'custom') { it.title = val; return changed({ props: true }); } return;
+      case 'lp-title-pick': if (it && val) { it.title = val === '__none' ? '' : val; return changed({ props: true }); } return;
       case 'lp-axfs': case 'lp-tickfs': case 'lp-gnfs': case 'lp-gvfs':
         if (it && n >= 4) { it.sizes = { ...(it.sizes || {}), [{ 'lp-axfs': 'axis', 'lp-tickfs': 'ticks', 'lp-gnfs': 'gateName', 'lp-gvfs': 'gateNum' }[t.id]]: n }; changed(); }
         return;
