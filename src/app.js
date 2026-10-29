@@ -48,6 +48,7 @@ const S = {
   collapsed: new Set(), // "<list>:<population id>" and "sample:<sample id>" keys
   orders: {}, // folder id -> sample keys in the order set by hand; see groups.js
   labels: {}, // sample key -> a name given to the sample (for figures: {label})
+  plotDefaults: null, // text sizes new layout plots start with: { fontSize, sizes }
   sampleSel: new Set(), // ids of samples selected together in the Samples pane
   sampleAnchor: null, // the last clicked sample, for Shift-click ranges
   focus: 'gates', // what Delete acts on: 'samples' (the selected samples), 'gates', or nothing ('folders')
@@ -313,6 +314,7 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
       }
       if (info.orders && typeof info.orders === 'object') S.orders = { ...S.orders, ...info.orders };
       if (info.labels && typeof info.labels === 'object') S.labels = { ...S.labels, ...info.labels };
+      if (info.plotDefaults && typeof info.plotDefaults === 'object') S.plotDefaults = info.plotDefaults;
       if (info.groupGates && typeof info.groupGates === 'object') {
         // Folder ids in the bundle match the folders restored just above.
         S.groupGates = { ...S.groupGates, ...info.groupGates };
@@ -599,7 +601,7 @@ function analysisParts(named, created = new Date().toISOString()) {
   const wrapped = named.map(({ s, fn }) => ({ ...s, fileName: fn }));
   const wrap = new Map(named.map(({ s }, i) => [s, wrapped[i]]));
   const wspText = exportWSP({ samples: wrapped, transformOf: getTransform, groups: wspGroups(samples).map((g) => ({ name: g.name, members: g.members.map((m) => wrap.get(m)).filter(Boolean) })) });
-  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, labels: S.labels, links: bundleLinks(named), gateLabels: bundleGateLabels(named) }, null, 1);
+  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, labels: S.labels, plotDefaults: S.plotDefaults, links: bundleLinks(named), gateLabels: bundleGateLabels(named) }, null, 1);
   return { wspText, json };
 }
 
@@ -1171,6 +1173,7 @@ function snapshot() {
     orders: JSON.parse(JSON.stringify(S.orders)),
     labels: { ...S.labels },
     layouts: JSON.parse(JSON.stringify(S.layouts)),
+    plotDefaults: S.plotDefaults ? JSON.parse(JSON.stringify(S.plotDefaults)) : null,
   };
 }
 
@@ -1229,6 +1232,7 @@ function restoreSnapshot(snap) {
   if (snap.groupGates) S.groupGates = snap.groupGates;
   if (snap.orders) S.orders = snap.orders;
   if (snap.labels) S.labels = snap.labels;
+  if ('plotDefaults' in snap) S.plotDefaults = snap.plotDefaults;
   if (snap.layouts) {
     S.layouts = snap.layouts;
     // A layout plot open for editing follows its restored copy.
@@ -2995,6 +2999,8 @@ function layoutEnv() {
     checkpoint,
     labelOf,
     folderSamples: () => visibleSamples(),
+    plotDefaults: () => S.plotDefaults,
+    setPlotDefaults: (d) => { S.plotDefaults = d; },
     setOrder: (key, raw) => { const s = S.samples.find((x) => sampleKey(x) === key); if (s) setSampleOrder(currentGroup(), s, raw); },
     setLabel: (key, raw) => { const s = S.samples.find((x) => sampleKey(x) === key); if (s) setSampleLabel(s, raw); },
     folderName: () => currentGroup().name,

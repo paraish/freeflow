@@ -208,8 +208,9 @@ Gating, **Add to layout** places the plot you are looking at.
   name, file name, combinations, % of parent, count, or any of the sample's keywords such as
   donor or condition, each shown with what it gives for that plot), axis titles, and separate sizes for the title, axis titles, axis
   numbers, gate names and gate numbers. Each gate can show its name, count, % of parent and %
-  of grandparent, with or without the % sign. **Use for every plot** copies these settings to
-  the other plots on the page.
+  of grandparent, with or without the % sign. **Set for all plots** (under Sizes) puts the sizes
+  on every plot in every layout, and new plots start with them for the rest of the session (it
+  is saved with the work); the gate label choices can be copied to every plot on the page.
 - Text items and titles take fill-ins: `{sample}`, `{label}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).

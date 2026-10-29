@@ -41,6 +41,7 @@ export function newLayout(name = 'Layout 1') {
  *   labelOf(sample)          the name given to a sample in the Samples pane
  *   folderSamples(), folderName()   the folder picked in the Folders pane
  *   setOrder(key, n), setLabel(key, name)   change a sample's place or name
+ *   plotDefaults(), setPlotDefaults(d)       text sizes new plots start with
  * }
  */
 export function createLayoutEditor(root, env) {
@@ -400,13 +401,16 @@ export function createLayoutEditor(root, env) {
           <div class="field-pair">${field('', 'Title', num('lp-font', z.title, 'min="4" max="48" step="0.5"'))}${field('', 'Axis titles', num('lp-axfs', z.axis, 'min="4" max="48" step="0.5"'))}</div>
           <div class="field-pair">${field('', 'Axis numbers', num('lp-tickfs', z.ticks, 'min="4" max="48" step="0.5"'))}${field('', 'Gate names', num('lp-gnfs', z.gateName, 'min="4" max="48" step="0.5"'))}</div>
           <div class="field-pair">${field('', 'Gate numbers', num('lp-gvfs', z.gateNum, 'min="4" max="48" step="0.5"'))}<span></span></div>
+          <div class="btn-row"><button class="btn btn-small" data-act="sizes-all" title="Use these five sizes for every plot in every layout, and for new plots">Set for all plots</button></div>
+          <p class="muted small">Sets these sizes on every plot in every layout; new plots start with them too.</p>
           <p class="field-head">With each gate</p>
           <div class="field-pair">${check('lp-labels', it.showLabels !== false, 'Name')}${check('lp-st-count', st.count, 'Count')}</div>
           <div class="field-pair">${check('lp-st-parent', st.parent, '% of parent')}${check('lp-st-grand', st.grand, '% of grandparent')}</div>
           ${check('lp-pct', it.pctSign !== false, 'Show the % sign')}
+          <div class="btn-row"><button class="btn btn-small" data-act="text-all" title="Copy these gate name and number settings to every plot on this page">Use these gate labels for every plot on this page</button></div>
         </div>
         <p class="muted small">Fill-ins for titles: {sample} {label} {population} {parent} {count} {freq} {freqTotal} {x} {y}, or any keyword in braces such as {$DATE}.</p>
-        <div class="btn-row"><button class="btn" data-act="text-all" title="Copy these sizes and gate number settings (not the titles) to every plot on this page">Use for every plot</button></div>`;
+`;
   }
 
   function renderProps() {
@@ -642,6 +646,9 @@ export function createLayoutEditor(root, env) {
       id: newId('i'), kind: 'plot', ...pos, w, h, sampleKey, path: s ? env.pathOf(pop) : [],
       view: view ? { ...view } : null, title: '{population}', xLabel: '', yLabel: '', fontSize: 11, showGates: true, showLabels: true,
     };
+    // Text sizes set with "Set for all plots".
+    const d = env.plotDefaults();
+    if (d) { item.fontSize = d.fontSize || 11; if (d.sizes) item.sizes = { ...d.sizes }; }
     l.items.push(item);
     // In grid mode the new plot goes into the cell it was dropped on (or
     // after the others), and the rest move along.
@@ -833,10 +840,23 @@ export function createLayoutEditor(root, env) {
       env.checkpoint();
       for (const x of l.items) {
         if (x.kind !== 'plot' || x === it) continue;
-        Object.assign(x, { fontSize: it.fontSize, sizes: it.sizes ? { ...it.sizes } : undefined, stats: { ...statsOf(it) }, pctSign: it.pctSign, showLabels: it.showLabels });
+        Object.assign(x, { stats: { ...statsOf(it) }, pctSign: it.pctSign, showLabels: it.showLabels });
       }
       env.changed();
-      env.toast('Text settings applied to every plot on this page.');
+      env.toast('Gate labels set the same on every plot on this page.');
+      return render();
+    }
+    if (act === 'sizes-all' && it?.kind === 'plot') {
+      // These sizes on every plot in every layout, and the default for new ones.
+      env.checkpoint();
+      const d = { fontSize: it.fontSize || 11, sizes: it.sizes ? { ...it.sizes } : null };
+      for (const lay of layouts()) {
+        for (const x of lay.items) if (x.kind === 'plot') Object.assign(x, { fontSize: d.fontSize, sizes: d.sizes ? { ...d.sizes } : undefined });
+        tidy(lay);
+      }
+      env.setPlotDefaults(d);
+      env.changed();
+      env.toast('Text sizes set for every plot; new plots will start with them.');
       return render();
     }
     const sh = () => sheet(l);
