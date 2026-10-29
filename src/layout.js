@@ -2,11 +2,12 @@
 // repeated for every sample (batch) and exported as SVG or PNG.
 //
 // A layout: { id, name, size, width, height, items, batch, columns, rows, order, sampleKey,
-//            arrange, gridCols, gridRows }
+//            arrange, gridCols, gridRows, showStrategy, strategySize }
 // `arrange` is 'free' (items go where they are put) or 'grid' (plots snap to
 // a grid of gridCols x gridRows cells, in order; see tiling.js).
 // In batch, `columns` and `rows` set the grid (0 or missing: as many as
 // needed) and `order` fills it across rows first ('row') or down columns ('col').
+// `showStrategy` lists the gates down to the page's one plot above the figure.
 // An item:  { id, kind: 'plot' | 'text', x, y, w, h, ... } in page units
 // (CSS pixels, 96 per inch). Plot items name their population by path and
 // their sample by key (null = the page's sample), so a layout works on any
@@ -41,8 +42,9 @@ export function newLayout(name = 'Layout 1') {
  *   labelOf(sample)          the name given to a sample in the Samples pane
  *   folderSamples(), folderName()   the folder picked in the Folders pane
  *   setOrder(key, n), setLabel(key, name)   change a sample's place or name
- *   plotDefaults(), setPlotDefaults(d)       text sizes new plots start with
+ *   plotDefaults(), setPlotDefaults(d)       text sizes and gate labels new plots start with
  *   renameGate(key, path, rect)              open the name box for a gate
+ *   shortLabel(s, name)                      a channel's stain, or its name
  * }
  */
 export function createLayoutEditor(root, env) {
@@ -253,8 +255,48 @@ export function createLayoutEditor(root, env) {
     };
   }
 
+  // The gating strategy of a page with exactly one plot: each gate from All
+  // Events down to the plotted population, with the channels it was drawn on,
+  // e.g. ["Cells (FSC-A / SSC-A)", "Singlets (FSC-H / FSC-A)"]. Null with no
+  // plot or several (they may follow different gates).
+  function strategySteps(layout) {
+    const plots = layout.items.filter((x) => x.kind === 'plot');
+    if (plots.length !== 1) return null;
+    const it = plots[0];
+    const s = sampleFor(it, layout.batch ? env.batchSamples(layout)[0] || null : pageSampleOf(layout));
+    if (!s) return null;
+    const steps = [];
+    let p = s.root;
+    for (const name of it.path || []) {
+      p = p.children.find((c) => c.name === name);
+      if (!p) break;
+      const chans = p.gate ? (p.gate.type === 'range' ? [p.gate.x] : [p.gate.x, p.gate.y]) : [];
+      steps.push(chans.length ? `${p.name} (${chans.map((n) => env.shortLabel(s, n)).join(' / ')})` : p.name);
+    }
+    return steps;
+  }
+
+  // The gating strategy as a band of text `w` wide, wrapped at the arrows;
+  // null when it is off or there is nothing to show.
+  function strategyBand(layout, w) {
+    if (!layout.showStrategy) return null;
+    const steps = strategySteps(layout);
+    if (!steps?.length) return null;
+    const fs = layout.strategySize || 12;
+    const fit = Math.max(12, Math.floor((w - 32) / (fs * 0.55)));
+    const lines = [''];
+    steps.forEach((st, i) => {
+      const last = lines.length - 1;
+      const piece = i ? ` → ${st}` : st;
+      if (i && (lines[last] + piece).length > fit) lines.push(`→ ${st}`);
+      else lines[last] += piece;
+    });
+    const h = Math.round(fs * (0.9 + 1.25 * lines.length));
+    return { h, svg: (x, y) => textSVG({ x: x + 16, y: y + Math.round(fs * 0.3), w: w - 32, h, text: lines.join('\n'), fontSize: fs, align: 'left' }) };
+  }
+
   // Only the selected plots (each from its own copy in a batch, with its
-  // sample ID above it), cropped to fit.
+  // sample ID above it), cropped to fit, under the gating strategy if shown.
   function selectionSheet(layout, targets) {
     const sh = sheet(layout);
     const id = batchId(layout);
@@ -274,6 +316,8 @@ export function createLayoutEditor(root, env) {
     }
     if (!parts.length) return sh;
     const m = 12;
+    const band = strategyBand(layout, x1 - x0 + 2 * m);
+    if (band) { y0 -= band.h; parts.push(band.svg(x0 - m, y0)); }
     const width = x1 - x0 + 2 * m, height = y1 - y0 + 2 * m;
     return { width, height, svg: pageSVG({ width, height, parts: [`<g transform="translate(${m - x0} ${m - y0})">${parts.join('')}</g>`] }) };
   }
@@ -285,7 +329,7 @@ export function createLayoutEditor(root, env) {
   }
 
   function sheet(layout) {
-    if (!layout) return { width: 800, height: 600, svg: pageSVG({ width: 800, height: 600, parts: [] }), blocks: [], origin: { dx: 0, dy: 0 }, cell: { x0: 0, y0: 0, w: 800, h: 600 } };
+    if (!layout) return { width: 800, height: 600, svg: pageSVG({ width: 800, height: 600, parts: [] }), blocks: [], origin: { dx: 0, dy: 0 }, cell: { x0: 0, y0: 0, w: 800, h: 600 }, top: 0 };
     // Batch copies skip compensation controls.
     const samples = layout.batch ? env.batchSamples(layout) : [pageSampleOf(layout)];
     const { cols, rows, byCol } = batchGrid(layout, samples.length);
@@ -296,20 +340,23 @@ export function createLayoutEditor(root, env) {
     const idH = id ? id.h : 0;
     if (idH) cell = { ...cell, y0: cell.y0 - idH, h: cell.h + idH };
     const width = cell.w * cols;
-    const height = cell.h * rows;
-    const parts = [];
+    // The gating strategy, once, above everything.
+    const band = strategyBand(layout, width);
+    const top = band ? band.h : 0;
+    const height = top + cell.h * rows;
+    const parts = band ? [band.svg(0, 0)] : [];
     const blocks = [];
     samples.forEach((s, i) => {
       const c = byCol ? Math.floor(i / rows) : i % cols;
       const r = byCol ? i % rows : Math.floor(i / cols);
-      const cx = c * cell.w, cy = r * cell.h;
+      const cx = c * cell.w, cy = top + r * cell.h;
       const dx = cx - cell.x0, dy = cy - cell.y0;
       blocks.push({ dx, dy, sample: s });
       if (layout.batch && r > 0) parts.push(`<line x1="${cx}" y1="${cy}" x2="${cx + cell.w}" y2="${cy}" stroke="#dddddd" stroke-width="0.5"/>`);
       if (id && s) parts.push(textSVG({ ...id.style, x: cx + 16, y: cy + 4, w: cell.w - 32, h: idH, text: id.text(s) }));
       for (const item of layout.items) parts.push(itemSVG(item, s, dx, dy));
     });
-    return { width, height, svg: pageSVG({ width, height, parts }), blocks, origin: { dx: -cell.x0, dy: -cell.y0 }, cell };
+    return { width, height, svg: pageSVG({ width, height, parts }), blocks, origin: { dx: -cell.x0, dy: top - cell.y0 }, cell, top };
   }
 
   // ---------------------------------------------------------------- export
@@ -434,7 +481,7 @@ export function createLayoutEditor(root, env) {
     const cells = isGrid(l) ? gridCells(l).cells.map((c) => `<div class="lay-cell" style="left:${(c.x + o.dx) * z}px;top:${(c.y + o.dy) * z}px;width:${c.w * z}px;height:${c.h * z}px"></div>`).join('') : '';
     stage.innerHTML = `<div class="lay-sheet" style="width:${sh.width * z}px;height:${sh.height * z}px">
       <div class="lay-svg">${sh.svg}</div>
-      ${l.batch ? `<div class="lay-block-hint" style="width:${sh.cell.w * z}px;height:${sh.cell.h * z}px"></div>` : ''}
+      ${l.batch ? `<div class="lay-block-hint" style="top:${sh.top * z}px;width:${sh.cell.w * z}px;height:${sh.cell.h * z}px"></div>` : ''}
       <div class="lay-overlay">${cells}${editMark}${copyMarks()}${overlays}${axisHot}</div></div>`;
     const svg = stage.querySelector('.lay-svg svg');
     svg.setAttribute('width', sh.width * z);
@@ -485,13 +532,12 @@ export function createLayoutEditor(root, env) {
           <div class="field-pair">${field('', 'Title', num(`${P}-font`, z.title, 'min="4" max="48" step="0.5"'))}${field('', 'Axis titles', num(`${P}-axfs`, z.axis, 'min="4" max="48" step="0.5"'))}</div>
           <div class="field-pair">${field('', 'Axis numbers', num(`${P}-tickfs`, z.ticks, 'min="4" max="48" step="0.5"'))}${field('', 'Gate names', num(`${P}-gnfs`, z.gateName, 'min="4" max="48" step="0.5"'))}</div>
           <div class="field-pair">${field('', 'Gate numbers', num(`${P}-gvfs`, z.gateNum, 'min="4" max="48" step="0.5"'))}<span></span></div>
-          ${all ? '' : `<div class="btn-row"><button class="btn btn-small" data-act="sizes-all" title="Use these five sizes for every plot in every layout, and for new plots">Set for all plots</button></div>
-          <p class="muted small">Sets these sizes on every plot in every layout; new plots start with them too.</p>`}
           <p class="field-head">With each gate</p>
           <div class="field-pair">${check(`${P}-labels`, it.showLabels !== false, 'Name')}${check(`${P}-st-count`, st.count, 'Count')}</div>
           <div class="field-pair">${check(`${P}-st-parent`, st.parent, '% of parent')}${check(`${P}-st-grand`, st.grand, '% of grandparent')}</div>
           ${check(`${P}-pct`, it.pctSign !== false, 'Show the % sign')}
-          ${all ? '' : '<div class="btn-row"><button class="btn btn-small" data-act="text-all" title="Copy these gate name and number settings to every plot on this page">Use these gate labels for every plot on this page</button></div>'}
+          <div class="btn-row"><button class="btn btn-small" data-act="text-keep" data-src="${P}" title="Use these sizes and gate labels for every plot in every layout, and for new plots, for the rest of this session">Set for all plots &amp; keep for this session</button></div>
+          <p class="muted small">Puts these sizes and gate labels on every plot in every layout; new plots start with them too. Titles stay as they are.</p>
         </div>
         <p class="muted small">Fill-ins for titles: {sample} {label} {population} {parent} {count} {freq} {freqTotal} {x} {y}, or any keyword in braces such as {$DATE}.</p>
 `;
@@ -570,6 +616,16 @@ export function createLayoutEditor(root, env) {
           ${field('', 'Grid starts at', num('lpg-gtop', Number.isFinite(l.gridTop) ? l.gridTop : titleTop(l), 'min="0" step="8"'))}
           <p class="muted small">Plots fill the cells in order. Drop a new plot on a cell, or drag a plot to another cell, and the others move along; arrow keys move the selected plot one cell. Rows are added when the plots don't fit. Text floats over the page and never moves the grid; "Grid starts at" leaves room for a title.</p>` : ''}
           ${l.batch ? '' : field('', 'Sample', `<select id="lpg-sample"><option value="">Sample open in gating</option>${samples.map((x) => `<option value="${escH(env.sampleKey(x))}" ${l.sampleKey === env.sampleKey(x) ? 'selected' : ''}>${escH(x.name)}</option>`).join('')}</select>`)}
+          ${(() => {
+            // Only for a page with one plot: several plots may follow different gates.
+            const plots = l.items.filter((x) => x.kind === 'plot').length;
+            const ok = plots === 1;
+            const steps = ok ? strategySteps(l) : null;
+            return `<label class="check check-small${ok ? '' : ' is-off'}" title="${ok ? 'A line above the figure with each gate down to the plotted population, and the channels it was drawn on' : 'Needs exactly one plot on the page'}"><input id="lpg-strategy" type="checkbox" ${ok && l.showStrategy ? 'checked' : ''} ${ok ? '' : 'disabled'}> Show gating strategy</label>
+          ${!ok ? `<p class="muted small">Needs exactly one plot on the page (there ${plots === 0 ? 'are none' : `are ${plots}`}); batch it to repeat it for every sample.</p>`
+            : l.showStrategy ? `${field('', 'Text size', num('lpg-stratsize', l.strategySize || 12, 'min="6" max="48" step="0.5"'))}
+          <p class="muted small">${steps?.length ? 'Each gate from All Events down to the plotted population, with the channels it was drawn on. Shown once, above the figure.' : 'The plot shows All Events, so there are no gates to list.'}</p>` : ''}`;
+          })()}
           ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${env.batchSamples(l).length})`)}
           ${l.batch ? field('', 'Repeat for', `<select id="lpg-group"><option value="">All samples (not controls)</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`) : ''}
           ${l.batch ? `<div class="field-pair">${field('', 'Columns', `<input id="lpg-cols" type="number" min="0" max="24" step="1" value="${l.columns || ''}" placeholder="Auto">`)}${field('', 'Rows', `<input id="lpg-rows" type="number" min="0" max="24" step="1" value="${l.rows || ''}" placeholder="Auto">`)}</div>
@@ -748,9 +804,9 @@ export function createLayoutEditor(root, env) {
       id: newId('i'), kind: 'plot', ...pos, w, h, sampleKey, path: s ? env.pathOf(pop) : [],
       view: view ? { ...view } : null, title: '{population}', xLabel: '', yLabel: '', fontSize: 11, showGates: true, showLabels: true,
     };
-    // Text sizes set with "Set for all plots".
+    // Text settings kept with "Set for all plots".
     const d = env.plotDefaults();
-    if (d) { item.fontSize = d.fontSize || 11; if (d.sizes) item.sizes = { ...d.sizes }; }
+    if (d) applyDefaults(item, d);
     l.items.push(item);
     // In grid mode the new plot goes into the cell it was dropped on (or
     // after the others), and the rest move along.
@@ -761,6 +817,16 @@ export function createLayoutEditor(root, env) {
     pick(item.id);
     env.changed();
     return { layout: l, item };
+  }
+
+  // Text settings kept for the session ({ fontSize, sizes, stats, pctSign,
+  // showLabels }; sessions saved before gate labels were kept have sizes only).
+  function applyDefaults(x, d) {
+    x.fontSize = d.fontSize || 11;
+    if (d.sizes) x.sizes = { ...d.sizes }; else delete x.sizes;
+    if (d.stats) x.stats = { ...d.stats };
+    if (d.pctSign !== undefined) x.pctSign = d.pctSign;
+    if (d.showLabels !== undefined) x.showLabels = d.showLabels;
   }
 
   // A text item; `label` makes a name label ({label}: each sample's name from
@@ -835,6 +901,8 @@ export function createLayoutEditor(root, env) {
       case 'lpg-h': if (n >= 200) { l.height = n; tidy(l); changed(); } return;
       case 'lpg-sample': l.sampleKey = val || null; return changed({ props: true });
       case 'lpg-batch': l.batch = val; return changed({ props: true });
+      case 'lpg-strategy': l.showStrategy = val; return changed({ props: true });
+      case 'lpg-stratsize': if (n >= 6) { l.strategySize = n; changed(); } return;
       case 'lpg-group': l.batchGroup = val || null; return changed({ props: true });
       case 'lpg-cols': l.columns = n >= 1 ? Math.round(n) : 0; $('lpg-grid').textContent = gridNote(l); return changed();
       case 'lpg-rows': l.rows = n >= 1 ? Math.round(n) : 0; $('lpg-grid').textContent = gridNote(l); return changed();
@@ -953,27 +1021,20 @@ export function createLayoutEditor(root, env) {
       return render();
     }
     if (act === 'copy-item' && it) return copyImage(singleItemSheet(it));
-    if (act === 'text-all' && it?.kind === 'plot') {
+    if (act === 'text-keep') {
+      // The sizes and gate labels of the selected plot (or, from the batch
+      // card, the first plot) on every plot in every layout, and the default
+      // for new ones for the rest of the session.
+      const ref = b.dataset.src === 'lb' ? l.items.find((x) => x.kind === 'plot') : it?.kind === 'plot' ? it : null;
+      if (!ref) return;
       env.checkpoint();
-      for (const x of l.items) {
-        if (x.kind !== 'plot' || x === it) continue;
-        Object.assign(x, { stats: { ...statsOf(it) }, pctSign: it.pctSign, showLabels: it.showLabels });
-      }
-      env.changed();
-      env.toast('Gate labels set the same on every plot on this page.');
-      return render();
-    }
-    if (act === 'sizes-all' && it?.kind === 'plot') {
-      // These sizes on every plot in every layout, and the default for new ones.
-      env.checkpoint();
-      const d = { fontSize: it.fontSize || 11, sizes: it.sizes ? { ...it.sizes } : null };
+      const d = { fontSize: ref.fontSize || 11, sizes: ref.sizes ? { ...ref.sizes } : null, stats: { ...statsOf(ref) }, pctSign: ref.pctSign !== false, showLabels: ref.showLabels !== false };
       for (const lay of layouts()) {
-        for (const x of lay.items) if (x.kind === 'plot') Object.assign(x, { fontSize: d.fontSize, sizes: d.sizes ? { ...d.sizes } : undefined });
-        tidy(lay);
+        for (const x of lay.items) if (x.kind === 'plot') applyDefaults(x, d);
       }
       env.setPlotDefaults(d);
       env.changed();
-      env.toast('Text sizes set for every plot; new plots will start with them.');
+      env.toast('Text sizes and gate labels set for every plot; new plots will start with them.');
       return render();
     }
     const sh = () => exportSheet(l);

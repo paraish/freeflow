@@ -431,6 +431,7 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .field-stack { grid-template-columns: minmax(0, 1fr) !important; }
 .field textarea { width: 100%; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunk); padding: 6px 8px; resize: vertical; }
 .check-small { font-weight: 400; font-size: 13px; }
+.check.is-off { opacity: 0.45; cursor: default; }
 .lay-preview { width: 100%; border: 1px solid var(--line); border-radius: 4px; background: #ffffff; min-height: 40px; }
 @media (max-width: 1240px) {
   .layout-view { grid-template-columns: 240px minmax(0, 1fr); }

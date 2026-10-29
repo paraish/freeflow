@@ -212,9 +212,14 @@ Gating, **Add to layout** places the plot you are looking at.
   name, file name, combinations, % of parent, count, or any of the sample's keywords such as
   donor or condition, each shown with what it gives for that plot), axis titles, and separate sizes for the title, axis titles, axis
   numbers, gate names and gate numbers. Each gate can show its name, count, % of parent and %
-  of grandparent, with or without the % sign. **Set for all plots** (under Sizes) puts the sizes
-  on every plot in every layout, and new plots start with them for the rest of the session (it
-  is saved with the work); the gate label choices can be copied to every plot on the page.
+  of grandparent, with or without the % sign. **Set for all plots & keep for this session**
+  puts the sizes and gate label choices on every plot in every layout, and new plots start with
+  them for the rest of the session (it is saved with the work). Titles are left as they are.
+- **Show gating strategy** (Page card) adds a line above the figure with each gate from All
+  Events down to the plotted population and the channels it was drawn on, for example
+  `Cells (FSC-A / SSC-A) → Singlets (FSC-A / FSC-H) → T cells (CD3 / CD19)`. It needs exactly
+  one plot on the page (it is greyed out otherwise); in batch it is shown once, above all the
+  copies. Its text size can be set.
 - Text items and titles take fill-ins: `{sample}`, `{label}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
@@ -226,7 +231,8 @@ Gating, **Add to layout** places the plot you are looking at.
   Double-click a plot in any copy to edit its gates for that copy's sample (the plot being
   edited is outlined).
   - **Plot text — all plots in the batch**: the same title, size and gate label settings as a
-    single plot's, applied to every plot in every copy.
+    single plot's, applied to every plot in every copy, with its own **Set for all plots & keep
+    for this session**.
   - Click a plot in any copy to select it (Shift- or Ctrl/⌘-click, or drag a box, for several).
   - **Export → What**: **Entire batch** (the default) or **Selected plots**, which saves only
     the selected plots, each with its sample ID, cropped to fit. It switches to the selection by

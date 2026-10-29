@@ -48,7 +48,7 @@ const S = {
   collapsed: new Set(), // "<list>:<population id>" and "sample:<sample id>" keys
   orders: {}, // folder id -> sample keys in the order set by hand; see groups.js
   labels: {}, // sample key -> a name given to the sample (for figures: {label})
-  plotDefaults: null, // text sizes new layout plots start with: { fontSize, sizes }
+  plotDefaults: null, // text settings new layout plots start with: { fontSize, sizes, stats, pctSign, showLabels }
   sampleSel: new Set(), // ids of samples selected together in the Samples pane
   sampleAnchor: null, // the last clicked sample, for Shift-click ranges
   focus: 'gates', // what Delete acts on: 'samples' (the selected samples), 'gates', or nothing ('folders')
@@ -3009,6 +3009,7 @@ function layoutEnv() {
     },
     plotDefaults: () => S.plotDefaults,
     setPlotDefaults: (d) => { S.plotDefaults = d; },
+    shortLabel,
     setOrder: (key, raw) => { const s = S.samples.find((x) => sampleKey(x) === key); if (s) setSampleOrder(currentGroup(), s, raw); },
     setLabel: (key, raw) => { const s = S.samples.find((x) => sampleKey(x) === key); if (s) setSampleLabel(s, raw); },
     folderName: () => currentGroup().name,
