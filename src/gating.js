@@ -128,7 +128,8 @@ export function cloneGate(g) {
 // for copying gates between samples.
 // A population that came from a folder gate carries `link`
 // ({ group, gid }); `custom` marks one whose gate was adjusted for this
-// sample only. Both travel with the tree.
+// sample only; `lab` is where its label was moved to ({ dx, dy }, fractions
+// of the plot area). All travel with the tree.
 export function serialize(pop) {
   const o = {
     name: pop.name,
@@ -138,6 +139,7 @@ export function serialize(pop) {
   };
   if (pop.link) o.link = { ...pop.link };
   if (pop.custom) o.custom = true;
+  if (pop.lab) o.lab = { ...pop.lab };
   return o;
 }
 
@@ -146,6 +148,7 @@ export function deserialize(obj, parent) {
   p.view = obj.view ? { ...obj.view } : null;
   if (obj.link) p.link = { ...obj.link };
   if (obj.custom) p.custom = true;
+  if (obj.lab) p.lab = { ...obj.lab };
   p.children = obj.children.map((c) => deserialize(c, p));
   return p;
 }

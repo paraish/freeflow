@@ -233,8 +233,12 @@ function drawAxes(g, geo, o) {
   g.restore();
 }
 
-function labelBox(g, o, x, y, lines, selected) {
+// A gate's label box. `lab` moves it from its usual place ({ dx, dy } as
+// fractions of the plot area, up positive); `ref` records where it was drawn
+// (in geo.labels) so it can be grabbed and moved.
+function labelBox(g, o, x, y, lines, selected, ref = null, lab = null) {
   if (o.compact) lines = lines.slice(1);
+  if (lab) { x += (lab.dx || 0) * o.geo.pw; y -= (lab.dy || 0) * o.geo.ph; }
   g.font = `600 11px ${o.fontSans}`;
   const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 10;
   const h = lines.length * 14 + 4;
@@ -255,6 +259,7 @@ function labelBox(g, o, x, y, lines, selected) {
     if (i === 1) g.font = `11px ${o.fontMono}`;
     g.fillText(l, bx + 5, by + 3 + i * 14);
   });
+  if (ref) o.geo.labels.push({ ...ref, x: bx, y: by, w, h });
 }
 
 function drawGates(g, geo, o) {
@@ -282,7 +287,7 @@ function drawGates(g, geo, o) {
       for (const p of s.pts) if (p[1] > top[1]) top = p;
       const cx = s.pts.reduce((a, p) => a + clampS(p[0]), 0) / s.pts.length;
       const [lx, ly] = geo.toPx(cx, clampS(top[1]));
-      labelBox(g, o, lx, ly - (o.compact ? 9 : 14), [s.label, s.sub], s.selected);
+      labelBox(g, o, lx, ly - (o.compact ? 9 : 14), [s.label, s.sub], s.selected, { shape: s, pop: s.pop }, s.lab);
     } else if (s.kind === 'quad') {
       const [x, y] = geo.toPx(clampS(s.cx), clampS(s.cy));
       g.beginPath();
@@ -298,7 +303,7 @@ function drawGates(g, geo, o) {
         const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 10;
         const bx = q.quadrant === 'UL' || q.quadrant === 'LL' ? qx + w / 2 : qx - w / 2;
         const by = q.quadrant === 'UL' || q.quadrant === 'UR' ? qy + (o.compact ? 9 : 16) : qy - (o.compact ? 9 : 16);
-        labelBox(g, o, bx, by, [q.label, q.sub], q.selected);
+        labelBox(g, o, bx, by, [q.label, q.sub], q.selected, { shape: s, pop: q.pop }, q.lab);
       }
     } else if (s.kind === 'range') {
       const [x1] = geo.toPx(clampS(s.lo), 0);
@@ -314,7 +319,7 @@ function drawGates(g, geo, o) {
         g.fillRect(x1 - 3.5, y - 3.5, 7, 7);
         g.fillRect(x2 - 3.5, y - 3.5, 7, 7);
       }
-      labelBox(g, o, (x1 + x2) / 2, y - 22, [s.label, s.sub], s.selected);
+      labelBox(g, o, (x1 + x2) / 2, y - 22, [s.label, s.sub], s.selected, { shape: s, pop: s.pop }, s.lab);
     }
   }
 }
@@ -364,6 +369,7 @@ export function renderPlot(canvas, o) {
   const g = canvas.getContext('2d');
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   const geo = geometry(w, h, o.compact ? COMPACT_MARGIN : MARGIN);
+  geo.labels = []; // gate label boxes as drawn, for grabbing them
   o.geo = geo;
   g.fillStyle = o.colors.surface;
   g.fillRect(0, 0, w, h);

@@ -318,6 +318,13 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
         S.groupGates = { ...S.groupGates, ...info.groupGates };
       }
       // Which populations follow which folder gate, and which are adjusted.
+      for (const [key, list] of Object.entries(info.gateLabels || {})) {
+        const x = S.samples.find((y) => sampleKey(y) === key);
+        for (const g of x ? list : []) {
+          const p = findByPath(x.root, g.path);
+          if (p && g.lab) p.lab = { dx: +g.lab.dx || 0, dy: +g.lab.dy || 0 };
+        }
+      }
       for (const [key, links] of Object.entries(info.links || {})) {
         const x = S.samples.find((y) => sampleKey(y) === key);
         if (!x) continue;
@@ -592,7 +599,7 @@ function analysisParts(named, created = new Date().toISOString()) {
   const wrapped = named.map(({ s, fn }) => ({ ...s, fileName: fn }));
   const wrap = new Map(named.map(({ s }, i) => [s, wrapped[i]]));
   const wspText = exportWSP({ samples: wrapped, transformOf: getTransform, groups: wspGroups(samples).map((g) => ({ name: g.name, members: g.members.map((m) => wrap.get(m)).filter(Boolean) })) });
-  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, labels: S.labels, links: bundleLinks(named) }, null, 1);
+  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, labels: S.labels, links: bundleLinks(named), gateLabels: bundleGateLabels(named) }, null, 1);
   return { wspText, json };
 }
 
@@ -637,6 +644,17 @@ function bundleLinks(named) {
   for (const { s, fn } of named) {
     const list = [];
     walk(s.root, (p) => { if (p.link) list.push({ path: pathOf(p), link: p.link, custom: !!p.custom }); });
+    if (list.length) out[sampleKey({ fileName: fn, n: s.n })] = list;
+  }
+  return out;
+}
+
+// Where gate labels were moved to, per sample (not part of a .wsp).
+function bundleGateLabels(named) {
+  const out = {};
+  for (const { s, fn } of named) {
+    const list = [];
+    walk(s.root, (p) => { if (p.lab) list.push({ path: pathOf(p), lab: p.lab }); });
     if (list.length) out[sampleKey({ fileName: fn, n: s.n })] = list;
   }
   return out;
@@ -810,7 +828,7 @@ function showSharedCard(fileUrl, problem = '') {
 
 // ---------------------------------------------------------------- shared workspaces (live collaboration)
 
-const stripViews = (o) => ({ name: o.name, gate: o.gate, link: o.link, custom: o.custom, children: o.children.map(stripViews) });
+const stripViews = (o) => ({ name: o.name, gate: o.gate, link: o.link, custom: o.custom, lab: o.lab, children: o.children.map(stripViews) });
 
 function sharedState(s) {
   return {
@@ -1256,7 +1274,7 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
     if (hist) {
       if (g.type !== 'range' || g.x !== v.x) continue;
       const fx = scalerFor(g.x).fwd;
-      out.push({ kind: 'range', pop: c, lo: fx(g.lo), hi: fx(g.hi), level: g.level ?? 0.82, label: c.name, sub, selected: c.id === S.selId });
+      out.push({ kind: 'range', pop: c, lo: fx(g.lo), hi: fx(g.hi), level: g.level ?? 0.82, label: c.name, sub, selected: c.id === S.selId, lab: c.lab || null });
       continue;
     }
     // A gate drawn on the same two channels with the axes the other way round
@@ -1265,11 +1283,12 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
     const swap = !same && g.x === v.y && g.y === v.x;
     if (g.type === 'range' || (!same && !swap)) continue;
     const T = (pts) => (swap ? pts.map(([a, b]) => [b, a]) : pts);
+    const L = (m) => (m && swap ? { dx: m.dy, dy: m.dx } : m || null);
     if (g.type === 'rect') {
-      out.push({ kind: 'poly', pop: c, pts: T(rectCorners(g)), label: c.name, sub, selected: c.id === S.selId, swap });
+      out.push({ kind: 'poly', pop: c, pts: T(rectCorners(g)), label: c.name, sub, selected: c.id === S.selId, swap, lab: L(c.lab) });
     } else if (g.type === 'polygon') {
       const fx = scalerFor(g.x).fwd, fy = scalerFor(g.y).fwd;
-      out.push({ kind: 'poly', pop: c, pts: T(g.points.map(([a, b]) => [fx(a), fy(b)])), label: c.name, sub, selected: c.id === S.selId, swap });
+      out.push({ kind: 'poly', pop: c, pts: T(g.points.map(([a, b]) => [fx(a), fy(b)])), label: c.name, sub, selected: c.id === S.selId, swap, lab: L(c.lab) });
     } else if (g.type === 'quad') {
       if (seenQuad.has(g.link)) continue;
       seenQuad.add(g.link);
@@ -1281,7 +1300,7 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
         quads: sibs.map((q) => ({
           // Mirrored, upper left and lower right trade places.
           pop: q, quadrant: swap ? { UL: 'LR', LR: 'UL' }[q.gate.quadrant] || q.gate.quadrant : q.gate.quadrant, label: q.name, selected: q.id === S.selId,
-          sub: fmtPct(pct(q.indices.length, pop.indices.length)),
+          sub: fmtPct(pct(q.indices.length, pop.indices.length)), lab: L(q.lab),
         })),
       });
     }
@@ -1436,7 +1455,7 @@ function drawTile(s, force = false) {
   const w = Math.max(120, Math.floor(t.canvas.parentElement.clientWidth - 12));
   const shapes = has(v.x) && (hist || has(v.y)) ? gateShapes(pop, v) : [];
   const key = [w, S.dotSize, pop.id, objId(pop.indices), v.x, v.y, v.type, scalerFor(v.x).key, hist ? '' : scalerFor(v.y).key, S.selId,
-    cssVar('--surface'), JSON.stringify(shapes.map((sh) => [sh.pts, sh.cx, sh.cy, sh.lo, sh.hi, sh.level, sh.sub, sh.quads?.map((q) => q.sub)]))].join('|');
+    cssVar('--surface'), JSON.stringify(shapes.map((sh) => [sh.pts, sh.cx, sh.cy, sh.lo, sh.hi, sh.level, sh.sub, sh.lab, sh.quads?.map((q) => [q.sub, q.lab])]))].join('|');
   if (!force && key === t.key) return;
   t.key = key;
   t.pop = pop;
@@ -1493,6 +1512,7 @@ function onTilePointerDown(ev) {
     drag = {
       mode: a.hit.mode, index: a.hit.index, pop: a.hit.pop, start: a.hit.shape.swap ? [csy, csx] : [csx, csy], orig: cloneGate(a.hit.pop.gate),
       undoSnap: snapshot(), undoPushed: false, sample: a.s, tile: a.t, swap: !!a.hit.shape.swap,
+      origLab: a.hit.pop.lab ? { ...a.hit.pop.lab } : null,
     };
   }
   drawTiles();
@@ -1520,7 +1540,7 @@ function onTilePointerMove(ev) {
   const a = tileAt(ev);
   if (!a) return;
   const m = a.hit?.mode;
-  a.t.canvas.style.cursor = !m ? 'default' : m === 'vertex' || m === 'quad' || m === 'rangeEdge' ? 'crosshair' : m === 'move' ? 'move' : 'pointer';
+  a.t.canvas.style.cursor = !m ? 'default' : m === 'vertex' || m === 'quad' || m === 'rangeEdge' ? 'crosshair' : m === 'move' ? 'move' : m === 'label' ? 'grab' : 'pointer';
 }
 
 function onTilePointerUp() {
@@ -1560,6 +1580,11 @@ function hitTest(px, py, geo = plot.geo, shapes = gateShapes()) {
       if (near(geo, clamp(sh.lo), y, px, py, 8)) return { shape: sh, pop: sh.pop, mode: 'rangeEdge', index: 0 };
       if (near(geo, clamp(sh.hi), y, px, py, 8)) return { shape: sh, pop: sh.pop, mode: 'rangeEdge', index: 1 };
     }
+  }
+  // Gate labels can be grabbed and moved.
+  for (let k = (geo.labels || []).length - 1; k >= 0; k--) {
+    const b = geo.labels[k];
+    if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return { shape: b.shape, pop: b.pop, mode: 'label' };
   }
   for (let k = shapes.length - 1; k >= 0; k--) {
     const sh = shapes[k];
@@ -1601,9 +1626,17 @@ function applyDrag(sx, sy) {
     // A folder gate moved on one sample becomes this sample's own version.
     // On the main plot of group gating it stays the folder's gate, and the
     // change goes to the whole folder when the drag ends.
-    if (!d.forFolder) for (const q of d.mode === 'quad' ? quadSiblings(d.pop) : [d.pop]) if (q.link) q.custom = true;
+    if (!d.forFolder && d.mode !== 'label') for (const q of d.mode === 'quad' ? quadSiblings(d.pop) : [d.pop]) if (q.link) q.custom = true;
   }
   if (!d.undoPushed) return;
+  if (d.mode === 'label') {
+    // A moved label keeps its place relative to the plot (and in figures).
+    const o0 = d.origLab || { dx: 0, dy: 0 };
+    d.pop.lab = { dx: o0.dx + dx, dy: o0.dy + dy };
+    if (d.tile) drawTile(d.sample);
+    if (d.sample === sample()) requestPlot();
+    return;
+  }
   const fx = (n) => scalerFor(n).fwd;
   if (d.mode === 'quad') {
     const cx = toData(g.x, Math.max(0.002, Math.min(0.998, sx)));
@@ -1701,7 +1734,8 @@ function onPointerDown(ev) {
     drag = {
       mode: hit.mode, index: hit.index, pop: hit.pop, start: hit.shape.swap ? [sy, sx] : [sx, sy], orig: cloneGate(hit.pop.gate),
       undoSnap: snapshot(), undoPushed: false, sample: sample(), swap: !!hit.shape.swap,
-      forFolder: S.mode === 'group' && hit.pop.link?.group === S.groupId,
+      origLab: hit.pop.lab ? { ...hit.pop.lab } : null,
+      forFolder: S.mode === 'group' && hit.pop.link?.group === S.groupId && hit.mode !== 'label',
     };
     plot.canvas.setPointerCapture(ev.pointerId);
   }
@@ -1724,7 +1758,7 @@ function onPointerMove(ev) {
   if (d?.kind === 'poly') { d.cursor = [csx, csy]; requestPlot(); return; }
   if (S.tool === 'select') {
     const hit = hitTest(px, py);
-    plot.canvas.style.cursor = !hit ? 'default' : hit.mode === 'vertex' || hit.mode === 'quad' || hit.mode === 'rangeEdge' ? 'crosshair' : hit.mode === 'move' ? 'move' : 'pointer';
+    plot.canvas.style.cursor = !hit ? 'default' : hit.mode === 'vertex' || hit.mode === 'quad' || hit.mode === 'rangeEdge' ? 'crosshair' : hit.mode === 'move' ? 'move' : hit.mode === 'label' ? 'grab' : 'pointer';
   } else {
     plot.canvas.style.cursor = 'crosshair';
   }
@@ -2369,6 +2403,15 @@ function deleteSelectedSamples() {
   applyRowAction(list);
 }
 
+// Gives a sample a name for figures ({label}); an empty name removes it.
+function setSampleLabel(s, raw) {
+  const name = String(raw).trim();
+  if (name === labelOf(s)) { renderAll(); return; }
+  pushUndo();
+  if (name) S.labels[sampleKey(s)] = name; else delete S.labels[sampleKey(s)];
+  renderAll();
+}
+
 // Moves a sample to a position in one folder; other folders keep their order.
 function setSampleOrder(g, s, raw) {
   const list = groupMembers(g);
@@ -2950,6 +2993,8 @@ function layoutEnv() {
     checkpoint,
     labelOf,
     folderSamples: () => visibleSamples(),
+    setOrder: (key, raw) => { const s = S.samples.find((x) => sampleKey(x) === key); if (s) setSampleOrder(currentGroup(), s, raw); },
+    setLabel: (key, raw) => { const s = S.samples.find((x) => sampleKey(x) === key); if (s) setSampleLabel(s, raw); },
     folderName: () => currentGroup().name,
     editPlot: openLayoutEdit,
     editing: () => !!LE.item,
@@ -3515,12 +3560,7 @@ function bind() {
   $('samples').addEventListener('change', (e) => {
     if (e.target.matches('.label-box')) {
       const s = S.samples.find((x) => x.id === e.target.closest('.ws-sample')?.querySelector('.sample-row')?.dataset.id);
-      if (!s) return;
-      const name = e.target.value.trim();
-      if (name === labelOf(s)) return;
-      pushUndo();
-      if (name) S.labels[sampleKey(s)] = name; else delete S.labels[sampleKey(s)];
-      renderAll();
+      if (s) setSampleLabel(s, e.target.value);
       return;
     }
     if (!e.target.matches('.order-box')) return;

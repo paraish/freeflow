@@ -12,7 +12,7 @@
 // their sample by key (null = the page's sample), so a layout works on any
 // sample that has the same gates, and in batch mode on every sample.
 
-import { PAGE_SIZES, fillTokens, pageSVG, plotInner, plotSVG, textSVG } from './figure.js';
+import { PAGE_SIZES, axisSpots, fillTokens, pageSVG, plotInner, plotSVG, textSVG } from './figure.js';
 import { bivariatePixels } from './plot.js';
 import { applyGrid, cellAt, defaultGrid, gridCells, movePlot, titleTop } from './tiling.js';
 
@@ -40,6 +40,7 @@ export function newLayout(name = 'Layout 1') {
  *                            with the same key close together are one step)
  *   labelOf(sample)          the name given to a sample in the Samples pane
  *   folderSamples(), folderName()   the folder picked in the Folders pane
+ *   setOrder(key, n), setLabel(key, name)   change a sample's place or name
  * }
  */
 export function createLayoutEditor(root, env) {
@@ -117,7 +118,7 @@ export function createLayoutEditor(root, env) {
     const box = { x: item.x + dx, y: item.y + dy, w: item.w, h: item.h };
     if (item.kind === 'text') {
       const s = pageSample;
-      return textSVG({ ...box, text: fillTokens(item.text, tokensFor(s, null, null)), fontSize: item.fontSize, bold: item.bold, italic: item.italic, color: item.color, align: item.align });
+      return textSVG({ ...box, text: fillTokens(item.text, tokensFor(s, null, null)), fontSize: item.fontSize, bold: item.bold, italic: item.italic, color: item.color, font: item.font, align: item.align });
     }
     const s = sampleFor(item, pageSample);
     const base = { ...box, fontSize: item.fontSize, xTicks: [], yTicks: [], gates: [] };
@@ -144,6 +145,13 @@ export function createLayoutEditor(root, env) {
       histogram: hist ? data.histogram : null,
       image: hist ? null : { href: densityHref(s, pop, view, data, pw, ph, item.dotSize || 1) },
     });
+  }
+
+  // A plot item's axes: its own, or else those its population was last shown on.
+  function itemView(it, s) {
+    if (it.view) return it.view;
+    const pop = s && env.findByPath(s.root, it.path || []);
+    return pop ? env.viewOf(pop) : { x: '', y: '', type: 'pseudo' };
   }
 
   // The full sheet: one page, or in batch mode one copy per sample in a grid.
@@ -190,7 +198,12 @@ export function createLayoutEditor(root, env) {
     const { cols, rows, byCol } = batchGrid(layout, samples.length);
     // In batch, each copy is only as big as the items on the page (plus a
     // margin), not the whole page.
-    const cell = batchCell(layout);
+    let cell = batchCell(layout);
+    // A sample ID above each copy (batch): the file name or the sample's name.
+    const id = layout.batch && (layout.idShow === 'file' || layout.idShow === 'name')
+      ? { size: layout.idSize || 14, align: layout.idAlign || 'left', bold: layout.idBold !== false, italic: !!layout.idItalic, color: layout.idColor, font: layout.idFont } : null;
+    const idH = id ? Math.round(id.size * 1.5) : 0;
+    if (idH) cell = { ...cell, y0: cell.y0 - idH, h: cell.h + idH };
     const width = cell.w * cols;
     const height = cell.h * rows;
     const parts = [];
@@ -202,6 +215,10 @@ export function createLayoutEditor(root, env) {
       const dx = cx - cell.x0, dy = cy - cell.y0;
       blocks.push({ dx, dy, sample: s });
       if (layout.batch && r > 0) parts.push(`<line x1="${cx}" y1="${cy}" x2="${cx + cell.w}" y2="${cy}" stroke="#dddddd" stroke-width="0.5"/>`);
+      if (id && s) {
+        const text = layout.idShow === 'name' ? (env.labelOf(s) || s.name) : s.name;
+        parts.push(textSVG({ x: cx + 16, y: cy + 4, w: cell.w - 32, h: idH, text, fontSize: id.size, bold: id.bold, italic: id.italic, color: id.color, font: id.font, align: id.align }));
+      }
       for (const item of layout.items) parts.push(itemSVG(item, s, dx, dy));
     });
     return { width, height, svg: pageSVG({ width, height, parts }), blocks, origin: { dx: -cell.x0, dy: -cell.y0 }, cell };
@@ -314,12 +331,23 @@ export function createLayoutEditor(root, env) {
     // A resize handle on a single selected item, unless the grid sets its size.
     const handle = (it) => selIds.size === 1 && selIds.has(it.id) && !(isGrid(l) && it.kind === 'plot');
     const overlays = l.items.map((it) => `<div class="lay-box${selIds.has(it.id) ? ' is-sel' : ''}" data-id="${it.id}" style="left:${(it.x + o.dx) * z}px;top:${(it.y + o.dy) * z}px;width:${it.w * z}px;height:${it.h * z}px">${handle(it) ? '<span class="lay-resize" data-act="resize" aria-hidden="true"></span>' : ''}</div>`).join('');
+    // A channel menu over each plot's axis titles: click a title to change it.
+    const pageSample = ui.blocks?.[0]?.sample || pageSampleOf(l);
+    const axisHot = l.items.filter((it) => it.kind === 'plot').map((it) => {
+      const s = sampleFor(it, pageSample);
+      if (!s) return '';
+      const view = itemView(it, s);
+      const spots = axisSpots({ x: it.x + o.dx, y: it.y + o.dy, w: it.w, h: it.h, fontSize: it.fontSize || 11, hasTitle: !!String(it.title ?? '').trim() });
+      const opts = (sel) => env.menuChannels(s, [view.x, view.y]).map((c) => `<option value="${escH(c.name)}" ${c.name === sel ? 'selected' : ''}>${escH(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('');
+      const spot = (axis, r) => `<label class="lay-axis-hot" title="Click to change the ${axis.toUpperCase()} channel" style="left:${r.x * z}px;top:${r.y * z}px;width:${r.w * z}px;height:${r.h * z}px"><select data-item="${it.id}" data-axis="${axis}" aria-label="${axis.toUpperCase()} channel">${opts(view[axis])}</select></label>`;
+      return spot('x', spots.x) + (view.type === 'histogram' ? '' : spot('y', spots.y));
+    }).join('');
     // The grid's cells, faintly, while editing (not part of the figure).
     const cells = isGrid(l) ? gridCells(l).cells.map((c) => `<div class="lay-cell" style="left:${(c.x + o.dx) * z}px;top:${(c.y + o.dy) * z}px;width:${c.w * z}px;height:${c.h * z}px"></div>`).join('') : '';
     stage.innerHTML = `<div class="lay-sheet" style="width:${sh.width * z}px;height:${sh.height * z}px">
       <div class="lay-svg">${sh.svg}</div>
       ${l.batch ? `<div class="lay-block-hint" style="width:${sh.cell.w * z}px;height:${sh.cell.h * z}px"></div>` : ''}
-      <div class="lay-overlay">${cells}${editMark}${overlays}</div></div>`;
+      <div class="lay-overlay">${cells}${editMark}${overlays}${axisHot}</div></div>`;
     const svg = stage.querySelector('.lay-svg svg');
     svg.setAttribute('width', sh.width * z);
     svg.setAttribute('height', sh.height * z);
@@ -340,6 +368,7 @@ export function createLayoutEditor(root, env) {
     const num = (id, v, attrs = '') => `<input id="${id}" type="number" value="${+(+v).toFixed(1)}" ${attrs}>`;
     const txt = (id, v, ph = '') => `<input id="${id}" type="text" value="${escH(v ?? '')}" placeholder="${escH(ph)}" autocomplete="off">`;
     const check = (id, v, label) => `<label class="check check-small"><input id="${id}" type="checkbox" ${v ? 'checked' : ''}> ${label}</label>`;
+    const fontSelect = (id, v) => `<select id="${id}">${[['sans', 'Sans-serif (Arial)'], ['serif', 'Serif (Times)'], ['mono', 'Monospace (Courier)']].map(([k, t]) => `<option value="${k}" ${(v || 'sans') === k ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
     const tokensHelp = '<p class="muted small">Fill-ins: {sample} {label} {population} {parent} {count} {freq} {freqTotal} {x} {y}, or any keyword in braces, such as {$DATE} or {DONOR}. {label} is the name given to the sample in the Samples pane (or its file name).</p>';
 
     let itemHTML = '<p class="muted small">Click an item on the page to edit it. Drag to move it; drag its corner to resize it. Shift- or Ctrl/⌘-click to select several.</p>';
@@ -383,6 +412,7 @@ export function createLayoutEditor(root, env) {
           ${field('', 'Font size', num('lt-font', it.fontSize, 'min="6" max="96" step="1"'))}
           ${field('', 'Align', `<select id="lt-align">${['left', 'center', 'right'].map((a) => `<option ${it.align === a ? 'selected' : ''}>${a}</option>`).join('')}</select>`)}
           <div class="field-pair">${check('lt-bold', it.bold, 'Bold')}${check('lt-italic', it.italic, 'Italic')}</div>
+          ${field('', 'Font', fontSelect('lt-family', it.font))}
           ${field('', 'Colour', `<input id="lt-color" type="color" value="${escH(/^#[0-9a-f]{6}$/i.test(it.color || '') ? it.color : '#000000')}">`)}
           <div class="field-pair">${field('', 'Width', num('lt-w', it.w, 'min="20" step="4"'))}${field('', 'Height', num('lt-h', it.h, 'min="12" step="4"'))}</div>
         </div>
@@ -406,7 +436,14 @@ export function createLayoutEditor(root, env) {
           ${l.batch ? field('', 'Repeat for', `<select id="lpg-group"><option value="">All samples (not controls)</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`) : ''}
           ${l.batch ? `<div class="field-pair">${field('', 'Columns', `<input id="lpg-cols" type="number" min="0" max="24" step="1" value="${l.columns || ''}" placeholder="Auto">`)}${field('', 'Rows', `<input id="lpg-rows" type="number" min="0" max="24" step="1" value="${l.rows || ''}" placeholder="Auto">`)}</div>
           ${field('', 'Fill order', `<select id="lpg-order"><option value="row" ${l.order !== 'col' ? 'selected' : ''}>Across, then down</option><option value="col" ${l.order === 'col' ? 'selected' : ''}>Down, then across</option></select>`)}
-          <p id="lpg-grid" class="muted small">${gridNote(l)}</p>` : ''}
+          <p id="lpg-grid" class="muted small">${gridNote(l)}</p>
+          ${field('', 'Sample ID', `<select id="lpg-id">${[['none', 'None'], ['file', 'File name'], ['name', 'Name (or file name)']].map(([v, t]) => `<option value="${v}" ${(l.idShow || 'none') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
+          ${l.idShow === 'file' || l.idShow === 'name' ? `
+          ${field('', 'Align', `<select id="lpg-idalign">${[['left', 'Left'], ['center', 'Centred'], ['right', 'Right']].map(([v, t]) => `<option value="${v}" ${(l.idAlign || 'left') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
+          <div class="field-pair">${field('', 'Size', num('lpg-idsize', l.idSize || 14, 'min="6" max="72" step="1"'))}${field('', 'Font', fontSelect('lpg-idfont', l.idFont))}</div>
+          <div class="field-pair">${check('lpg-idbold', l.idBold !== false, 'Bold')}${check('lpg-iditalic', l.idItalic, 'Italic')}</div>
+          ${field('', 'Colour', `<input id="lpg-idcolor" type="color" value="${escH(/^#[0-9a-f]{6}$/i.test(l.idColor || '') ? l.idColor : '#000000')}">`)}
+          <p class="muted small">Shown above each copy. "Name" is the name given to the sample in the Samples pane.</p>` : ''}` : ''}
         </div>
       </section>
       <section class="card">
@@ -468,10 +505,11 @@ export function createLayoutEditor(root, env) {
       return `<li class="ws-sample${s === active ? ' is-active' : ''}">
         <div class="sample-row" data-sample="${escH(key)}">
           <button class="twisty" data-act="ls-sample-twisty" aria-expanded="${!shut}" aria-label="${shut ? 'Show' : 'Hide'} populations of ${escH(s.name)}">${shut ? '▸' : '▾'}</button>
-          <span class="lay-order" title="Position in this folder">${i + 1}</span>
-          <button class="sample-pick" data-act="ls-sample-twisty"><span class="sample-name">${escH(s.name)}${label ? ` <span class="lay-label">${escH(label)}</span>` : ''}</span>
+          <input class="order-box" type="text" inputmode="numeric" value="${i + 1}" data-sample="${escH(key)}" aria-label="Position of ${escH(s.name)} in ${escH(env.folderName())}" title="Position in this folder only. Type a number to move it.">
+          <button class="sample-pick" data-act="ls-sample-twisty"><span class="sample-name">${escH(s.name)}</span>
             <span class="sample-meta">${s.n.toLocaleString('en-US')} events${s.isControl ? ' · control' : ''}</span></button>
         </div>
+        <div class="label-row"><input class="label-box" type="text" value="${escH(label)}" data-sample="${escH(key)}" placeholder="Name for figures ({label})" aria-label="Name for ${escH(s.name)}" autocomplete="off"></div>
         ${shut ? '' : `<ul class="tree">${rows.join('')}</ul>`}
       </li>`;
     }).join('');
@@ -620,6 +658,13 @@ export function createLayoutEditor(root, env) {
       case 'lpg-cols': l.columns = n >= 1 ? Math.round(n) : 0; $('lpg-grid').textContent = gridNote(l); return changed();
       case 'lpg-rows': l.rows = n >= 1 ? Math.round(n) : 0; $('lpg-grid').textContent = gridNote(l); return changed();
       case 'lpg-order': l.order = val === 'col' ? 'col' : 'row'; return changed({ props: true });
+      case 'lpg-id': l.idShow = val; return changed({ props: true });
+      case 'lpg-idalign': l.idAlign = val; return changed();
+      case 'lpg-idsize': if (n >= 6) { l.idSize = n; changed(); } return;
+      case 'lpg-idfont': l.idFont = val; return changed();
+      case 'lpg-idbold': l.idBold = val; return changed();
+      case 'lpg-iditalic': l.idItalic = val; return changed();
+      case 'lpg-idcolor': l.idColor = val; return changed();
       default: break;
     }
     if (!it) return;
@@ -651,6 +696,7 @@ export function createLayoutEditor(root, env) {
       case 'lt-bold': it.bold = val; return changed();
       case 'lt-italic': it.italic = val; return changed();
       case 'lt-color': it.color = val; return changed();
+      case 'lt-family': it.font = val; return changed();
       case 'lt-w': if (n >= 20) { it.w = n; changed(); } return;
       case 'lt-h': if (n >= 12) { it.h = n; changed(); } return;
       default: break;
@@ -766,6 +812,7 @@ export function createLayoutEditor(root, env) {
   }
 
   function onPointerDown(e) {
+    if (e.target.closest('.lay-axis-hot')) return; // a channel menu opens instead
     const box = e.target.closest('.lay-box');
     const stage = $('lay-stage');
     if (!box) {
@@ -781,7 +828,12 @@ export function createLayoutEditor(root, env) {
         return;
       }
       lastDown = hit ? { id: `${hit.block}:${hit.it.id}`, t: now } : { id: null, t: 0 };
-      if (ui.sel) { pick(null); render(); }
+      // Dragging on the page draws a box that selects the items it touches
+      // (with Shift or Ctrl/⌘, adding to the selection).
+      const add = e.shiftKey || e.ctrlKey || e.metaKey;
+      marquee = { x0: e.clientX, y0: e.clientY, add, base: add ? selection().map((x) => x.id) : [], moved: false };
+      stage.setPointerCapture?.(e.pointerId);
+      if (!add && (ui.sel || ui.multi.size)) { pick(null); render(); }
       return;
     }
     const it = itemById(box.dataset.id);
@@ -812,7 +864,32 @@ export function createLayoutEditor(root, env) {
     drag = { it, resize, gridPlot, sx: e.clientX, sy: e.clientY, ow: it.w, oh: it.h, moved: false, items: group.map((x) => ({ it: x, ox: x.x, oy: x.y })) };
     stage.setPointerCapture?.(e.pointerId);
   }
+  let marquee = null;
+  function onMarqueeMove(e) {
+    const m = marquee;
+    if (!m.moved && Math.hypot(e.clientX - m.x0, e.clientY - m.y0) < 4) return;
+    m.moved = true;
+    const sheetEl = root.querySelector('.lay-sheet');
+    if (!sheetEl) return;
+    const r = sheetEl.getBoundingClientRect();
+    const x1 = Math.min(m.x0, e.clientX), x2 = Math.max(m.x0, e.clientX);
+    const y1 = Math.min(m.y0, e.clientY), y2 = Math.max(m.y0, e.clientY);
+    let el = sheetEl.querySelector('.lay-marquee');
+    if (!el) { el = document.createElement('div'); el.className = 'lay-marquee'; sheetEl.querySelector('.lay-overlay').append(el); }
+    Object.assign(el.style, { left: `${x1 - r.left}px`, top: `${y1 - r.top}px`, width: `${x2 - x1}px`, height: `${y2 - y1}px` });
+    // Items of the first copy that the box touches, in page units.
+    const z = ui.zoom, o = ui.origin || { dx: 0, dy: 0 };
+    const px1 = (x1 - r.left) / z - o.dx, px2 = (x2 - r.left) / z - o.dx;
+    const py1 = (y1 - r.top) / z - o.dy, py2 = (y2 - r.top) / z - o.dy;
+    const hits = current().items.filter((it) => it.x < px2 && it.x + it.w > px1 && it.y < py2 && it.y + it.h > py1).map((it) => it.id);
+    const ids = new Set([...m.base, ...hits]);
+    ui.multi = ids;
+    ui.sel = hits[0] || m.base[0] || null;
+    root.querySelectorAll('.lay-box').forEach((b) => b.classList.toggle('is-sel', ids.has(b.dataset.id)));
+  }
+
   function onPointerMove(e) {
+    if (marquee) { onMarqueeMove(e); return; }
     if (!drag) return;
     const l = current();
     const dx = (e.clientX - drag.sx) / ui.zoom, dy = (e.clientY - drag.sy) / ui.zoom;
@@ -849,6 +926,12 @@ export function createLayoutEditor(root, env) {
     renderSoon();
   }
   function onPointerUp() {
+    if (marquee) {
+      const moved = marquee.moved;
+      marquee = null;
+      if (moved) render();
+      return;
+    }
     if (!drag) return;
     const moved = drag.moved;
     drag = null;
@@ -903,7 +986,28 @@ export function createLayoutEditor(root, env) {
 
   root.addEventListener('click', onClick);
   root.addEventListener('input', (e) => { if (e.target.closest('#lay-props')) onPropInput(e); });
-  root.addEventListener('change', (e) => { if (e.target.closest('#lay-props') && (e.target.tagName === 'SELECT' || e.target.type === 'checkbox')) { /* handled on input */ } });
+  root.addEventListener('change', (e) => {
+    const t = e.target;
+    // A channel picked from an axis title on the page.
+    const hot = t.closest('.lay-axis-hot');
+    if (hot) {
+      const it = itemById(t.dataset.item);
+      const s = it && sampleFor(it, ui.blocks?.[0]?.sample || pageSampleOf(current()));
+      if (!it) return;
+      env.checkpoint();
+      it.view = { ...itemView(it, s), [t.dataset.axis]: t.value };
+      changed({ props: true });
+      return;
+    }
+    // Order and names of the folder's samples.
+    if (t.matches('#lay-samples .order-box')) env.setOrder(t.dataset.sample, t.value);
+    if (t.matches('#lay-samples .label-box')) env.setLabel(t.dataset.sample, t.value);
+  });
+  root.addEventListener('keydown', (e) => {
+    if (!e.target.matches('#lay-samples .order-box, #lay-samples .label-box')) return;
+    if (e.key === 'Enter') e.target.blur();
+    if (e.key === 'Escape') renderSamplesSide();
+  });
   root.addEventListener('pointerdown', onPointerDown);
 
   // Drag a population from the samples sidebar onto the page.

@@ -91,6 +91,8 @@ with one click).
   and × (delete, with the gates under it; click twice to confirm, Ctrl/⌘+Z to undo). Move gates, drag their corners, rename,
   delete, with **Undo** and **Redo** buttons in the header (Ctrl/⌘+Z, Ctrl/⌘+Shift+Z or Ctrl+Y). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
+  Drag a gate's label box (its name and %) to move it out of the way; it keeps that place on
+  that sample, in Group gating tiles and in Layout figures.
   A gate stays visible and editable when the plot shows its two channels the other way round
   (for example APC vs FITC for a FITC vs APC gate): it is drawn mirrored, and moving it there
   changes the same gate.
@@ -182,8 +184,10 @@ sample; one from the page's sample follows the page (and every sample in batch m
 Gating, **Add to layout** places the plot you are looking at.
 
 - Drag items to move them, drag the corner to resize, arrow keys to nudge (Shift for bigger
-  steps), Delete to remove. Shift- or Ctrl/⌘-click (on the page or in **On this page**) selects
-  several items to move, nudge or delete together.
+  steps), Delete to remove. Shift- or Ctrl/⌘-click (on the page or in **On this page**), or drag a
+  box on an empty part of the page, to select several items to move, nudge or delete together.
+- Click a plot's axis title on the page to pick its channel.
+- The sample order and names can be edited in the Layout sidebar too, as in the Samples pane.
 - **Arrange**: **Free** (items go where you put them) or **Snap to grid**, with a number of
   columns and rows. In grid mode the plots fill square cells in order, below any title at the
   top of the page. Drop a new plot on a cell, or drag a plot to another cell, and the others
@@ -193,7 +197,7 @@ Gating, **Add to layout** places the plot you are looking at.
 - **Undo** and **Redo** (top bar, or Ctrl/⌘+Z and Ctrl/⌘+Shift+Z) work in Layout too.
 - **Add name label** places a text item showing `{label}`, each sample's name from the Samples
   pane (or its file name if it has none); in batch every copy shows its own sample's name. Text
-  items have font size, alignment, bold, italic and colour.
+  items have font (sans-serif, serif or monospace), size, alignment, bold, italic and colour.
 - **Double-click a plot** to edit its gates without leaving the layout: it opens below the
   page with the gating tools. Draw new gates (a name box opens), move and reshape gates,
   double-click a gate to rename it, Delete to remove it, and change the axes; the figure
@@ -205,7 +209,9 @@ Gating, **Add to layout** places the plot you are looking at.
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
 - **Batch** repeats the page for every sample, in a grid: set the number of **Columns** and/or
   **Rows** (leave one empty to fit every sample) and the **Fill order** (across, then down; or
-  down, then across). Each copy fills in its own sample's numbers and keywords.
+  down, then across). Each copy fills in its own sample's numbers and keywords. **Sample ID**
+  shows the file name, or the sample's name, above each copy, with its own alignment, size,
+  font, bold, italic and colour.
   Double-click a plot in any copy to edit its gates for that copy's sample (the plot being
   edited is outlined). Each copy is only as big as
   the items on the page (plus a small margin), so a half-filled page gives compact copies.

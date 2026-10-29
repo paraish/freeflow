@@ -14,6 +14,8 @@ export const PAGE_SIZES = [
 ];
 
 export const FONT = 'Arial, Helvetica, sans-serif';
+// Fonts text items can use (names that Illustrator, Inkscape and PowerPoint know).
+export const FONTS = { sans: FONT, serif: "'Times New Roman', Times, serif", mono: "'Courier New', Courier, monospace" };
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const f = (v) => +v.toFixed(2);
@@ -54,8 +56,9 @@ function textLines(lines, x, y, size, opts = {}) {
   const anchor = opts.anchor || 'start';
   const weight = opts.bold ? ' font-weight="bold"' : '';
   const style = opts.italic ? ' font-style="italic"' : '';
+  const family = FONTS[opts.font] || FONT;
   const fill = /^#[0-9a-f]{6}$/i.test(opts.fill || '') ? opts.fill : '#000000';
-  return lines.map((ln, i) => `<text x="${f(x)}" y="${f(y + i * size * 1.25)}" font-family="${FONT}" font-size="${f(size)}"${weight}${style} fill="${fill}" text-anchor="${anchor}">${esc(ln)}</text>`).join('');
+  return lines.map((ln, i) => `<text x="${f(x)}" y="${f(y + i * size * 1.25)}" font-family="${family}" font-size="${f(size)}"${weight}${style} fill="${fill}" text-anchor="${anchor}">${esc(ln)}</text>`).join('');
 }
 
 // Keep labels of the same axis from overlapping.
@@ -82,6 +85,22 @@ export function plotInner(w, h, fontSize = 11, hasTitle = true) {
  *   showLabels, message }
  * Gate shapes use display-scale coordinates in [0, 1] (as the gating view).
  */
+// Where a plot's axis titles are drawn, in page units, so the layout editor
+// can put a channel menu over each.
+export function axisSpots({ x, y, w, h, fontSize = 11, hasTitle = true }) {
+  const fs = fontSize;
+  const tickFs = fs * 0.85;
+  const l = fs * 4.4, r = 8, t = (hasTitle ? fs * 1.6 : 4) + 4, b = fs * 3.6;
+  const px = x + l, py = y + t;
+  const pw = Math.max(10, w - l - r), ph = Math.max(10, h - t - b);
+  const base = py + ph + tickFs + fs * 2.1;
+  const xw = Math.min(pw, 240), yh = Math.min(ph, 240);
+  return {
+    x: { x: px + pw / 2 - xw / 2, y: base - fs * 1.1, w: xw, h: fs * 1.5 },
+    y: { x: x + fs * 0.9 - fs * 0.85, y: py + ph / 2 - yh / 2, w: fs * 1.3, h: yh },
+  };
+}
+
 export function plotSVG(p) {
   const fs = p.fontSize || 11;
   const tickFs = fs * 0.85;
@@ -135,6 +154,8 @@ export function plotSVG(p) {
       const lines = [name, pct].filter(Boolean);
       return `<g class="gate-label">${textLines(lines, x, y, tickFs, { anchor })}</g>`;
     };
+    // A label moved in the gating view keeps its place (fractions of the plot area).
+    const off = (m) => ({ x: (m?.dx || 0) * pw, y: -(m?.dy || 0) * ph });
     for (const g of p.gates || []) {
       if (g.kind === 'poly') {
         out.push(`<polygon points="${g.pts.map(([a, c]) => `${f(sx(a))},${f(sy(c))}`).join(' ')}" fill="none" stroke="#000000" stroke-width="1"/>`);
@@ -142,7 +163,7 @@ export function plotSVG(p) {
         for (const pt of g.pts) if (pt[1] > top[1]) top = pt;
         const cx = g.pts.reduce((acc, pt) => acc + Math.max(0, Math.min(1, pt[0])), 0) / g.pts.length;
         const ly = Math.max(py + tickFs, sy(top[1]) - tickFs * 1.6);
-        out.push(lab(sx(cx), ly, g.label, g.sub));
+        out.push(lab(sx(cx) + off(g.lab).x, ly + off(g.lab).y, g.label, g.sub));
       } else if (g.kind === 'quad') {
         out.push(`<path d="M${f(px)} ${f(sy(g.cy))}H${f(px + pw)}M${f(sx(g.cx))} ${f(py)}V${f(py + ph)}" stroke="#000000" stroke-width="1" fill="none"/>`);
         // Arial averages about 0.55 em per character; a label wider than its
@@ -154,12 +175,12 @@ export function plotSVG(p) {
           const up = q.quadrant === 'UL' || q.quadrant === 'UR';
           const x = right ? px + pw - 4 : px + 4;
           const y = up ? py + tickFs + 2 : py + ph - tickFs * 1.5;
-          out.push(lab(x, y, q.label, q.sub, right ? 'end' : 'start'));
+          out.push(lab(x + off(q.lab).x, y + off(q.lab).y, q.label, q.sub, right ? 'end' : 'start'));
         }
       } else if (g.kind === 'range') {
         const x1 = sx(g.lo), x2 = sx(g.hi), y = py + ph - g.level * ph;
         out.push(`<path d="M${f(x1)} ${f(y)}H${f(x2)}M${f(x1)} ${f(y - 5)}v10M${f(x2)} ${f(y - 5)}v10" stroke="#000000" stroke-width="1" fill="none"/>`);
-        out.push(lab((x1 + x2) / 2, y - tickFs * 2.2, g.label, g.sub));
+        out.push(lab((x1 + x2) / 2 + off(g.lab).x, y - tickFs * 2.2 + off(g.lab).y, g.label, g.sub));
       }
     }
   }
@@ -172,7 +193,7 @@ export function textSVG(t) {
   const lines = String(t.text ?? '').split('\n');
   const anchor = t.align === 'center' ? 'middle' : t.align === 'right' ? 'end' : 'start';
   const x = anchor === 'middle' ? t.x + t.w / 2 : anchor === 'end' ? t.x + t.w : t.x;
-  return `<g class="text">${textLines(lines, x, t.y + fs, fs, { anchor, bold: t.bold, italic: t.italic, fill: t.color })}</g>`;
+  return `<g class="text">${textLines(lines, x, t.y + fs, fs, { anchor, bold: t.bold, italic: t.italic, fill: t.color, font: t.font })}</g>`;
 }
 
 // A whole page (or batch sheet) as a standalone SVG document.
