@@ -592,3 +592,5 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 /* The Hide uncompensated checkbox beside the Compensation button. */
 .topbar-check { white-space: nowrap; color: var(--muted); margin-right: 2px; }
 .topbar-check[hidden] { display: none; }
+/* Grid cells on a layout page in Snap to grid mode (editor only). */
+.lay-cell { position: absolute; border: 1px dashed rgba(29, 95, 196, 0.28); border-radius: 3px; pointer-events: none; }

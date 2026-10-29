@@ -179,7 +179,13 @@ sample; one from the page's sample follows the page (and every sample in batch m
 Gating, **Add to layout** places the plot you are looking at.
 
 - Drag items to move them, drag the corner to resize, arrow keys to nudge (Shift for bigger
-  steps), Delete to remove.
+  steps), Delete to remove. Shift- or Ctrl/⌘-click (on the page or in **On this page**) selects
+  several items to move, nudge or delete together.
+- **Arrange**: **Free** (items go where you put them) or **Snap to grid**, with a number of
+  columns and rows. In grid mode the plots fill square cells in order, below any title at the
+  top of the page. Drop a new plot on a cell, or drag a plot to another cell, and the others
+  move along; arrow keys move the selected plot one cell. Rows are added when the plots don't
+  fit. Text items stay free.
 - **Double-click a plot** to edit its gates without leaving the layout: it opens below the
   page with the gating tools. Draw new gates (a name box opens), move and reshape gates,
   double-click a gate to rename it, Delete to remove it, and change the axes; the figure

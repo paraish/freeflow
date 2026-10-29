@@ -1,7 +1,10 @@
 // The layout editor: pages of plots and text that can be arranged, edited,
 // repeated for every sample (batch) and exported as SVG or PNG.
 //
-// A layout: { id, name, size, width, height, items, batch, columns, rows, order, sampleKey }
+// A layout: { id, name, size, width, height, items, batch, columns, rows, order, sampleKey,
+//            arrange, gridCols, gridRows }
+// `arrange` is 'free' (items go where they are put) or 'grid' (plots snap to
+// a grid of gridCols x gridRows cells, in order; see tiling.js).
 // In batch, `columns` and `rows` set the grid (0 or missing: as many as
 // needed) and `order` fills it across rows first ('row') or down columns ('col').
 // An item:  { id, kind: 'plot' | 'text', x, y, w, h, ... } in page units
@@ -11,6 +14,7 @@
 
 import { PAGE_SIZES, fillTokens, pageSVG, plotInner, plotSVG, textSVG } from './figure.js';
 import { bivariatePixels } from './plot.js';
+import { applyGrid, cellAt, defaultGrid, gridCells, movePlot } from './tiling.js';
 
 const GRID = 4;
 const snap = (v) => Math.round(v / GRID) * GRID;
@@ -37,13 +41,28 @@ export function newLayout(name = 'Layout 1') {
 export function createLayoutEditor(root, env) {
   // origin: page-to-sheet offset of the first copy; blocks: the copies on the
   // sheet; editMark: the plot open for editing ({ id, block }).
-  const ui = { layoutId: null, sel: null, zoom: 1, previewUrl: null, previewTimer: null, origin: null, blocks: null, editMark: null };
+  // sel: the item whose settings are shown; multi: every selected item (Shift-
+  // or Ctrl/⌘-click selects several).
+  const ui = { layoutId: null, sel: null, multi: new Set(), zoom: 1, previewUrl: null, previewTimer: null, origin: null, blocks: null, editMark: null };
   const imageCache = new Map();
   const $ = (id) => root.querySelector(`#${id}`);
 
   const layouts = () => env.layouts();
   const current = () => layouts().find((l) => l.id === ui.layoutId) || layouts()[0] || null;
   const itemById = (id) => current()?.items.find((i) => i.id === id) || null;
+  const selection = () => (ui.multi.size ? [...ui.multi] : ui.sel ? [ui.sel] : []).map(itemById).filter(Boolean);
+  // Selects one item (or none).
+  const pick = (id) => { ui.sel = id; ui.multi = new Set(id ? [id] : []); };
+  // Adds an item to the selection, or takes it out.
+  const toggle = (id) => {
+    const set = new Set(selection().map((i) => i.id));
+    if (set.has(id)) set.delete(id); else set.add(id);
+    ui.multi = set;
+    ui.sel = set.has(id) ? id : [...set][0] ?? null;
+  };
+  const isGrid = (l) => l?.arrange === 'grid';
+  // In grid mode, puts the plots back in their cells after any change.
+  const tidy = (l) => { if (isGrid(l)) applyGrid(l); };
 
   // ---------------------------------------------------------------- resolving items to drawable data
 
@@ -263,7 +282,8 @@ export function createLayoutEditor(root, env) {
     const l = current();
     $('lay-list').innerHTML = layouts().map((x) => `<li><button class="lay-pick${x === l ? ' is-sel' : ''}" data-act="pick-layout" data-id="${x.id}">${escH(x.name)}<span class="sample-meta">${x.items.length} item${x.items.length === 1 ? '' : 's'}${x.batch ? ' · batch' : ''}</span></button></li>`).join('')
       || '<li class="empty">No layouts yet.</li>';
-    $('lay-items').innerHTML = l ? l.items.map((it) => `<li><button class="lay-pick${it.id === ui.sel ? ' is-sel' : ''}" data-act="pick-item" data-id="${it.id}">${it.kind === 'text' ? 'Text' : 'Plot'}: ${escH(it.kind === 'text' ? (it.text || '').split('\n')[0].slice(0, 40) : (it.path || []).slice(-1)[0] || 'All Events')}</button></li>`).join('')
+    const selIds = new Set(selection().map((i) => i.id));
+    $('lay-items').innerHTML = l ? l.items.map((it) => `<li><button class="lay-pick${selIds.has(it.id) ? ' is-sel' : ''}" data-act="pick-item" data-id="${it.id}">${it.kind === 'text' ? 'Text' : 'Plot'}: ${escH(it.kind === 'text' ? (it.text || '').split('\n')[0].slice(0, 40) : (it.path || []).slice(-1)[0] || 'All Events')}</button></li>`).join('')
       || '<li class="empty">Click or drag a population from Samples to add its plot.</li>' : '';
   }
 
@@ -282,11 +302,16 @@ export function createLayoutEditor(root, env) {
     const em = env.editing() && ui.editMark && l.items.find((x) => x.id === ui.editMark.id);
     const eb = em && sh.blocks[ui.editMark.block];
     const editMark = eb ? `<div class="lay-edit-mark" style="left:${(em.x + eb.dx) * z}px;top:${(em.y + eb.dy) * z}px;width:${em.w * z}px;height:${em.h * z}px"></div>` : '';
-    const overlays = l.items.map((it) => `<div class="lay-box${it.id === ui.sel ? ' is-sel' : ''}" data-id="${it.id}" style="left:${(it.x + o.dx) * z}px;top:${(it.y + o.dy) * z}px;width:${it.w * z}px;height:${it.h * z}px">${it.id === ui.sel ? '<span class="lay-resize" data-act="resize" aria-hidden="true"></span>' : ''}</div>`).join('');
+    const selIds = new Set(selection().map((i) => i.id));
+    // A resize handle on a single selected item, unless the grid sets its size.
+    const handle = (it) => selIds.size === 1 && selIds.has(it.id) && !(isGrid(l) && it.kind === 'plot');
+    const overlays = l.items.map((it) => `<div class="lay-box${selIds.has(it.id) ? ' is-sel' : ''}" data-id="${it.id}" style="left:${(it.x + o.dx) * z}px;top:${(it.y + o.dy) * z}px;width:${it.w * z}px;height:${it.h * z}px">${handle(it) ? '<span class="lay-resize" data-act="resize" aria-hidden="true"></span>' : ''}</div>`).join('');
+    // The grid's cells, faintly, while editing (not part of the figure).
+    const cells = isGrid(l) ? gridCells(l).cells.map((c) => `<div class="lay-cell" style="left:${(c.x + o.dx) * z}px;top:${(c.y + o.dy) * z}px;width:${c.w * z}px;height:${c.h * z}px"></div>`).join('') : '';
     stage.innerHTML = `<div class="lay-sheet" style="width:${sh.width * z}px;height:${sh.height * z}px">
       <div class="lay-svg">${sh.svg}</div>
       ${l.batch ? `<div class="lay-block-hint" style="width:${sh.cell.w * z}px;height:${sh.cell.h * z}px"></div>` : ''}
-      <div class="lay-overlay">${editMark}${overlays}</div></div>`;
+      <div class="lay-overlay">${cells}${editMark}${overlays}</div></div>`;
     const svg = stage.querySelector('.lay-svg svg');
     svg.setAttribute('width', sh.width * z);
     svg.setAttribute('height', sh.height * z);
@@ -309,8 +334,12 @@ export function createLayoutEditor(root, env) {
     const check = (id, v, label) => `<label class="check check-small"><input id="${id}" type="checkbox" ${v ? 'checked' : ''}> ${label}</label>`;
     const tokensHelp = '<p class="muted small">Fill-ins: {sample} {population} {parent} {count} {freq} {freqTotal} {x} {y}, or any keyword in braces, such as {$DATE} or {DONOR}.</p>';
 
-    let itemHTML = '<p class="muted small">Click an item on the page to edit it. Drag to move it; drag its corner to resize it.</p>';
-    if (it?.kind === 'plot') {
+    let itemHTML = '<p class="muted small">Click an item on the page to edit it. Drag to move it; drag its corner to resize it. Shift- or Ctrl/⌘-click to select several.</p>';
+    const many = selection().length;
+    if (many > 1) {
+      itemHTML = `<p class="muted small">${many} items selected. Drag any of them to move them together, nudge them with the arrow keys, or press Delete to remove them.${isGrid(l) ? ' In grid mode plots keep to their cells; text moves freely.' : ''}</p>
+        <div class="btn-row"><button class="btn btn-danger" data-act="del-item">Delete ${many} items</button></div>`;
+    } else if (it?.kind === 'plot') {
       const s = sampleFor(it, pageSampleOf(l));
       const pops = [];
       if (s) {
@@ -333,7 +362,7 @@ export function createLayoutEditor(root, env) {
           ${field('', 'Y axis label', txt('lp-ylabel', it.yLabel, view.type === 'histogram' ? '% of max' : 'Channel name'))}
           ${field('', 'Font size', num('lp-font', it.fontSize, 'min="6" max="40" step="1"'))}
           ${view.type === 'histogram' ? '' : field('', 'Dot size', num('lp-dot', it.dotSize || 1, 'min="1" max="6" step="1"'))}
-          <div class="field-pair">${field('', 'Width', num('lp-w', it.w, 'min="80" step="4"'))}${field('', 'Height', num('lp-h', it.h, 'min="80" step="4"'))}</div>
+          ${isGrid(l) ? '<p class="muted small">Size and place are set by the grid (Page → Arrange).</p>' : `<div class="field-pair">${field('', 'Width', num('lp-w', it.w, 'min="80" step="4"'))}${field('', 'Height', num('lp-h', it.h, 'min="80" step="4"'))}</div>`}
           ${check('lp-gates', it.showGates !== false, 'Show gates')}
           ${check('lp-labels', it.showLabels !== false, 'Show gate names and %')}
         </div>
@@ -359,6 +388,9 @@ export function createLayoutEditor(root, env) {
           ${field('', 'Name', txt('lpg-name', l.name))}
           ${field('', 'Size', `<select id="lpg-size">${pageOptions(l)}</select>`)}
           ${l.size === 'custom' ? `<div class="field-pair">${field('', 'Width', num('lpg-w', l.width, 'min="200" step="8"'))}${field('', 'Height', num('lpg-h', l.height, 'min="200" step="8"'))}</div>` : ''}
+          ${field('', 'Arrange', `<select id="lpg-arrange"><option value="free" ${isGrid(l) ? '' : 'selected'}>Free</option><option value="grid" ${isGrid(l) ? 'selected' : ''}>Snap to grid</option></select>`)}
+          ${isGrid(l) ? `<div class="field-pair">${field('', 'Columns', num('lpg-gcols', l.gridCols || 1, 'min="1" max="12" step="1"'))}${field('', 'Rows', num('lpg-grows', l.gridRows || 1, 'min="1" max="12" step="1"'))}</div>
+          <p class="muted small">Plots fill the cells in order. Drop a new plot on a cell, or drag a plot to another cell, and the others move along; arrow keys move the selected plot one cell. Rows are added when the plots don't fit.</p>` : ''}
           ${l.batch ? '' : field('', 'Sample', `<select id="lpg-sample"><option value="">Sample open in gating</option>${samples.map((x) => `<option value="${escH(env.sampleKey(x))}" ${l.sampleKey === env.sampleKey(x) ? 'selected' : ''}>${escH(x.name)}</option>`).join('')}</select>`)}
           ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${env.batchSamples(l).length})`)}
           ${l.batch ? field('', 'Repeat for', `<select id="lpg-group"><option value="">All samples (not controls)</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`) : ''}
@@ -368,7 +400,7 @@ export function createLayoutEditor(root, env) {
         </div>
       </section>
       <section class="card">
-        <header class="card-head"><span class="eyebrow">${it ? (it.kind === 'text' ? 'Text' : 'Plot') : 'Item'}</span></header>
+        <header class="card-head"><span class="eyebrow">${many > 1 ? 'Items' : it ? (it.kind === 'text' ? 'Text' : 'Plot') : 'Item'}</span></header>
         ${itemHTML}
       </section>
       <section class="card">
@@ -507,7 +539,13 @@ export function createLayoutEditor(root, env) {
       view: view ? { ...view } : null, title: '{population}', xLabel: '', yLabel: '', fontSize: 11, showGates: true, showLabels: true,
     };
     l.items.push(item);
-    ui.sel = item.id;
+    // In grid mode the new plot goes into the cell it was dropped on (or
+    // after the others), and the rest move along.
+    if (isGrid(l)) {
+      if (at) movePlot(l, item, cellAt(l, at.x, at.y));
+      applyGrid(l);
+    }
+    pick(item.id);
     env.changed();
     return { layout: l, item };
   }
@@ -517,7 +555,8 @@ export function createLayoutEditor(root, env) {
     const at = placeFor(l, 320, 40);
     const item = { id: newId('i'), kind: 'text', ...at, w: 320, h: 40, text: '{sample}', fontSize: 18, bold: true, align: 'left' };
     l.items.push(item);
-    ui.sel = item.id;
+    tidy(l);
+    pick(item.id);
     env.changed();
     render();
   }
@@ -531,14 +570,23 @@ export function createLayoutEditor(root, env) {
     const n = parseFloat(val);
     switch (t.id) {
       case 'lpg-name': l.name = val || 'Layout'; return changed();
+      case 'lpg-arrange': {
+        l.arrange = val === 'grid' ? 'grid' : 'free';
+        if (isGrid(l) && !l.gridCols) ({ cols: l.gridCols, rows: l.gridRows } = defaultGrid(l));
+        tidy(l);
+        return changed({ props: true });
+      }
+      case 'lpg-gcols': if (n >= 1) { l.gridCols = Math.round(n); tidy(l); changed(); } return;
+      case 'lpg-grows': if (n >= 1) { l.gridRows = Math.round(n); tidy(l); changed(); } return;
       case 'lpg-size': {
         l.size = val;
         const p = PAGE_SIZES.find((x) => x.id === val);
         if (p?.w) { l.width = p.w; l.height = p.h; }
+        tidy(l);
         return changed({ props: true });
       }
-      case 'lpg-w': if (n >= 200) { l.width = n; changed(); } return;
-      case 'lpg-h': if (n >= 200) { l.height = n; changed(); } return;
+      case 'lpg-w': if (n >= 200) { l.width = n; tidy(l); changed(); } return;
+      case 'lpg-h': if (n >= 200) { l.height = n; tidy(l); changed(); } return;
       case 'lpg-sample': l.sampleKey = val || null; return changed({ props: true });
       case 'lpg-batch': l.batch = val; return changed({ props: true });
       case 'lpg-group': l.batchGroup = val || null; return changed({ props: true });
@@ -589,12 +637,15 @@ export function createLayoutEditor(root, env) {
       const nl = newLayout(`Layout ${layouts().length + 1}`);
       layouts().push(nl);
       ui.layoutId = nl.id;
-      ui.sel = null;
+      pick(null);
       env.changed();
       return render();
     }
-    if (act === 'pick-layout') { ui.layoutId = b.dataset.id; ui.sel = null; return render(); }
-    if (act === 'pick-item') { ui.sel = b.dataset.id; return render(); }
+    if (act === 'pick-layout') { ui.layoutId = b.dataset.id; pick(null); return render(); }
+    if (act === 'pick-item') {
+      if (e.shiftKey || e.ctrlKey || e.metaKey) toggle(b.dataset.id); else pick(b.dataset.id);
+      return render();
+    }
     if (act === 'add-text') return addText();
     if (act === 'ls-add') {
       const row = b.closest('.lay-pop');
@@ -627,17 +678,19 @@ export function createLayoutEditor(root, env) {
       }
       layouts().splice(layouts().indexOf(l), 1);
       ui.layoutId = layouts()[0]?.id ?? null;
-      ui.sel = null;
+      pick(null);
       env.changed();
       return render();
     }
     if (!l) return;
     const it = itemById(ui.sel);
-    if (act === 'del-item' && it) { l.items.splice(l.items.indexOf(it), 1); ui.sel = null; env.itemRemoved(it); env.changed(); return render(); }
+    if (act === 'del-item' && it) return deleteSelected(l);
     if (act === 'dup-item' && it) {
       const copy = { ...JSON.parse(JSON.stringify(it)), id: newId('i'), ...placeFor(l, it.w, it.h) };
       l.items.push(copy);
-      ui.sel = copy.id;
+      if (isGrid(l) && copy.kind === 'plot') movePlot(l, copy, l.items.filter((x) => x.kind === 'plot').indexOf(it) + 1);
+      tidy(l);
+      pick(copy.id);
       env.changed();
       return render();
     }
@@ -697,7 +750,7 @@ export function createLayoutEditor(root, env) {
         return;
       }
       lastDown = hit ? { id: `${hit.block}:${hit.it.id}`, t: now } : { id: null, t: 0 };
-      if (ui.sel) { ui.sel = null; render(); }
+      if (ui.sel) { pick(null); render(); }
       return;
     }
     const it = itemById(box.dataset.id);
@@ -710,10 +763,22 @@ export function createLayoutEditor(root, env) {
       openEditor(it, 0);
       return;
     }
+    // Shift- or Ctrl/⌘-click adds to the selection or takes away from it.
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      lastDown = { id: null, t: 0 };
+      toggle(it.id);
+      render();
+      return;
+    }
     lastDown = { id: `0:${it.id}`, t: now };
-    if (ui.sel !== it.id) { ui.sel = it.id; render(); }
+    const l = current();
+    if (!selection().some((x) => x.id === it.id)) { pick(it.id); render(); } else if (ui.sel !== it.id) { ui.sel = it.id; renderProps(); }
     const resize = !!e.target.closest('[data-act="resize"]');
-    drag = { it, resize, sx: e.clientX, sy: e.clientY, ox: it.x, oy: it.y, ow: it.w, oh: it.h, moved: false };
+    // A plot in grid mode is moved between cells; everything else selected
+    // moves together (plots in grid mode stay in their cells).
+    const gridPlot = isGrid(l) && it.kind === 'plot' && !resize;
+    const group = resize ? [it] : selection().filter((x) => !(isGrid(l) && x.kind === 'plot'));
+    drag = { it, resize, gridPlot, sx: e.clientX, sy: e.clientY, ow: it.w, oh: it.h, moved: false, items: group.map((x) => ({ it: x, ox: x.x, oy: x.y })) };
     stage.setPointerCapture?.(e.pointerId);
   }
   function onPointerMove(e) {
@@ -723,50 +788,83 @@ export function createLayoutEditor(root, env) {
     if (!drag.moved && Math.hypot(dx, dy) < 2) return;
     drag.moved = true;
     const { it } = drag;
+    const z = ui.zoom;
+    const o = ui.origin || { dx: 0, dy: 0 };
+    if (drag.gridPlot) {
+      // The plot goes to the cell under the pointer; the others reflow.
+      const r = root.querySelector('.lay-sheet').getBoundingClientRect();
+      const idx = cellAt(l, (e.clientX - r.left) / z - o.dx, (e.clientY - r.top) / z - o.dy);
+      if (idx !== l.items.filter((x) => x.kind === 'plot').indexOf(it)) {
+        movePlot(l, it, idx);
+        applyGrid(l);
+        renderStage();
+      }
+      return;
+    }
     if (drag.resize) {
       it.w = Math.max(it.kind === 'text' ? 20 : 120, snap(drag.ow + dx));
       it.h = Math.max(it.kind === 'text' ? 12 : 120, snap(drag.oh + dy));
     } else {
-      it.x = Math.max(0, Math.min(l.width - 20, snap(drag.ox + dx)));
-      it.y = Math.max(0, Math.min(l.height - 12, snap(drag.oy + dy)));
+      for (const m of drag.items) {
+        m.it.x = Math.max(0, Math.min(l.width - 20, snap(m.ox + dx)));
+        m.it.y = Math.max(0, Math.min(l.height - 12, snap(m.oy + dy)));
+      }
     }
-    const z = ui.zoom;
-    const box = root.querySelector(`.lay-box[data-id="${it.id}"]`);
-    const o = ui.origin || { dx: 0, dy: 0 };
-    if (box) Object.assign(box.style, { left: `${(it.x + o.dx) * z}px`, top: `${(it.y + o.dy) * z}px`, width: `${it.w * z}px`, height: `${it.h * z}px` });
+    for (const x of drag.resize ? [it] : drag.items.map((m) => m.it)) {
+      const box = root.querySelector(`.lay-box[data-id="${x.id}"]`);
+      if (box) Object.assign(box.style, { left: `${(x.x + o.dx) * z}px`, top: `${(x.y + o.dy) * z}px`, width: `${x.w * z}px`, height: `${x.h * z}px` });
+    }
     renderSoon();
   }
   function onPointerUp() {
     if (!drag) return;
     const moved = drag.moved;
     drag = null;
-    if (moved) { env.changed(); render(); }
+    if (moved) { tidy(current()); env.changed(); render(); }
+  }
+
+  // Removes every selected item from the page.
+  function deleteSelected(l) {
+    const gone = selection();
+    l.items = l.items.filter((x) => !gone.includes(x));
+    pick(null);
+    for (const x of gone) env.itemRemoved(x);
+    tidy(l);
+    env.changed();
+    render();
   }
 
   function onKey(e) {
     if (root.hidden || e.target.matches('input, textarea, select') || env.editing()) return;
-    const it = itemById(ui.sel);
-    if (!it) return;
+    const sel = selection();
+    if (!sel.length) return;
     const l = current();
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
-      l.items.splice(l.items.indexOf(it), 1);
-      ui.sel = null;
-      env.itemRemoved(it);
-      env.changed();
-      render();
+      deleteSelected(l);
       return;
     }
     const step = e.shiftKey ? 16 : GRID;
     const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
     if (moves[e.key]) {
       e.preventDefault();
-      it.x = Math.max(0, it.x + moves[e.key][0]);
-      it.y = Math.max(0, it.y + moves[e.key][1]);
+      if (isGrid(l) && sel.length === 1 && sel[0].kind === 'plot') {
+        // In grid mode a plot steps to the next cell over.
+        const { cols } = gridCells(l);
+        const d = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[e.key];
+        movePlot(l, sel[0], l.items.filter((x) => x.kind === 'plot').indexOf(sel[0]) + d);
+      } else {
+        for (const x of sel) {
+          if (isGrid(l) && x.kind === 'plot') continue;
+          x.x = Math.max(0, x.x + moves[e.key][0]);
+          x.y = Math.max(0, x.y + moves[e.key][1]);
+        }
+      }
+      tidy(l);
       env.changed();
       render();
     }
-    if (e.key === 'Escape') { ui.sel = null; render(); }
+    if (e.key === 'Escape') { pick(null); render(); }
   }
 
   root.addEventListener('click', onClick);
@@ -814,7 +912,7 @@ export function createLayoutEditor(root, env) {
   return {
     render,
     addPlot: (s, pop, view) => { const r = addPlot(s, pop, view); return r; },
-    select: (layoutId, itemId) => { ui.layoutId = layoutId; ui.sel = itemId; },
+    select: (layoutId, itemId) => { ui.layoutId = layoutId; pick(itemId); },
     currentName: () => current()?.name || '',
     invalidate: () => imageCache.clear(),
   };
