@@ -2,17 +2,22 @@
 // in their order on the page (left to right, then down). Text items stay
 // where they are; titles near the top of the page keep the grid below them.
 //
-// A layout in grid mode has arrange: 'grid', gridCols and gridRows. Rows
-// grow when there are more plots than cells.
+// A layout in grid mode has arrange: 'grid', gridCols, gridRows and gridTop
+// (where the grid starts). Rows grow when there are more plots than cells.
+// Text added later floats over the page and does not move the grid.
 
 export const GRID_MARGIN = 24;
 export const GRID_GAP = 12;
 
 const plotsOf = (layout) => layout.items.filter((it) => it.kind === 'plot');
 
-// Where the grid starts: below any text in the top quarter of the page
-// (titles), which stays above it.
+// Where the grid starts: the layout's own setting, or else below any text in
+// the top quarter of the page (titles).
 function gridTop(layout) {
+  return Number.isFinite(layout.gridTop) ? layout.gridTop : titleTop(layout);
+}
+
+export function titleTop(layout) {
   let top = GRID_MARGIN;
   for (const it of layout.items) {
     if (it.kind === 'text' && it.y < layout.height / 4) top = Math.max(top, it.y + it.h + GRID_GAP);

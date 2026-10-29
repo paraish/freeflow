@@ -47,6 +47,7 @@ const S = {
   anchor: null, // { id, list } of the last clicked tree row, for Shift-click ranges
   collapsed: new Set(), // "<list>:<population id>" and "sample:<sample id>" keys
   orders: {}, // folder id -> sample keys in the order set by hand; see groups.js
+  labels: {}, // sample key -> a name given to the sample (for figures: {label})
   sampleSel: new Set(), // ids of samples selected together in the Samples pane
   sampleAnchor: null, // the last clicked sample, for Shift-click ranges
   focus: 'gates', // what Delete acts on: 'samples' (the selected samples), 'gates', or nothing ('folders')
@@ -311,6 +312,7 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
         S.groups = [...S.groups.filter((g) => !ids.has(g.id) && !names.has(g.name)), ...info.groups];
       }
       if (info.orders && typeof info.orders === 'object') S.orders = { ...S.orders, ...info.orders };
+      if (info.labels && typeof info.labels === 'object') S.labels = { ...S.labels, ...info.labels };
       if (info.groupGates && typeof info.groupGates === 'object') {
         // Folder ids in the bundle match the folders restored just above.
         S.groupGates = { ...S.groupGates, ...info.groupGates };
@@ -590,7 +592,7 @@ function analysisParts(named, created = new Date().toISOString()) {
   const wrapped = named.map(({ s, fn }) => ({ ...s, fileName: fn }));
   const wrap = new Map(named.map(({ s }, i) => [s, wrapped[i]]));
   const wspText = exportWSP({ samples: wrapped, transformOf: getTransform, groups: wspGroups(samples).map((g) => ({ name: g.name, members: g.members.map((m) => wrap.get(m)).filter(Boolean) })) });
-  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, links: bundleLinks(named) }, null, 1);
+  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, labels: S.labels, links: bundleLinks(named) }, null, 1);
   return { wspText, json };
 }
 
@@ -860,9 +862,10 @@ function flushRemoteQueue() {
   for (const core of list) onRemoteSample(core);
 }
 
-function onRemoteMeta({ transforms, layouts, groups, groupGates, orders }) {
+function onRemoteMeta({ transforms, layouts, groups, groupGates, orders, labels }) {
   S.groupGates = JSON.parse(JSON.stringify(groupGates || {}));
   S.orders = JSON.parse(JSON.stringify(orders || {}));
+  S.labels = { ...(labels || {}) };
   S.transforms = { ...transforms };
   S.layouts = JSON.parse(JSON.stringify(layouts || []));
   S.groups = JSON.parse(JSON.stringify(groups || []));
@@ -1148,7 +1151,20 @@ function snapshot() {
     viewPath: [...S.viewPath],
     groupGates: JSON.parse(JSON.stringify(S.groupGates)),
     orders: JSON.parse(JSON.stringify(S.orders)),
+    labels: { ...S.labels },
+    layouts: JSON.parse(JSON.stringify(S.layouts)),
   };
+}
+
+// An undo step for a layout change. Changes with the same key in quick
+// succession (typing in one box, nudging with the arrow keys) are one step.
+const CP = { key: null, t: 0 };
+function checkpoint(key = null) {
+  const now = Date.now();
+  if (key && key === CP.key && now - CP.t < 1500) { CP.t = now; return; }
+  CP.key = key;
+  CP.t = now;
+  pushUndo();
 }
 
 function pushUndo() {
@@ -1194,6 +1210,16 @@ function restoreSnapshot(snap) {
   S.viewPath = snap.viewPath;
   if (snap.groupGates) S.groupGates = snap.groupGates;
   if (snap.orders) S.orders = snap.orders;
+  if (snap.labels) S.labels = snap.labels;
+  if (snap.layouts) {
+    S.layouts = snap.layouts;
+    // A layout plot open for editing follows its restored copy.
+    if (LE.item) {
+      const again = S.layouts.flatMap((l) => l.items).find((i) => i.id === LE.item.id);
+      if (again) LE.item = again; else closeLayoutEdit();
+    }
+  }
+  CP.key = null;
   S.selId = null;
   S.draft = null;
   S.version++;
@@ -1373,7 +1399,7 @@ function renderTiles() {
     const adjusted = pop?.children.some((c) => c.link?.group === g.id && c.custom);
     return `<figure class="tile${s.id === S.sampleId ? ' is-main' : ''}" data-sample="${s.id}">
       <figcaption>
-        <button class="tile-name" data-act="tile-main" title="Show ${esc(s.name)} on the main plot">${esc(s.name)}</button>
+        <button class="tile-name" data-act="tile-main" title="Show ${esc(s.name)} on the main plot">${esc(s.name)}${labelOf(s) ? ` <span class="tile-label">${esc(labelOf(s))}</span>` : ''}</button>
         <span class="tile-meta">${pop ? fmtInt(pop.indices.length) : ''}</span>
       </figcaption>
       ${pop ? '<canvas class="tile-plot"></canvas>' : `<p class="tile-missing">No “${esc(S.viewPath[S.viewPath.length - 1] ?? 'All Events')}” population</p>`}
@@ -1901,6 +1927,7 @@ const groupById = (id) => BUILT_IN.find((g) => g.id === id) || S.groups.find((g)
 const sampleTime = (s) => (s.runTime ??= runTime(s.keywords));
 const groupMembers = (g) => orderSamples(members(g, S.samples, sampleKey), g && S.orders[g.id], sampleKey, sampleTime, (s) => s.name);
 const allInOrder = () => groupMembers(BUILT_IN[0]);
+const labelOf = (s) => (s && S.labels[sampleKey(s)]) || '';
 const currentGroup = () => groupById(S.groupId) || BUILT_IN[0];
 const visibleSamples = () => groupMembers(currentGroup());
 const isUserGroup = (g) => !!g && !BUILT_IN.some((b) => b.id === g.id);
@@ -2391,6 +2418,7 @@ function renderSamples() {
       ? '<button class="icon-btn" data-act="uncontrol" aria-label="Not a control" title="Not a compensation control">−</button>'
       : `<button class="icon-btn" data-act="remove" aria-label="Remove ${esc(s.name)}" title="Remove sample">×</button>`}
         </div>
+        <div class="label-row"><input class="label-box" type="text" value="${esc(labelOf(s))}" placeholder="Name for figures ({label})" aria-label="Name for ${esc(s.name)}" title="A name for this sample, used in layouts as {label} (for example a code such as WT-1). Leave empty to use the file name." autocomplete="off"></div>
         ${collapsed ? '' : `<ul class="tree">${treeRows(s, `ws-${s.id}`)}</ul>`}
       </li>`;
     }).join('');
@@ -2674,12 +2702,13 @@ function renderStats() {
     table.innerHTML = '<tbody><tr><td class="empty">Draw a gate to see statistics for every sample here.</td></tr></tbody>';
     return;
   }
-  const head = `<thead><tr><th scope="col" class="sticky">Sample</th>${cols.map(([key, path]) => {
+  const named = S.samples.some((s) => labelOf(s));
+  const head = `<thead><tr><th scope="col" class="sticky">Sample</th>${named ? '<th scope="col">Name</th>' : ''}${cols.map(([key, path]) => {
     const leaf = path[path.length - 1] || 'All Events';
     const parent = path.slice(0, -1).join(' / ');
     return `<th scope="col" title="${esc(key)}"><span class="col-parent">${esc(parent || '')}</span><span class="col-leaf">${esc(leaf)}</span></th>`;
   }).join('')}</tr></thead>`;
-  const body = allInOrder().map((s) => `<tr class="${s.id === S.sampleId ? 'is-sel' : ''}"><th scope="row" class="sticky">${esc(s.name)}</th>${cols.map(([, path]) => `<td>${formatStat(statValue(s, path))}</td>`).join('')}</tr>`).join('');
+  const body = allInOrder().map((s) => `<tr class="${s.id === S.sampleId ? 'is-sel' : ''}"><th scope="row" class="sticky">${esc(s.name)}</th>${named ? `<td class="left">${esc(labelOf(s))}</td>` : ''}${cols.map(([, path]) => `<td>${formatStat(statValue(s, path))}</td>`).join('')}</tr>`).join('');
   table.innerHTML = head + `<tbody>${body}</tbody>`;
 }
 
@@ -2687,9 +2716,10 @@ function statsTSV() {
   const cols = statColumns();
   const metric = METRICS.find((m) => m.id === S.stat.metric).label;
   const suffix = S.stat.metric === 'median' || S.stat.metric === 'mean' ? ` · ${S.stat.channel}` : '';
-  const lines = [[`Sample`, ...cols.map(([k]) => `${k} | ${metric}${suffix}`)].join('\t')];
-  for (const s of S.samples) {
-    lines.push([s.name, ...cols.map(([, path]) => {
+  const named = S.samples.some((s) => labelOf(s));
+  const lines = [['Sample', ...(named ? ['Name'] : []), ...cols.map(([k]) => `${k} | ${metric}${suffix}`)].join('\t')];
+  for (const s of allInOrder()) {
+    lines.push([s.name, ...(named ? [labelOf(s)] : []), ...cols.map(([, path]) => {
       const v = statValue(s, path);
       return v === null || !Number.isFinite(v) ? '' : String(+v.toFixed(4));
     })].join('\t'));
@@ -2916,7 +2946,11 @@ function layoutEnv() {
     cacheKey: (s, pop, view) => [s.id, pop.id, view.x, view.y, view.type, scalerFor(view.x).key,
       view.type === 'histogram' ? '' : scalerFor(view.y).key, S.version].join('|'),
     layouts: () => S.layouts,
-    changed: () => {},
+    changed: () => updateUndoButtons(),
+    checkpoint,
+    labelOf,
+    folderSamples: () => visibleSamples(),
+    folderName: () => currentGroup().name,
     editPlot: openLayoutEdit,
     editing: () => !!LE.item,
     itemRemoved: (it) => { if (LE.item === it) closeLayoutEdit(); },
@@ -2996,6 +3030,10 @@ function setMode(mode) {
   });
   $('gating-view').hidden = layout;
   $('layout-view').hidden = !layout;
+  // The Folders pane goes with the view: above the folder's samples in Layout.
+  const folders = document.querySelector('aside.groups');
+  if (layout) $('lay-folders-slot').append(folders);
+  else if (folders.parentElement !== $('gating-work')) $('gating-work').prepend(folders);
   $('gating-work').classList.toggle('is-group', mode === 'group');
   $('tiles-section').hidden = mode !== 'group';
   // Group gating keeps the gate card under the main plot, in view.
@@ -3224,6 +3262,7 @@ function renamePop(pop, raw) {
 function renderAll() {
   if (S.mode === 'layout') {
     renderHeader();
+    renderGroups();
     layoutEditor?.render();
     if (LE.item) { renderToolbar(); requestPlot(); }
     return;
@@ -3474,12 +3513,22 @@ function bind() {
   });
   // A sample's position in the folder being shown.
   $('samples').addEventListener('change', (e) => {
+    if (e.target.matches('.label-box')) {
+      const s = S.samples.find((x) => x.id === e.target.closest('.ws-sample')?.querySelector('.sample-row')?.dataset.id);
+      if (!s) return;
+      const name = e.target.value.trim();
+      if (name === labelOf(s)) return;
+      pushUndo();
+      if (name) S.labels[sampleKey(s)] = name; else delete S.labels[sampleKey(s)];
+      renderAll();
+      return;
+    }
     if (!e.target.matches('.order-box')) return;
     const s = S.samples.find((x) => x.id === e.target.closest('.sample-row')?.dataset.id);
     if (s) setSampleOrder(currentGroup(), s, e.target.value);
   });
   $('samples').addEventListener('keydown', (e) => {
-    if (!e.target.matches('.order-box')) return;
+    if (!e.target.matches('.order-box, .label-box')) return;
     if (e.key === 'Enter') e.target.blur();
     if (e.key === 'Escape') { renderSamples(); }
   });
@@ -3926,7 +3975,13 @@ function bind() {
   });
 
   document.addEventListener('keydown', (e) => {
-    if (S.mode === 'layout' && !LE.item) return; // the layout editor has its own keys
+    if (S.mode === 'layout' && !LE.item) {
+      // The layout editor has its own keys, apart from undo and redo.
+      const typingHere = e.target.matches('input, textarea, select');
+      if ((e.ctrlKey || e.metaKey) && !typingHere && ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y')) { e.preventDefault(); redo(); }
+      else if ((e.ctrlKey || e.metaKey) && !typingHere && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+      return;
+    }
     let typing = e.target.matches('input, textarea, select');
     // The name box is focused right after drawing a gate; until the name is
     // edited, Ctrl+Z should undo the gate rather than the text.
@@ -4000,7 +4055,7 @@ export function start() {
   bind();
   S.shared = new SharedWorkspaces({
     localSamples: () => S.samples.map(sharedState),
-    localMeta: () => ({ transforms: { ...S.transforms }, layouts: JSON.parse(JSON.stringify(S.layouts)), groups: JSON.parse(JSON.stringify(S.groups)), groupGates: JSON.parse(JSON.stringify(S.groupGates)), orders: JSON.parse(JSON.stringify(S.orders)) }),
+    localMeta: () => ({ transforms: { ...S.transforms }, layouts: JSON.parse(JSON.stringify(S.layouts)), groups: JSON.parse(JSON.stringify(S.groups)), groupGates: JSON.parse(JSON.stringify(S.groupGates)), orders: JSON.parse(JSON.stringify(S.orders)), labels: { ...S.labels } }),
     applySample: onRemoteSample,
     applyMeta: onRemoteMeta,
     isBusy: () => !!drag || !!S.draft,

@@ -14,7 +14,7 @@
 
 import { PAGE_SIZES, fillTokens, pageSVG, plotInner, plotSVG, textSVG } from './figure.js';
 import { bivariatePixels } from './plot.js';
-import { applyGrid, cellAt, defaultGrid, gridCells, movePlot } from './tiling.js';
+import { applyGrid, cellAt, defaultGrid, gridCells, movePlot, titleTop } from './tiling.js';
 
 const GRID = 4;
 const snap = (v) => Math.round(v / GRID) * GRID;
@@ -36,6 +36,10 @@ export function newLayout(name = 'Layout 1') {
  *   editPlot(item, sample)   open a plot's gates for editing below the page
  *   editing()                true while a plot is open for editing
  *   itemRemoved(item)        an item was deleted
+ *   checkpoint(key)          about to change a layout: keep an undo step (steps
+ *                            with the same key close together are one step)
+ *   labelOf(sample)          the name given to a sample in the Samples pane
+ *   folderSamples(), folderName()   the folder picked in the Folders pane
  * }
  */
 export function createLayoutEditor(root, env) {
@@ -62,7 +66,11 @@ export function createLayoutEditor(root, env) {
   };
   const isGrid = (l) => l?.arrange === 'grid';
   // In grid mode, puts the plots back in their cells after any change.
-  const tidy = (l) => { if (isGrid(l)) applyGrid(l); };
+  const tidy = (l) => {
+    if (!isGrid(l)) return;
+    if (!Number.isFinite(l.gridTop)) l.gridTop = titleTop(l);
+    applyGrid(l);
+  };
 
   // ---------------------------------------------------------------- resolving items to drawable data
 
@@ -79,7 +87,7 @@ export function createLayoutEditor(root, env) {
     if (!s) return { keywords: {} };
     const st = pop ? env.stats(s, pop) : null;
     return {
-      sample: s.name, file: s.fileName, n: s.n, keywords: s.keywords,
+      sample: s.name, label: env.labelOf(s) || s.name, file: s.fileName, n: s.n, keywords: s.keywords,
       population: pop ? pop.name : '', parent: pop?.parent ? pop.parent.name : '',
       path: pop ? ['All Events', ...env.pathOf(pop)].join(' / ') : '',
       count: st ? st.count.toLocaleString('en-US') : '', freq: st ? st.freq : '', freqTotal: st ? st.freqTotal : '',
@@ -109,7 +117,7 @@ export function createLayoutEditor(root, env) {
     const box = { x: item.x + dx, y: item.y + dy, w: item.w, h: item.h };
     if (item.kind === 'text') {
       const s = pageSample;
-      return textSVG({ ...box, text: fillTokens(item.text, tokensFor(s, null, null)), fontSize: item.fontSize, bold: item.bold, align: item.align });
+      return textSVG({ ...box, text: fillTokens(item.text, tokensFor(s, null, null)), fontSize: item.fontSize, bold: item.bold, italic: item.italic, color: item.color, align: item.align });
     }
     const s = sampleFor(item, pageSample);
     const base = { ...box, fontSize: item.fontSize, xTicks: [], yTicks: [], gates: [] };
@@ -332,7 +340,7 @@ export function createLayoutEditor(root, env) {
     const num = (id, v, attrs = '') => `<input id="${id}" type="number" value="${+(+v).toFixed(1)}" ${attrs}>`;
     const txt = (id, v, ph = '') => `<input id="${id}" type="text" value="${escH(v ?? '')}" placeholder="${escH(ph)}" autocomplete="off">`;
     const check = (id, v, label) => `<label class="check check-small"><input id="${id}" type="checkbox" ${v ? 'checked' : ''}> ${label}</label>`;
-    const tokensHelp = '<p class="muted small">Fill-ins: {sample} {population} {parent} {count} {freq} {freqTotal} {x} {y}, or any keyword in braces, such as {$DATE} or {DONOR}.</p>';
+    const tokensHelp = '<p class="muted small">Fill-ins: {sample} {label} {population} {parent} {count} {freq} {freqTotal} {x} {y}, or any keyword in braces, such as {$DATE} or {DONOR}. {label} is the name given to the sample in the Samples pane (or its file name).</p>';
 
     let itemHTML = '<p class="muted small">Click an item on the page to edit it. Drag to move it; drag its corner to resize it. Shift- or Ctrl/⌘-click to select several.</p>';
     const many = selection().length;
@@ -374,7 +382,8 @@ export function createLayoutEditor(root, env) {
           <label class="field field-stack"><span>Text</span><textarea id="lt-text" rows="3">${escH(it.text)}</textarea></label>
           ${field('', 'Font size', num('lt-font', it.fontSize, 'min="6" max="96" step="1"'))}
           ${field('', 'Align', `<select id="lt-align">${['left', 'center', 'right'].map((a) => `<option ${it.align === a ? 'selected' : ''}>${a}</option>`).join('')}</select>`)}
-          ${check('lt-bold', it.bold, 'Bold')}
+          <div class="field-pair">${check('lt-bold', it.bold, 'Bold')}${check('lt-italic', it.italic, 'Italic')}</div>
+          ${field('', 'Colour', `<input id="lt-color" type="color" value="${escH(/^#[0-9a-f]{6}$/i.test(it.color || '') ? it.color : '#000000')}">`)}
           <div class="field-pair">${field('', 'Width', num('lt-w', it.w, 'min="20" step="4"'))}${field('', 'Height', num('lt-h', it.h, 'min="12" step="4"'))}</div>
         </div>
         ${tokensHelp}
@@ -390,7 +399,8 @@ export function createLayoutEditor(root, env) {
           ${l.size === 'custom' ? `<div class="field-pair">${field('', 'Width', num('lpg-w', l.width, 'min="200" step="8"'))}${field('', 'Height', num('lpg-h', l.height, 'min="200" step="8"'))}</div>` : ''}
           ${field('', 'Arrange', `<select id="lpg-arrange"><option value="free" ${isGrid(l) ? '' : 'selected'}>Free</option><option value="grid" ${isGrid(l) ? 'selected' : ''}>Snap to grid</option></select>`)}
           ${isGrid(l) ? `<div class="field-pair">${field('', 'Columns', num('lpg-gcols', l.gridCols || 1, 'min="1" max="12" step="1"'))}${field('', 'Rows', num('lpg-grows', l.gridRows || 1, 'min="1" max="12" step="1"'))}</div>
-          <p class="muted small">Plots fill the cells in order. Drop a new plot on a cell, or drag a plot to another cell, and the others move along; arrow keys move the selected plot one cell. Rows are added when the plots don't fit.</p>` : ''}
+          ${field('', 'Grid starts at', num('lpg-gtop', Number.isFinite(l.gridTop) ? l.gridTop : titleTop(l), 'min="0" step="8"'))}
+          <p class="muted small">Plots fill the cells in order. Drop a new plot on a cell, or drag a plot to another cell, and the others move along; arrow keys move the selected plot one cell. Rows are added when the plots don't fit. Text floats over the page and never moves the grid; "Grid starts at" leaves room for a title.</p>` : ''}
           ${l.batch ? '' : field('', 'Sample', `<select id="lpg-sample"><option value="">Sample open in gating</option>${samples.map((x) => `<option value="${escH(env.sampleKey(x))}" ${l.sampleKey === env.sampleKey(x) ? 'selected' : ''}>${escH(x.name)}</option>`).join('')}</select>`)}
           ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${env.batchSamples(l).length})`)}
           ${l.batch ? field('', 'Repeat for', `<select id="lpg-group"><option value="">All samples (not controls)</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`) : ''}
@@ -421,18 +431,23 @@ export function createLayoutEditor(root, env) {
   ui.seen = new Set();
   ui.closed = new Set(); // "s:<key>" for samples, "p:<key>:<path>" for populations
 
+  // The samples of the folder picked in the Folders pane, in that folder's
+  // order, with the names given to them.
   function renderSamplesSide() {
     const el = $('lay-samples');
-    const samples = env.samples();
-    if (!samples.length) { el.innerHTML = '<li class="empty">Open samples to add their plots here.</li>'; return; }
+    const samples = env.folderSamples();
+    $('lay-samples-title').textContent = env.folderName() === 'All samples' ? 'Samples' : env.folderName();
+    if (!env.samples().length) { el.innerHTML = '<li class="empty">Open samples to add their plots here.</li>'; return; }
+    if (!samples.length) { el.innerHTML = '<li class="empty">No samples in this folder.</li>'; return; }
     const active = env.activeSample();
     for (const s of samples) {
       const key = env.sampleKey(s);
       if (!ui.seen.has(key)) { ui.seen.add(key); if (s !== active) ui.closed.add(`s:${key}`); }
     }
     const top = el.scrollTop;
-    el.innerHTML = samples.map((s) => {
+    el.innerHTML = samples.map((s, i) => {
       const key = env.sampleKey(s);
+      const label = env.labelOf(s);
       const shut = ui.closed.has(`s:${key}`);
       const rows = [];
       const visit = (p, depth) => {
@@ -453,7 +468,8 @@ export function createLayoutEditor(root, env) {
       return `<li class="ws-sample${s === active ? ' is-active' : ''}">
         <div class="sample-row" data-sample="${escH(key)}">
           <button class="twisty" data-act="ls-sample-twisty" aria-expanded="${!shut}" aria-label="${shut ? 'Show' : 'Hide'} populations of ${escH(s.name)}">${shut ? '▸' : '▾'}</button>
-          <button class="sample-pick" data-act="ls-sample-twisty"><span class="sample-name">${escH(s.name)}</span>
+          <span class="lay-order" title="Position in this folder">${i + 1}</span>
+          <button class="sample-pick" data-act="ls-sample-twisty"><span class="sample-name">${escH(s.name)}${label ? ` <span class="lay-label">${escH(label)}</span>` : ''}</span>
             <span class="sample-meta">${s.n.toLocaleString('en-US')} events${s.isControl ? ' · control' : ''}</span></button>
         </div>
         ${shut ? '' : `<ul class="tree">${rows.join('')}</ul>`}
@@ -529,6 +545,7 @@ export function createLayoutEditor(root, env) {
   // `at` places the plot's centre at a page position; `sampleKey` pins it to
   // one sample (null follows the page's sample, or each sample in batch).
   function addPlot(s, pop, view, { at = null, sampleKey = null } = {}) {
+    env.checkpoint();
     const l = ensureLayout();
     const w = 300, h = 300;
     const pos = at
@@ -550,12 +567,18 @@ export function createLayoutEditor(root, env) {
     return { layout: l, item };
   }
 
-  function addText() {
+  // A text item; `label` makes a name label ({label}: each sample's name from
+  // the Samples pane, filled in for every copy in batch). In grid mode text
+  // floats over the page, in the middle, without moving the grid.
+  function addText({ label = false } = {}) {
     const l = ensureLayout();
-    const at = placeFor(l, 320, 40);
-    const item = { id: newId('i'), kind: 'text', ...at, w: 320, h: 40, text: '{sample}', fontSize: 18, bold: true, align: 'left' };
+    env.checkpoint();
+    const w = label ? 200 : 320, h = label ? 28 : 40;
+    const at = isGrid(l) ? { x: snap((l.width - w) / 2), y: snap((l.height - h) / 2) } : placeFor(l, w, h);
+    const item = label
+      ? { id: newId('i'), kind: 'text', ...at, w, h, text: '{label}', fontSize: 16, bold: true, align: 'left', color: '#000000' }
+      : { id: newId('i'), kind: 'text', ...at, w, h, text: '{sample}', fontSize: 18, bold: true, align: 'left' };
     l.items.push(item);
-    tidy(l);
     pick(item.id);
     env.changed();
     render();
@@ -565,6 +588,8 @@ export function createLayoutEditor(root, env) {
     const l = current();
     if (!l) return;
     const t = e.target;
+    // One undo step per field being edited, not per keystroke.
+    env.checkpoint(`${t.id}:${ui.sel}`);
     const it = itemById(ui.sel);
     const val = t.type === 'checkbox' ? t.checked : t.value;
     const n = parseFloat(val);
@@ -572,12 +597,14 @@ export function createLayoutEditor(root, env) {
       case 'lpg-name': l.name = val || 'Layout'; return changed();
       case 'lpg-arrange': {
         l.arrange = val === 'grid' ? 'grid' : 'free';
+        if (isGrid(l) && !Number.isFinite(l.gridTop)) l.gridTop = titleTop(l);
         if (isGrid(l) && !l.gridCols) ({ cols: l.gridCols, rows: l.gridRows } = defaultGrid(l));
         tidy(l);
         return changed({ props: true });
       }
       case 'lpg-gcols': if (n >= 1) { l.gridCols = Math.round(n); tidy(l); changed(); } return;
       case 'lpg-grows': if (n >= 1) { l.gridRows = Math.round(n); tidy(l); changed(); } return;
+      case 'lpg-gtop': if (n >= 0 && n < l.height - 60) { l.gridTop = Math.round(n); tidy(l); changed(); } return;
       case 'lpg-size': {
         l.size = val;
         const p = PAGE_SIZES.find((x) => x.id === val);
@@ -622,6 +649,8 @@ export function createLayoutEditor(root, env) {
       case 'lt-font': if (n >= 6) { it.fontSize = n; changed(); } return;
       case 'lt-align': it.align = val; return changed();
       case 'lt-bold': it.bold = val; return changed();
+      case 'lt-italic': it.italic = val; return changed();
+      case 'lt-color': it.color = val; return changed();
       case 'lt-w': if (n >= 20) { it.w = n; changed(); } return;
       case 'lt-h': if (n >= 12) { it.h = n; changed(); } return;
       default: break;
@@ -633,6 +662,7 @@ export function createLayoutEditor(root, env) {
     if (!b) return;
     const l = current();
     const act = b.dataset.act;
+    if (['new-layout', 'del-item', 'dup-item'].includes(act) || (act === 'del-layout' && b.dataset.confirm === '1')) env.checkpoint();
     if (act === 'new-layout') {
       const nl = newLayout(`Layout ${layouts().length + 1}`);
       layouts().push(nl);
@@ -647,6 +677,7 @@ export function createLayoutEditor(root, env) {
       return render();
     }
     if (act === 'add-text') return addText();
+    if (act === 'add-label') return addText({ label: true });
     if (act === 'ls-add') {
       const row = b.closest('.lay-pop');
       return addFromSidebar(row.dataset.sample, JSON.parse(row.dataset.path));
@@ -786,6 +817,7 @@ export function createLayoutEditor(root, env) {
     const l = current();
     const dx = (e.clientX - drag.sx) / ui.zoom, dy = (e.clientY - drag.sy) / ui.zoom;
     if (!drag.moved && Math.hypot(dx, dy) < 2) return;
+    if (!drag.moved) env.checkpoint();
     drag.moved = true;
     const { it } = drag;
     const z = ui.zoom;
@@ -841,6 +873,7 @@ export function createLayoutEditor(root, env) {
     const l = current();
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
+      env.checkpoint();
       deleteSelected(l);
       return;
     }
@@ -848,6 +881,7 @@ export function createLayoutEditor(root, env) {
     const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
     if (moves[e.key]) {
       e.preventDefault();
+      env.checkpoint('nudge');
       if (isGrid(l) && sel.length === 1 && sel[0].kind === 'plot') {
         // In grid mode a plot steps to the next cell over.
         const { cols } = gridCells(l);

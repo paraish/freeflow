@@ -390,7 +390,13 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
   grid-template-columns: 260px minmax(0, 1fr) 320px;
 }
 .lay-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.lay-samples-side { grid-column: 1; }
+.lay-left { grid-column: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* In Layout the Folders pane sits above the folder's samples. */
+.lay-left .sidebar { position: static; }
+.lay-left .groups.sidebar { max-height: 42vh; }
+.lay-left .lay-samples-side { max-height: 70vh; }
+.lay-order { flex: none; align-self: center; min-width: 20px; margin-right: 4px; text-align: right; font: 11px var(--font-mono); color: var(--muted); }
+.lay-label { color: var(--accent); }
 .lay-pop[draggable="true"] .pop-pick { cursor: grab; }
 .lay-stage.is-drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; }
 .lay-sub { margin-top: 10px; }
@@ -433,7 +439,7 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 }
 @media (max-width: 760px) {
   .layout-view { grid-template-columns: minmax(0, 1fr); }
-  .lay-samples-side { grid-column: auto; }
+  .lay-left { grid-column: auto; }
 }
 
 /* ---- compensation calculator */
@@ -594,3 +600,11 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .topbar-check[hidden] { display: none; }
 /* Grid cells on a layout page in Snap to grid mode (editor only). */
 .lay-cell { position: absolute; border: 1px dashed rgba(29, 95, 196, 0.28); border-radius: 3px; pointer-events: none; }
+
+/* A name for each sample (for figures), under its row in the Samples pane. */
+.label-row { padding: 0 10px 4px 58px; }
+.label-box { width: 100%; height: 22px; font: 12px var(--font-sans); color: var(--fg); border: 1px solid transparent; border-radius: 4px; background: transparent; padding: 0 6px; }
+.label-box::placeholder { color: var(--muted); opacity: 0.7; }
+.label-box:hover { border-color: var(--line); }
+.label-box:focus { border-color: var(--accent); background: var(--surface); outline: none; }
+.tile-label { font-weight: 500; color: var(--accent); }

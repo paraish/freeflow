@@ -172,19 +172,22 @@
   </div>
 
   <section id="layout-view" class="layout-view" hidden aria-label="Layout editor">
+    <div id="lay-left" class="lay-left">
+    <div id="lay-folders-slot" class="lay-folders-slot"></div>
     <aside class="sidebar lay-samples-side" aria-label="Samples and their populations">
       <section class="panel">
         <header class="panel-head">
-          <h2>Samples</h2>
+          <h2 id="lay-samples-title">Samples</h2>
           <span class="head-actions">
             <button class="btn btn-quiet btn-small" data-act="ls-expand">Expand all</button>
             <button class="btn btn-quiet btn-small" data-act="ls-collapse">Collapse all</button>
           </span>
         </header>
         <ul id="lay-samples" class="ws-list scroll"></ul>
-        <p class="tree-hint">Click a population to add its plot to the page, or drag it to where you want it.</p>
+        <p class="tree-hint">The samples of the folder picked above, in its order and with their names. Click a population to add its plot to the page, or drag it to where you want it.</p>
       </section>
     </aside>
+    </div>
     <div id="lay-main" class="lay-main">
       <div id="lay-stage" class="lay-stage"></div>
       <section id="lay-edit" class="lay-edit" hidden aria-label="Edit this plot's gates">
@@ -204,6 +207,7 @@
         <ul id="lay-items" class="lay-list"></ul>
         <div class="btn-row lay-add">
           <button class="btn btn-small" data-act="add-text">Add text</button>
+          <button class="btn btn-small" data-act="add-label" title="A text item showing each sample's name from the Samples pane; filled in for every copy in batch">Add name label</button>
           <button class="btn btn-small btn-danger" data-act="del-layout">Delete layout</button>
         </div>
         <p class="tree-hint">Shift- or Ctrl/⌘-click to select several. Arrow keys nudge the selection; with Shift, further.</p>

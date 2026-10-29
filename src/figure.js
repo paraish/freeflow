@@ -28,7 +28,7 @@ export function fillTokens(text, ctx) {
   return String(text ?? '').replace(/\{([^{}\n]{1,60})\}/g, (m, raw) => {
     const name = raw.trim();
     const known = {
-      sample: ctx.sample, file: ctx.file, population: ctx.population, parent: ctx.parent, path: ctx.path,
+      sample: ctx.sample, label: ctx.label, file: ctx.file, population: ctx.population, parent: ctx.parent, path: ctx.path,
       count: ctx.count, freq: ctx.freq, freqtotal: ctx.freqTotal, x: ctx.x, y: ctx.y, n: ctx.n,
     }[name.toLowerCase()];
     if (known !== undefined && known !== null) return String(known);
@@ -53,8 +53,9 @@ function tickLabelSVG(label) {
 function textLines(lines, x, y, size, opts = {}) {
   const anchor = opts.anchor || 'start';
   const weight = opts.bold ? ' font-weight="bold"' : '';
-  const fill = opts.fill || '#000000';
-  return lines.map((ln, i) => `<text x="${f(x)}" y="${f(y + i * size * 1.25)}" font-family="${FONT}" font-size="${f(size)}"${weight} fill="${fill}" text-anchor="${anchor}">${esc(ln)}</text>`).join('');
+  const style = opts.italic ? ' font-style="italic"' : '';
+  const fill = /^#[0-9a-f]{6}$/i.test(opts.fill || '') ? opts.fill : '#000000';
+  return lines.map((ln, i) => `<text x="${f(x)}" y="${f(y + i * size * 1.25)}" font-family="${FONT}" font-size="${f(size)}"${weight}${style} fill="${fill}" text-anchor="${anchor}">${esc(ln)}</text>`).join('');
 }
 
 // Keep labels of the same axis from overlapping.
@@ -171,7 +172,7 @@ export function textSVG(t) {
   const lines = String(t.text ?? '').split('\n');
   const anchor = t.align === 'center' ? 'middle' : t.align === 'right' ? 'end' : 'start';
   const x = anchor === 'middle' ? t.x + t.w / 2 : anchor === 'end' ? t.x + t.w : t.x;
-  return `<g class="text">${textLines(lines, x, t.y + fs, fs, { anchor, bold: t.bold })}</g>`;
+  return `<g class="text">${textLines(lines, x, t.y + fs, fs, { anchor, bold: t.bold, italic: t.italic, fill: t.color })}</g>`;
 }
 
 // A whole page (or batch sheet) as a standalone SVG document.

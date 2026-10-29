@@ -132,6 +132,9 @@ with one click).
     order, so the same sample can be first in one folder and last in another; **Run order**
     puts a folder back in run order. Group gating tiles and batch layouts follow the folder's
     order.
+  - **Name**: the box under each sample gives it a name for figures (for example a code such as
+    WT-1). Layouts show it with `{label}` (or the **Add name label** button), filling in each
+    sample's own name in batch; the statistics table gets a Name column.
   - **Selecting several**: Ctrl/⌘-click or Shift-click samples, then drag any of them onto a
     folder to add them all, or use a row's − / × or the Delete key on all of them at once.
   - **Delete / Backspace** with samples selected does what their row button does: in a folder
@@ -172,9 +175,9 @@ with one click).
 
 ## Layouts and figures
 
-Switch to **Layout** (top bar) to arrange figures. The **Samples** sidebar lists every sample
-with its populations (collapsible, scrolls on its own): click a population to add its plot, or
-drag it to where you want it on the page. A plot taken from another sample stays on that
+Switch to **Layout** (top bar) to arrange figures. On the left are the **Folders** and, below
+them, the picked folder's samples in that folder's order and with their names, each with its
+populations: click a population to add its plot, or drag it to where you want it on the page. A plot taken from another sample stays on that
 sample; one from the page's sample follows the page (and every sample in batch mode). In
 Gating, **Add to layout** places the plot you are looking at.
 
@@ -185,14 +188,19 @@ Gating, **Add to layout** places the plot you are looking at.
   columns and rows. In grid mode the plots fill square cells in order, below any title at the
   top of the page. Drop a new plot on a cell, or drag a plot to another cell, and the others
   move along; arrow keys move the selected plot one cell. Rows are added when the plots don't
-  fit. Text items stay free.
+  fit. Text floats over the page and never moves the grid; **Grid starts at** leaves room for a
+  title.
+- **Undo** and **Redo** (top bar, or Ctrl/⌘+Z and Ctrl/⌘+Shift+Z) work in Layout too.
+- **Add name label** places a text item showing `{label}`, each sample's name from the Samples
+  pane (or its file name if it has none); in batch every copy shows its own sample's name. Text
+  items have font size, alignment, bold, italic and colour.
 - **Double-click a plot** to edit its gates without leaving the layout: it opens below the
   page with the gating tools. Draw new gates (a name box opens), move and reshape gates,
   double-click a gate to rename it, Delete to remove it, and change the axes; the figure
   updates as you go. Esc or **Done** closes it.
 - Per plot: sample, population, plot type (pseudocolor, dot, histogram), X and Y channels,
   title, axis labels, font size, dot size, width and height, gates and gate labels on or off.
-- Text items and titles take fill-ins: `{sample}`, `{population}`, `{parent}`, `{count}`,
+- Text items and titles take fill-ins: `{sample}`, `{label}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
 - **Batch** repeats the page for every sample, in a grid: set the number of **Columns** and/or
