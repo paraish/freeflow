@@ -56,6 +56,10 @@ export function createLayoutEditor(root, env) {
   // copySel: plots selected in particular copies of a batch, as "<copy>:<item id>"
   // (copy 0 is the one being edited); exportScope: 'all', 'sel' or null (automatic).
   const ui = { layoutId: null, sel: null, multi: new Set(), copySel: new Set(), exportScope: null, zoom: 1, previewUrl: null, previewTimer: null, origin: null, blocks: null, editMark: null };
+  // shut: the cards on the right folded away ('export', 'page', 'batch',
+  // 'item', 'text'), remembered in this browser.
+  ui.shut = new Set();
+  try { ui.shut = new Set(JSON.parse(localStorage.getItem('freeflow.layoutCardsShut') || '[]')); } catch { /* none folded */ }
   const imageCache = new Map();
   const $ = (id) => root.querySelector(`#${id}`);
 
@@ -429,7 +433,7 @@ export function createLayoutEditor(root, env) {
     clearTimeout(ui.previewTimer);
     ui.previewTimer = setTimeout(async () => {
       const img = $('lay-preview');
-      if (!img || root.hidden) return;
+      if (!img || root.hidden || !img.closest('details')?.open) return;
       const sh = exportSheet(current());
       try {
         const blob = await svgToPngBlob(sh.svg, sh.width, sh.height, 1.5);
@@ -571,6 +575,8 @@ export function createLayoutEditor(root, env) {
     const num = (id, v, attrs = '') => `<input id="${id}" type="number" value="${+(+v).toFixed(1)}" ${attrs}>`;
     const txt = (id, v, ph = '') => `<input id="${id}" type="text" value="${escH(v ?? '')}" placeholder="${escH(ph)}" autocomplete="off">`;
     const check = (id, v, label) => `<label class="check check-small"><input id="${id}" type="checkbox" ${v ? 'checked' : ''}> ${label}</label>`;
+    // Each card folds away from its heading (see ui.shut).
+    const fold = (key) => (ui.shut.has(key) ? '' : 'open');
     // A slider with its value beside it; the plots change when it is let go.
     const slider = (id, v, min, max, step, title = '') => `<span class="lay-slider"${title ? ` title="${title}"` : ''}><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${v}"><output for="${id}">${sliderText(id, v)}</output></span>`;
     const fontSelect = (id, v) => `<select id="${id}">${[['sans', 'Sans-serif (Arial)'], ['serif', 'Serif (Times)'], ['mono', 'Monospace (Courier)']].map(([k, t]) => `<option value="${k}" ${(v || 'sans') === k ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
@@ -606,9 +612,9 @@ export function createLayoutEditor(root, env) {
           ${check('lp-gates', it.showGates !== false, 'Show gates')}
         </div>
         <div class="btn-row"><button class="btn" data-act="copy-item">Copy plot as image</button><button class="btn" data-act="dup-item">Duplicate</button><button class="btn btn-danger" data-act="del-item">Delete</button></div>
-      </section>
-      <section class="card">
-        <header class="card-head"><span class="eyebrow">Plot text</span></header>
+      </details>
+      <details class="card" data-card="text" ${fold('text')}>
+        <summary class="card-head"><span class="eyebrow">Plot text</span></summary>
         ${plotTextHTML(it, view, s)}`;
     } else if (it?.kind === 'text') {
       itemHTML = `
@@ -627,8 +633,8 @@ export function createLayoutEditor(root, env) {
 
     // Export first, so it is always at hand.
     el.innerHTML = `
-      <section class="card">
-        <header class="card-head"><span class="eyebrow">Export</span></header>
+      <details class="card" data-card="export" ${fold('export')}>
+        <summary class="card-head"><span class="eyebrow">Export</span></summary>
         ${(() => {
           const n = exportTargets().length;
           const scope = exportScope();
@@ -644,9 +650,9 @@ export function createLayoutEditor(root, env) {
         </div>
         <p class="muted small">SVG keeps text, axes and gates editable in Illustrator, Inkscape or PowerPoint. Right-click the preview to copy it.</p>
         <img id="lay-preview" class="lay-preview" alt="Preview of the layout">
-      </section>
-      <section class="card">
-        <header class="card-head"><span class="eyebrow">Page</span></header>
+      </details>
+      <details class="card" data-card="page" ${fold('page')}>
+        <summary class="card-head"><span class="eyebrow">Page</span></summary>
         <div class="fields">
           ${field('', 'Name', txt('lpg-name', l.name))}
           ${field('', 'Size', `<select id="lpg-size">${pageOptions(l)}</select>`)}
@@ -683,24 +689,24 @@ export function createLayoutEditor(root, env) {
           ${field('', 'Colour', `<input id="lpg-idcolor" type="color" value="${escH(/^#[0-9a-f]{6}$/i.test(l.idColor || '') ? l.idColor : '#000000')}">`)}
           <p class="muted small">Shown above each copy. "Name" is the name given to the sample in the Samples pane.</p>` : ''}` : ''}
         </div>
-      </section>
+      </details>
       ${l.batch && l.items.some((x) => x.kind === 'plot') ? (() => {
         const ref = l.items.find((x) => x.kind === 'plot');
         const ps = sampleFor(ref, pageSampleOf(l));
-        return `<section class="card">
-        <header class="card-head"><span class="eyebrow">All plots in the batch</span></header>
+        return `<details class="card" data-card="batch" ${fold('batch')}>
+        <summary class="card-head"><span class="eyebrow">All plots in the batch</span></summary>
         <p class="muted small">Changes here apply to every plot, in every copy. Shown: the first plot's settings.</p>
         <div class="fields">
           ${field('', 'Dot size', slider('lb-dot', ref.dotSize || 1, 1, 6, 1))}
           ${field('', 'Colour depth', slider('lb-depth', ref.depth || 0, 0, 1, 0.1, '0 as designed; up to 1 for deeper colours, for plots that look pale (pseudocolor plots)'))}
         </div>
         ${plotTextHTML(ref, itemView(ref, ps), ps, 'lb')}
-      </section>`;
+      </details>`;
       })() : ''}
-      <section class="card">
-        <header class="card-head"><span class="eyebrow">${many > 1 ? 'Items' : it ? (it.kind === 'text' ? 'Text' : 'Plot') : 'Item'}</span></header>
+      <details class="card" data-card="item" ${fold('item')}>
+        <summary class="card-head"><span class="eyebrow">${many > 1 ? 'Items' : it ? (it.kind === 'text' ? 'Text' : 'Plot') : 'Item'}</span></summary>
         ${itemHTML}
-      </section>`;
+      </details>`;
   }
 
   // ---------------------------------------------------------------- samples sidebar
@@ -1321,6 +1327,16 @@ export function createLayoutEditor(root, env) {
   }
 
   root.addEventListener('click', onClick);
+  // A card folded or opened.
+  root.addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (!d.matches?.('#lay-props details[data-card]')) return;
+    const key = d.dataset.card;
+    if (d.open === !ui.shut.has(key)) return;
+    if (d.open) ui.shut.delete(key); else ui.shut.add(key);
+    try { localStorage.setItem('freeflow.layoutCardsShut', JSON.stringify([...ui.shut])); } catch { /* not kept */ }
+    if (d.open && key === 'export') schedulePreview();
+  }, true);
   // Axis title menus get their channels just before they open.
   const axisMenu = (e) => { const sel = e.target.closest?.('.lay-axis-hot select'); if (sel) fillAxisMenu(sel); };
   root.addEventListener('pointerdown', axisMenu, true);

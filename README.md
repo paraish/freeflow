@@ -245,6 +245,8 @@ Gating, **Add to layout** places the plot you are looking at.
     the selected plots, each with its sample ID, cropped to fit. It switches to the selection by
     itself when two or more plots are selected. Each copy is only as big as
   the items on the page (plus a small margin), so a half-filled page gives compact copies.
+- The cards on the right (Export, Page, the plot or text settings, Plot text, All plots in the
+  batch) each fold away from their heading; the browser remembers which are folded.
 - Export (the first card on the right): **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
   Illustrator, Inkscape or PowerPoint; density clouds embedded as images), **Download PNG**,
   **Copy as image**, **Copy plot as image** for one plot, and a preview image you can

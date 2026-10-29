@@ -332,7 +332,7 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 .card-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 summary.card-head { cursor: pointer; list-style: none; }
 summary.card-head::-webkit-details-marker { display: none; }
-summary.card-head::before { content: "▸"; color: var(--muted); font-size: 10px; }
+summary.card-head::before { content: "▸"; color: var(--muted); font-size: 12px; }
 details[open] > summary.card-head::before { content: "▾"; }
 details.card:not([open]) { gap: 0; }
 .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
