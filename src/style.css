@@ -464,13 +464,16 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .lay-props { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .lay-props select { height: 28px; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunk); padding: 0 6px; min-width: 0; width: 100%; }
 .lay-props .field { grid-template-columns: 96px minmax(0, 1fr); }
+.lay-slider { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lay-slider input { flex: 1; min-width: 0; accent-color: var(--accent); }
+.lay-slider output { flex: none; width: 26px; text-align: right; font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; }
 .field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .field-pair .field { grid-template-columns: auto minmax(0, 1fr); }
 .field-stack { grid-template-columns: minmax(0, 1fr) !important; }
 .field textarea { width: 100%; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunk); padding: 6px 8px; resize: vertical; }
 .check-small { font-weight: 400; font-size: 13px; }
 .check.is-off { opacity: 0.45; cursor: default; }
-.lay-preview { width: 100%; border: 1px solid var(--line); border-radius: 4px; background: #ffffff; min-height: 40px; }
+.lay-preview { width: 100%; max-height: 240px; object-fit: contain; border: 1px solid var(--line); border-radius: 4px; background: #ffffff; min-height: 40px; }
 @media (max-width: 1240px) {
   .layout-view { grid-template-columns: 240px minmax(0, 1fr); }
   .lay-right { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }

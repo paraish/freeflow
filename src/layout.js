@@ -45,6 +45,7 @@ export function newLayout(name = 'Layout 1') {
  *   plotDefaults(), setPlotDefaults(d)       text sizes and gate labels new plots start with
  *   renameGate(key, path, rect)              open the name box for a gate
  *   shortLabel(s, name)                      a channel's stain, or its name
+ *   look()                                   { dotSize, depth } used in Gating
  * }
  */
 export function createLayoutEditor(root, env) {
@@ -469,17 +470,17 @@ export function createLayoutEditor(root, env) {
     // A resize handle on a single selected item, unless the grid sets its size.
     const handle = (it) => selIds.size === 1 && selIds.has(it.id) && !(isGrid(l) && it.kind === 'plot');
     const overlays = l.items.map((it) => `<div class="lay-box${selIds.has(it.id) ? ' is-sel' : ''}" data-id="${it.id}" style="left:${(it.x + o.dx) * z}px;top:${(it.y + o.dy) * z}px;width:${it.w * z}px;height:${it.h * z}px">${handle(it) ? '<span class="lay-resize" data-act="resize" aria-hidden="true"></span>' : ''}</div>`).join('');
-    // A channel menu over each plot's axis titles: click a title to change it.
-    const pageSample = ui.blocks?.[0]?.sample || pageSampleOf(l);
-    const axisHot = l.items.filter((it) => it.kind === 'plot').map((it) => {
-      const s = sampleFor(it, pageSample);
+    // A channel menu over each plot's axis titles, in every copy of a batch:
+    // click a title to change it (for every copy). Each menu holds only its
+    // channel until it is opened (see fillAxisMenu), so big batches stay light.
+    const axisHot = (ui.blocks || []).map((bl, b) => l.items.filter((it) => it.kind === 'plot').map((it) => {
+      const s = sampleFor(it, bl.sample);
       if (!s) return '';
       const view = itemView(it, s);
-      const spots = axisSpots({ x: it.x + o.dx, y: it.y + o.dy, w: it.w, h: it.h, fontSize: it.fontSize || 11, sizes: it.sizes, hasTitle: !!String(it.title ?? '').trim() });
-      const opts = (sel) => env.menuChannels(s, [view.x, view.y]).map((c) => `<option value="${escH(c.name)}" ${c.name === sel ? 'selected' : ''}>${escH(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('');
-      const spot = (axis, r) => `<label class="lay-axis-hot" title="Click to change the ${axis.toUpperCase()} channel" style="left:${r.x * z}px;top:${r.y * z}px;width:${r.w * z}px;height:${r.h * z}px"><select data-item="${it.id}" data-axis="${axis}" aria-label="${axis.toUpperCase()} channel">${opts(view[axis])}</select></label>`;
+      const spots = axisSpots({ x: it.x + bl.dx, y: it.y + bl.dy, w: it.w, h: it.h, fontSize: it.fontSize || 11, sizes: it.sizes, hasTitle: !!String(it.title ?? '').trim() });
+      const spot = (axis, r) => `<label class="lay-axis-hot" title="Click to change the ${axis.toUpperCase()} channel${l.batch ? ' (in every copy)' : ''}" style="left:${r.x * z}px;top:${r.y * z}px;width:${r.w * z}px;height:${r.h * z}px"><select data-item="${it.id}" data-block="${b}" data-axis="${axis}" aria-label="${axis.toUpperCase()} channel"><option value="${escH(view[axis])}" selected>${escH(env.channelLabel(s, view[axis]))}</option></select></label>`;
       return spot('x', spots.x) + (view.type === 'histogram' ? '' : spot('y', spots.y));
-    }).join('');
+    }).join('')).join('');
     // The grid's cells, faintly, while editing (not part of the figure).
     const cells = isGrid(l) ? gridCells(l).cells.map((c) => `<div class="lay-cell" style="left:${(c.x + o.dx) * z}px;top:${(c.y + o.dy) * z}px;width:${c.w * z}px;height:${c.h * z}px"></div>`).join('') : '';
     stage.innerHTML = `<div class="lay-sheet" style="width:${sh.width * z}px;height:${sh.height * z}px">
@@ -491,6 +492,20 @@ export function createLayoutEditor(root, env) {
     svg.setAttribute('height', sh.height * z);
     schedulePreview();
   }
+
+  // Fills an axis title's channel menu as it opens.
+  function fillAxisMenu(sel) {
+    if (sel.dataset.filled) return;
+    const it = itemById(sel.dataset.item);
+    const s = it && sampleFor(it, ui.blocks?.[+sel.dataset.block]?.sample || null);
+    if (!s) return;
+    const view = itemView(it, s);
+    const cur = view[sel.dataset.axis];
+    sel.innerHTML = env.menuChannels(s, [view.x, view.y]).map((c) => `<option value="${escH(c.name)}" ${c.name === cur ? 'selected' : ''}>${escH(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('');
+    sel.dataset.filled = '1';
+  }
+
+  const sliderText = (id, v) => (id.endsWith('depth') ? (+v).toFixed(1) : String(v));
 
   function pageOptions(l) {
     return PAGE_SIZES.map((p) => `<option value="${p.id}" ${l.size === p.id ? 'selected' : ''}>${p.label}</option>`).join('');
@@ -556,6 +571,8 @@ export function createLayoutEditor(root, env) {
     const num = (id, v, attrs = '') => `<input id="${id}" type="number" value="${+(+v).toFixed(1)}" ${attrs}>`;
     const txt = (id, v, ph = '') => `<input id="${id}" type="text" value="${escH(v ?? '')}" placeholder="${escH(ph)}" autocomplete="off">`;
     const check = (id, v, label) => `<label class="check check-small"><input id="${id}" type="checkbox" ${v ? 'checked' : ''}> ${label}</label>`;
+    // A slider with its value beside it; the plots change when it is let go.
+    const slider = (id, v, min, max, step, title = '') => `<span class="lay-slider"${title ? ` title="${title}"` : ''}><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${v}"><output for="${id}">${sliderText(id, v)}</output></span>`;
     const fontSelect = (id, v) => `<select id="${id}">${[['sans', 'Sans-serif (Arial)'], ['serif', 'Serif (Times)'], ['mono', 'Monospace (Courier)']].map(([k, t]) => `<option value="${k}" ${(v || 'sans') === k ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
     const tokensHelp = '<p class="muted small">Fill-ins: {sample} {label} {population} {parent} {count} {freq} {freqTotal} {x} {y}, or any keyword in braces, such as {$DATE} or {DONOR}. {label} is the name given to the sample in the Samples pane (or its file name).</p>';
 
@@ -582,8 +599,9 @@ export function createLayoutEditor(root, env) {
           ${field('', 'Plot type', `<select id="lp-type">${[['pseudo', 'Pseudocolor'], ['dot', 'Dot'], ['histogram', 'Histogram']].map(([v, t]) => `<option value="${v}" ${view.type === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
           ${field('', 'X channel', `<select id="lp-x">${chOpts(view.x)}</select>`)}
           ${view.type === 'histogram' ? '' : field('', 'Y channel', `<select id="lp-y">${chOpts(view.y)}</select>`)}
-          ${view.type === 'histogram' ? '' : field('', 'Dot size', num('lp-dot', it.dotSize || 1, 'min="1" max="6" step="1"'))}
-          ${view.type === 'pseudo' ? field('', 'Colour depth', num('lp-depth', it.depth || 0, 'min="0" max="1" step="0.1" title="0 as designed; up to 1 for deeper colours"')) : ''}
+          ${view.type === 'histogram' ? '' : field('', 'Dot size', slider('lp-dot', it.dotSize || 1, 1, 6, 1))}
+          ${view.type === 'pseudo' ? field('', 'Colour depth', slider('lp-depth', it.depth || 0, 0, 1, 0.1, '0 as designed; up to 1 for deeper colours, for plots that look pale')) : ''}
+          ${view.type !== 'histogram' && !l.batch && l.items.filter((x) => x.kind === 'plot').length > 1 ? '<div class="btn-row"><button class="btn btn-small" data-act="look-all" title="Give every plot on this page this dot size and colour depth">Same dot size &amp; colour depth for every plot</button></div>' : ''}
           ${isGrid(l) ? '<p class="muted small">Size and place are set by the grid (Page → Arrange).</p>' : `<div class="field-pair">${field('', 'Width', num('lp-w', it.w, 'min="80" step="4"'))}${field('', 'Height', num('lp-h', it.h, 'min="80" step="4"'))}</div>`}
           ${check('lp-gates', it.showGates !== false, 'Show gates')}
         </div>
@@ -607,7 +625,26 @@ export function createLayoutEditor(root, env) {
         <div class="btn-row"><button class="btn" data-act="dup-item">Duplicate</button><button class="btn btn-danger" data-act="del-item">Delete</button></div>`;
     }
 
+    // Export first, so it is always at hand.
     el.innerHTML = `
+      <section class="card">
+        <header class="card-head"><span class="eyebrow">Export</span></header>
+        ${(() => {
+          const n = exportTargets().length;
+          const scope = exportScope();
+          return `<div class="fields"><label class="field"><span>What</span><select id="lay-export-scope">
+            <option value="all" ${scope === 'all' ? 'selected' : ''}>${l.batch ? 'Entire batch' : 'Entire page'}</option>
+            <option value="sel" ${scope === 'sel' ? 'selected' : ''} ${n ? '' : 'disabled'}>Selected ${l.batch ? 'plot' : 'item'}${n === 1 ? '' : 's'}${n ? ` (${n})` : ''}</option>
+          </select></label></div>`;
+        })()}
+        <div class="btn-row">
+          <button class="btn btn-primary" data-act="svg">Download SVG</button>
+          <button class="btn" data-act="png">Download PNG</button>
+          <button class="btn" data-act="copy">Copy as image</button>
+        </div>
+        <p class="muted small">SVG keeps text, axes and gates editable in Illustrator, Inkscape or PowerPoint. Right-click the preview to copy it.</p>
+        <img id="lay-preview" class="lay-preview" alt="Preview of the layout">
+      </section>
       <section class="card">
         <header class="card-head"><span class="eyebrow">Page</span></header>
         <div class="fields">
@@ -626,7 +663,7 @@ export function createLayoutEditor(root, env) {
             const steps = ok ? strategySteps(l) : null;
             const off = ok ? '' : 'disabled';
             return `<div class="field-pair"><label class="check check-small${ok ? '' : ' is-off'}" title="${ok ? 'A line above the figure with each gate down to the plotted population, and the channels it was drawn on' : 'Needs exactly one plot on the page'}"><input id="lpg-strategy" type="checkbox" ${ok && l.showStrategy ? 'checked' : ''} ${off}> Show gating strategy</label>${field('', 'Size', num('lpg-stratsize', l.strategySize || 12, `min="6" max="48" step="0.5" title="Text size of the gating strategy" ${off}`))}</div>
-          ${!ok ? `<p class="muted small">Needs exactly one plot on the page (there ${plots === 0 ? 'are none' : `are ${plots}`}); batch it to repeat it for every sample.</p>`
+          ${!ok ? `<p class="muted small">Needs exactly one plot on the page (there ${plots === 0 ? 'are none' : `are ${plots}`})${l.batch ? '' : '; batch it to repeat it for every sample'}.</p>`
             : l.showStrategy ? `
           <div class="field-pair">${field('', 'Font', fontSelect('lpg-stratfont', l.strategyFont))}${field('', 'Align', `<select id="lpg-stratalign">${[['left', 'Left'], ['center', 'Centred'], ['right', 'Right']].map(([v, t]) => `<option value="${v}" ${(l.strategyAlign || 'left') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}</div>
           <div class="field-pair">${check('lpg-stratbold', l.strategyBold, 'Bold')}${check('lpg-stratitalic', l.strategyItalic, 'Italic')}</div>
@@ -651,32 +688,18 @@ export function createLayoutEditor(root, env) {
         const ref = l.items.find((x) => x.kind === 'plot');
         const ps = sampleFor(ref, pageSampleOf(l));
         return `<section class="card">
-        <header class="card-head"><span class="eyebrow">Plot text — all plots in the batch</span></header>
+        <header class="card-head"><span class="eyebrow">All plots in the batch</span></header>
         <p class="muted small">Changes here apply to every plot, in every copy. Shown: the first plot's settings.</p>
+        <div class="fields">
+          ${field('', 'Dot size', slider('lb-dot', ref.dotSize || 1, 1, 6, 1))}
+          ${field('', 'Colour depth', slider('lb-depth', ref.depth || 0, 0, 1, 0.1, '0 as designed; up to 1 for deeper colours, for plots that look pale (pseudocolor plots)'))}
+        </div>
         ${plotTextHTML(ref, itemView(ref, ps), ps, 'lb')}
       </section>`;
       })() : ''}
       <section class="card">
         <header class="card-head"><span class="eyebrow">${many > 1 ? 'Items' : it ? (it.kind === 'text' ? 'Text' : 'Plot') : 'Item'}</span></header>
         ${itemHTML}
-      </section>
-      <section class="card">
-        <header class="card-head"><span class="eyebrow">Export</span></header>
-        ${(() => {
-          const n = exportTargets().length;
-          const scope = exportScope();
-          return `<div class="fields"><label class="field"><span>What</span><select id="lay-export-scope">
-            <option value="all" ${scope === 'all' ? 'selected' : ''}>${l.batch ? 'Entire batch' : 'Entire page'}</option>
-            <option value="sel" ${scope === 'sel' ? 'selected' : ''} ${n ? '' : 'disabled'}>Selected ${l.batch ? 'plot' : 'item'}${n === 1 ? '' : 's'}${n ? ` (${n})` : ''}</option>
-          </select></label></div>`;
-        })()}
-        <div class="btn-row">
-          <button class="btn btn-primary" data-act="svg">Download SVG</button>
-          <button class="btn" data-act="png">Download PNG</button>
-          <button class="btn" data-act="copy">Copy as image</button>
-        </div>
-        <p class="muted small">SVG keeps text, axes and gates editable in Illustrator, Inkscape or PowerPoint. Right-click the preview to copy it.</p>
-        <img id="lay-preview" class="lay-preview" alt="Preview of the layout">
       </section>`;
   }
 
@@ -811,7 +834,11 @@ export function createLayoutEditor(root, env) {
       id: newId('i'), kind: 'plot', ...pos, w, h, sampleKey, path: s ? env.pathOf(pop) : [],
       view: view ? { ...view } : null, title: '{population}', xLabel: '', yLabel: '', fontSize: 11, showGates: true, showLabels: true,
     };
-    // Text settings kept with "Set for all plots".
+    // The dot size and colour depth used in Gating, then the text settings
+    // kept with "Set for all plots".
+    const look = env.look();
+    if (look.dotSize > 1) item.dotSize = look.dotSize;
+    if (look.depth > 0) item.depth = look.depth;
     const d = env.plotDefaults();
     if (d) applyDefaults(item, d);
     l.items.push(item);
@@ -872,6 +899,11 @@ export function createLayoutEditor(root, env) {
     if (!l) return;
     const t = e.target;
     if (t.id === 'lay-export-scope') { ui.exportScope = t.value; schedulePreview(); return; }
+    // Sliders show their value as they move and change the plots when let go.
+    if (t.type === 'range') {
+      t.nextElementSibling.textContent = sliderText(t.id, t.value);
+      if (e.type === 'input') return;
+    }
     // One undo step per field being edited, not per keystroke.
     env.checkpoint(`${t.id}:${ui.sel}`);
     const it = itemById(ui.sel);
@@ -909,6 +941,12 @@ export function createLayoutEditor(root, env) {
       case 'lpg-sample': l.sampleKey = val || null; return changed({ props: true });
       case 'lpg-batch': l.batch = val; return changed({ props: true });
       case 'lpg-strategy': l.showStrategy = val; return changed({ props: true });
+      case 'lb-dot': case 'lb-depth':
+        for (const x of l.items) {
+          if (x.kind !== 'plot') continue;
+          if (t.id === 'lb-dot') x.dotSize = Math.round(n); else x.depth = n;
+        }
+        return changed();
       case 'lpg-stratsize': if (n >= 6) { l.strategySize = n; changed(); } return;
       case 'lpg-stratfont': l.strategyFont = val; return changed();
       case 'lpg-stratalign': l.strategyAlign = val; return changed();
@@ -1033,6 +1071,13 @@ export function createLayoutEditor(root, env) {
       return render();
     }
     if (act === 'copy-item' && it) return copyImage(singleItemSheet(it));
+    if (act === 'look-all' && it?.kind === 'plot') {
+      env.checkpoint();
+      for (const x of l.items) if (x.kind === 'plot') Object.assign(x, { dotSize: it.dotSize || 1, depth: it.depth || 0 });
+      env.changed();
+      env.toast('Every plot on this page has this dot size and colour depth.');
+      return render();
+    }
     if (act === 'text-keep') {
       // The sizes and gate labels of the selected plot (or, from the batch
       // card, the first plot) on every plot in every layout, and the default
@@ -1276,6 +1321,10 @@ export function createLayoutEditor(root, env) {
   }
 
   root.addEventListener('click', onClick);
+  // Axis title menus get their channels just before they open.
+  const axisMenu = (e) => { const sel = e.target.closest?.('.lay-axis-hot select'); if (sel) fillAxisMenu(sel); };
+  root.addEventListener('pointerdown', axisMenu, true);
+  root.addEventListener('focusin', axisMenu);
   root.addEventListener('input', (e) => { if (e.target.closest('#lay-props')) onPropInput(e); });
   root.addEventListener('change', (e) => {
     const t = e.target;
@@ -1283,7 +1332,7 @@ export function createLayoutEditor(root, env) {
     const hot = t.closest('.lay-axis-hot');
     if (hot) {
       const it = itemById(t.dataset.item);
-      const s = it && sampleFor(it, ui.blocks?.[0]?.sample || pageSampleOf(current()));
+      const s = it && sampleFor(it, ui.blocks?.[+t.dataset.block || 0]?.sample || pageSampleOf(current()));
       if (!it) return;
       env.checkpoint();
       it.view = { ...itemView(it, s), [t.dataset.axis]: t.value };
@@ -1291,6 +1340,7 @@ export function createLayoutEditor(root, env) {
       return;
     }
     // Order and names of the folder's samples.
+    if (t.type === 'range' && t.closest('#lay-props')) onPropInput(e);
     if (t.matches('#lay-samples .order-box')) env.setOrder(t.dataset.sample, t.value);
     if (t.matches('#lay-samples .label-box')) env.setLabel(t.dataset.sample, t.value);
   });
@@ -1336,7 +1386,16 @@ export function createLayoutEditor(root, env) {
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
   document.addEventListener('keydown', onKey);
-  new ResizeObserver(() => { if (!root.hidden) renderStage(); }).observe(root);
+  // Redrawn when the stage changes width (the sheet is scaled to fit it), and
+  // not otherwise: a redraw would close a channel menu that is open.
+  let stageW = 0;
+  new ResizeObserver(() => {
+    if (root.hidden) return;
+    const w = $('lay-stage').clientWidth;
+    if (w === stageW) return;
+    stageW = w;
+    renderStage();
+  }).observe(root);
 
   return {
     render,

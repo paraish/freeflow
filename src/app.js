@@ -3014,6 +3014,7 @@ function layoutEnv() {
     plotDefaults: () => S.plotDefaults,
     setPlotDefaults: (d) => { S.plotDefaults = d; },
     shortLabel,
+    look: () => ({ dotSize: S.dotSize, depth: S.depth }),
     setOrder: (key, raw) => { const s = S.samples.find((x) => sampleKey(x) === key); if (s) setSampleOrder(currentGroup(), s, raw); },
     setLabel: (key, raw) => { const s = S.samples.find((x) => sampleKey(x) === key); if (s) setSampleLabel(s, raw); },
     folderName: () => currentGroup().name,

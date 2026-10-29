@@ -87,7 +87,7 @@ with one click).
   (or use the X and Y menus above the plot). **Dot size** (beside the plot types) makes each
   event bigger, and **Colour depth** deepens the pseudocolor colours (same colour scale) for
   plots that look pale, such as small populations; figures in Layout have their own Dot size
-  and Colour depth.
+  and Colour depth sliders, and new layout plots start with the ones set here.
 - **Gates**: rectangle, polygon, quadrant, range. A name box opens as soon as a gate is drawn
   (Enter to keep the name, Esc to keep the default). Hover a gate in the trees for ✎ (rename)
   and × (delete, with the gates under it; click twice to confirm, Ctrl/⌘+Z to undo). Move gates, drag their corners, rename,
@@ -193,7 +193,8 @@ Gating, **Add to layout** places the plot you are looking at.
 - Drag items to move them, drag the corner to resize, arrow keys to nudge (Shift for bigger
   steps), Delete to remove. Shift- or Ctrl/⌘-click (on the page or in **On this page**), or drag a
   box on an empty part of the page, to select several items to move, nudge or delete together.
-- Click a plot's axis title on the page to pick its channel.
+- Click a plot's axis title on the page to pick its channel; in batch this works on any copy,
+  and the change applies to that plot in every copy.
 - The sample order and names can be edited in the Layout sidebar too, as in the Samples pane,
   and ✎ beside a gate there renames it.
 - **Arrange**: **Free** (items go where you put them) or **Snap to grid**, with a number of
@@ -211,7 +212,9 @@ Gating, **Add to layout** places the plot you are looking at.
   double-click a gate to rename it, Delete to remove it, and change the axes; the figure
   updates as you go. Esc or **Done** closes it.
 - Per plot: sample, population, plot type (pseudocolor, dot, histogram), X and Y channels,
-  dot size, width and height, gates on or off.
+  **Dot size** and **Colour depth** sliders (the plot changes when you let go; **Same dot size &
+  colour depth for every plot** copies them to the rest of the page), width and height, gates
+  on or off.
 - **Plot text** (its own card): the title, typed or picked from its ▾ list (population, sample
   name, file name, combinations, % of parent, count, or any of the sample's keywords such as
   donor or condition, each shown with what it gives for that plot), axis titles, and separate sizes for the title, axis titles, axis
@@ -234,15 +237,15 @@ Gating, **Add to layout** places the plot you are looking at.
   font, bold, italic and colour.
   Double-click a plot in any copy to edit its gates for that copy's sample (the plot being
   edited is outlined).
-  - **Plot text — all plots in the batch**: the same title, size and gate label settings as a
-    single plot's, applied to every plot in every copy, with its own **Set for all plots & keep
-    for this session**.
+  - **All plots in the batch**: Dot size and Colour depth, and the same title, size and gate
+    label settings as a single plot's, applied to every plot in every copy, with its own **Set
+    for all plots & keep for this session**.
   - Click a plot in any copy to select it (Shift- or Ctrl/⌘-click, or drag a box, for several).
   - **Export → What**: **Entire batch** (the default) or **Selected plots**, which saves only
     the selected plots, each with its sample ID, cropped to fit. It switches to the selection by
     itself when two or more plots are selected. Each copy is only as big as
   the items on the page (plus a small margin), so a half-filled page gives compact copies.
-- Export: **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
+- Export (the first card on the right): **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
   Illustrator, Inkscape or PowerPoint; density clouds embedded as images), **Download PNG**,
   **Copy as image**, **Copy plot as image** for one plot, and a preview image you can
   right-click to copy.
