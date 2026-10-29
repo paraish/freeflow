@@ -42,6 +42,7 @@ export function newLayout(name = 'Layout 1') {
  *   folderSamples(), folderName()   the folder picked in the Folders pane
  *   setOrder(key, n), setLabel(key, name)   change a sample's place or name
  *   plotDefaults(), setPlotDefaults(d)       text sizes new plots start with
+ *   renameGate(key, path, rect)              open the name box for a gate
  * }
  */
 export function createLayoutEditor(root, env) {
@@ -127,14 +128,14 @@ export function createLayoutEditor(root, env) {
     };
   }
 
-  function densityHref(s, pop, view, data, pw, ph, dot = 1) {
+  function densityHref(s, pop, view, data, pw, ph, dot = 1, depth = 0) {
     const scale = 2;
     const bw = Math.max(8, Math.min(1200, Math.round(pw * scale)));
     const bh = Math.max(8, Math.min(1200, Math.round(ph * scale)));
-    const key = `${env.cacheKey(s, pop, view)}|${bw}x${bh}|${dot}`;
+    const key = `${env.cacheKey(s, pop, view)}|${bw}x${bh}|${dot}|${depth}`;
     let href = imageCache.get(key);
     if (!href) {
-      const px = bivariatePixels({ xs: data.xs, ys: data.ys, idx: data.idx, type: view.type, dotRGB: [0, 0, 0], dotSize: dot * scale }, bw, bh);
+      const px = bivariatePixels({ xs: data.xs, ys: data.ys, idx: data.idx, type: view.type, dotRGB: [0, 0, 0], dotSize: dot * scale, depth }, bw, bh);
       const c = document.createElement('canvas');
       c.width = bw; c.height = bh;
       c.getContext('2d').putImageData(new ImageData(px, bw, bh), 0, 0);
@@ -174,7 +175,7 @@ export function createLayoutEditor(root, env) {
       xTicks: data.xTicks, yTicks: data.yTicks, gates: data.gates,
       showGates: item.showGates !== false, showLabels: item.showLabels !== false, stats: statsOf(item), pctSign: item.pctSign !== false,
       histogram: hist ? data.histogram : null,
-      image: hist ? null : { href: densityHref(s, pop, view, data, pw, ph, item.dotSize || 1) },
+      image: hist ? null : { href: densityHref(s, pop, view, data, pw, ph, item.dotSize || 1, item.depth || 0) },
     });
   }
 
@@ -533,6 +534,7 @@ export function createLayoutEditor(root, env) {
           ${field('', 'X channel', `<select id="lp-x">${chOpts(view.x)}</select>`)}
           ${view.type === 'histogram' ? '' : field('', 'Y channel', `<select id="lp-y">${chOpts(view.y)}</select>`)}
           ${view.type === 'histogram' ? '' : field('', 'Dot size', num('lp-dot', it.dotSize || 1, 'min="1" max="6" step="1"'))}
+          ${view.type === 'pseudo' ? field('', 'Colour depth', num('lp-depth', it.depth || 0, 'min="0" max="1" step="0.1" title="0 as designed; up to 1 for deeper colours"')) : ''}
           ${isGrid(l) ? '<p class="muted small">Size and place are set by the grid (Page → Arrange).</p>' : `<div class="field-pair">${field('', 'Width', num('lp-w', it.w, 'min="80" step="4"'))}${field('', 'Height', num('lp-h', it.h, 'min="80" step="4"'))}</div>`}
           ${check('lp-gates', it.showGates !== false, 'Show gates')}
         </div>
@@ -651,7 +653,7 @@ export function createLayoutEditor(root, env) {
         rows.push(`<li class="pop-row lay-pop" style="--depth:${depth}" draggable="true" data-sample="${escH(key)}" data-path="${escH(JSON.stringify(path))}">${twisty}
           <button class="pop-pick" data-act="ls-add" title="Add ${escH(p.name)} to the page">
             <span class="pop-name">${escH(p.name)}</span><span class="pop-stats"><span class="pop-pct">${p.parent ? escH(st.freq) : ''}</span></span>
-          </button></li>`);
+          </button>${p.gate ? `<span class="row-tools"><button class="row-edit" data-act="ls-rename" aria-label="Rename ${escH(p.name)}" title="Rename">✎</button></span>` : ''}</li>`);
         if (!pshut) p.children.forEach((c) => visit(c, depth + 1));
       };
       if (!shut) visit(s.root, 0);
@@ -857,6 +859,7 @@ export function createLayoutEditor(root, env) {
         case 'lp-x': it.view.x = val; return changed();
         case 'lp-y': it.view.y = val; return changed();
         case 'lp-dot': if (n >= 1 && n <= 6) { it.dotSize = Math.round(n); changed(); } return;
+        case 'lp-depth': if (n >= 0 && n <= 1) { it.depth = n; changed(); } return;
         case 'lp-w': if (n >= 80) { it.w = n; changed(); } return;
         case 'lp-h': if (n >= 80) { it.h = n; changed(); } return;
         case 'lp-gates': it.showGates = val; return changed();
@@ -898,6 +901,10 @@ export function createLayoutEditor(root, env) {
     }
     if (act === 'add-text') return addText();
     if (act === 'add-label') return addText({ label: true });
+    if (act === 'ls-rename') {
+      const row = b.closest('.lay-pop');
+      return env.renameGate(row.dataset.sample, JSON.parse(row.dataset.path), row.querySelector('.pop-name').getBoundingClientRect());
+    }
     if (act === 'ls-add') {
       const row = b.closest('.lay-pop');
       return addFromSidebar(row.dataset.sample, JSON.parse(row.dataset.path));

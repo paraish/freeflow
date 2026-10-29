@@ -85,7 +85,9 @@ with one click).
   one axis setting.
 - **Plots**: pseudocolor density, dot, and histogram. Click an axis title to pick its channel
   (or use the X and Y menus above the plot). **Dot size** (beside the plot types) makes each
-  event bigger; figures in Layout have their own Dot size.
+  event bigger, and **Colour depth** deepens the pseudocolor colours (same colour scale) for
+  plots that look pale, such as small populations; figures in Layout have their own Dot size
+  and Colour depth.
 - **Gates**: rectangle, polygon, quadrant, range. A name box opens as soon as a gate is drawn
   (Enter to keep the name, Esc to keep the default). Hover a gate in the trees for ✎ (rename)
   and × (delete, with the gates under it; click twice to confirm, Ctrl/⌘+Z to undo). Move gates, drag their corners, rename,
@@ -115,7 +117,8 @@ with one click).
   recalculate from it. The gate panel offers **Use the folder's gate** (undo the adjustment) and
   **Apply this gate to the whole folder**. Under each folder in the Folders pane, × on a gate asks
   whether to **Delete gate for all samples** or **Delete only the grouping** (each sample keeps
-  its copy as an ordinary gate). The folder gates listed there can be selected (click; Ctrl/⌘-click or
+  its copy as an ordinary gate), and ✎ renames it in every sample of the folder (in every view).
+  Renaming a folder gate from one sample's tree does the same, and the name box says so. The folder gates listed there can be selected (click; Ctrl/⌘-click or
   Shift-click for several) and dragged onto a sample's name (copied to the same place in that
   sample), onto any population (copied under it), onto another folder (they become that
   folder's gates too), or onto another folder gate (they become its sub-gates, in every sample
@@ -187,7 +190,8 @@ Gating, **Add to layout** places the plot you are looking at.
   steps), Delete to remove. Shift- or Ctrl/⌘-click (on the page or in **On this page**), or drag a
   box on an empty part of the page, to select several items to move, nudge or delete together.
 - Click a plot's axis title on the page to pick its channel.
-- The sample order and names can be edited in the Layout sidebar too, as in the Samples pane.
+- The sample order and names can be edited in the Layout sidebar too, as in the Samples pane,
+  and ✎ beside a gate there renames it.
 - **Arrange**: **Free** (items go where you put them) or **Snap to grid**, with a number of
   columns and rows. In grid mode the plots fill square cells in order, below any title at the
   top of the page. Drop a new plot on a cell, or drag a plot to another cell, and the others

@@ -87,9 +87,11 @@ function dilate(v, w, h, d) {
 }
 
 // RGBA pixels of a bivariate plot, one bin per pixel, row 0 at the top.
-// Empty bins stay transparent. `dotSize` draws each event as a square of
+// Empty bins stay transparent. `depth` (0 to 1) deepens the colours (lower
+// lightness, same hues), so sparse plots look less pale on white.
+// `dotSize` draws each event as a square of
 // that many pixels.
-export function bivariatePixels({ xs, ys, idx, type, dotRGB, dotSize = 1 }, bw, bh) {
+export function bivariatePixels({ xs, ys, idx, type, dotRGB, dotSize = 1, depth = 0 }, bw, bh) {
   const counts = new Float32Array(bw * bh);
   for (let i = 0; i < idx.length; i++) {
     const e = idx[i];
@@ -112,15 +114,56 @@ export function bivariatePixels({ xs, ys, idx, type, dotRGB, dotSize = 1 }, bw, 
   const d = Math.max(1, Math.round(dotSize));
   if (d > 1) level = dilate(level, bw, bh, d);
   const px = new Uint8ClampedArray(bw * bh * 4);
+  const lut = deepLUT(depth);
   const [r, gg, b] = dotRGB || [0, 0, 0];
   for (let i = 0; i < level.length; i++) {
     const t = level[i];
     if (t < 0) continue;
     if (type === 'dot') { px[i * 4] = r; px[i * 4 + 1] = gg; px[i * 4 + 2] = b; px[i * 4 + 3] = 255; continue; }
     const c = Math.min(255, Math.round(t * 255)) * 3;
-    px[i * 4] = LUT[c]; px[i * 4 + 1] = LUT[c + 1]; px[i * 4 + 2] = LUT[c + 2]; px[i * 4 + 3] = 255;
+    px[i * 4] = lut[c]; px[i * 4 + 1] = lut[c + 1]; px[i * 4 + 2] = lut[c + 2]; px[i * 4 + 3] = 255;
   }
   return px;
+}
+
+// The colour scale with every colour's lightness lowered by up to a third
+// (hue and saturation kept), cached per depth.
+const deepLUTs = new Map();
+function deepLUT(depth) {
+  const d = Math.max(0, Math.min(1, Math.round((depth || 0) * 20) / 20));
+  if (!d) return LUT;
+  if (deepLUTs.has(d)) return deepLUTs.get(d);
+  const out = new Uint8ClampedArray(LUT.length);
+  for (let i = 0; i < LUT.length; i += 3) {
+    const [h, s, l] = toHSL(LUT[i], LUT[i + 1], LUT[i + 2]);
+    const [r, g, b] = fromHSL(h, Math.min(1, s * (1 + 0.15 * d)), l * (1 - 0.33 * d));
+    out[i] = r; out[i + 1] = g; out[i + 2] = b;
+  }
+  deepLUTs.set(d, out);
+  return out;
+}
+
+function toHSL(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+
+function fromHSL(h, s, l) {
+  if (!s) return [l * 255, l * 255, l * 255];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const f = (t) => {
+    t = (t + 1) % 1;
+    const v = t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p;
+    return Math.round(v * 255);
+  };
+  return [f(h + 1 / 3), f(h), f(h - 1 / 3)];
 }
 
 function drawBivariate(g, geo, o) {

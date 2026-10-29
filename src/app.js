@@ -55,6 +55,7 @@ const S = {
   fgSel: new Set(), // folder gates selected in the Folders pane, as "<folder id>|<gid>"
   fgAnchor: null, // the last clicked folder gate, for Shift-click ranges
   dotSize: 1, // pixels per event on pseudocolor and dot plots
+  depth: 0, // pseudocolor colour depth: 0 as designed, up to 1 for deeper colours
   hideUncomp: false, // leave uncompensated detector channels out of channel menus
 };
 
@@ -1374,7 +1375,7 @@ function drawPlot() {
   }
   plot.geo = renderPlot(canvas, {
     w, h, dpr: devicePixelRatio || 1, colors, fontSans, fontMono,
-    type: v.type, xs: scaled(s, v.x), ys: hist ? null : scaled(s, v.y), idx: pop.indices, dotSize: S.dotSize,
+    type: v.type, xs: scaled(s, v.x), ys: hist ? null : scaled(s, v.y), idx: pop.indices, dotSize: S.dotSize, depth: S.depth,
     xTicks: sx.ticks(), yTicks,
     xLabel: channelInfo(s, v.x).label, yLabel: hist ? '% of max' : channelInfo(s, v.y).label,
     gates: gateShapes(), draft,
@@ -1460,7 +1461,7 @@ function drawTile(s, force = false) {
   const has = (n) => s.channels.some((c) => c.name === n);
   const w = Math.max(120, Math.floor(t.canvas.parentElement.clientWidth - 12));
   const shapes = has(v.x) && (hist || has(v.y)) ? gateShapes(pop, v) : [];
-  const key = [w, S.dotSize, pop.id, objId(pop.indices), v.x, v.y, v.type, scalerFor(v.x).key, hist ? '' : scalerFor(v.y).key, S.selId,
+  const key = [w, S.dotSize, S.depth, pop.id, objId(pop.indices), v.x, v.y, v.type, scalerFor(v.x).key, hist ? '' : scalerFor(v.y).key, S.selId,
     cssVar('--surface'), JSON.stringify(shapes.map((sh) => [sh.pts, sh.cx, sh.cy, sh.lo, sh.hi, sh.level, sh.sub, sh.lab, sh.quads?.map((q) => [q.sub, q.lab])]))].join('|');
   if (!force && key === t.key) return;
   t.key = key;
@@ -1472,7 +1473,7 @@ function drawTile(s, force = false) {
   }
   t.geo = renderPlot(t.canvas, {
     w, h: w, dpr: devicePixelRatio || 1, colors, fontSans: cssVar('--font-sans'), fontMono: cssVar('--font-mono'), compact: true,
-    type: v.type, xs: scaled(s, v.x), ys: hist ? null : scaled(s, v.y), idx: pop.indices, dotSize: S.dotSize,
+    type: v.type, xs: scaled(s, v.x), ys: hist ? null : scaled(s, v.y), idx: pop.indices, dotSize: S.dotSize, depth: S.depth,
     xTicks: scalerFor(v.x).ticks(), yTicks: hist ? histTicks() : scalerFor(v.y).ticks(),
     xLabel: '', yLabel: '', gates: shapes,
   });
@@ -1993,6 +1994,7 @@ function renderGroups() {
         const picked = S.fgSel.has(`${g.id}|${node.gid}`);
         gateRows.push(`<li class="fg-row${confirming ? ' is-confirm' : ''}${picked ? ' is-picked' : ''}" style="--depth:${depth}" data-group="${esc(g.id)}" data-gid="${esc(node.gid)}" draggable="true" title="Click to select (Ctrl/⌘- or Shift-click for several). Drag onto a sample, a population or another folder to copy.">
           <span class="fg-name" title="${esc(['All Events', ...e.parentPath, node.name].join(' / '))}">${esc(node.name)}${adj ? ` <span class="fg-adj">${adj} adjusted</span>` : ''}</span>
+          <button class="icon-btn" data-act="fg-rename" aria-label="Rename folder gate ${esc(node.name)}" title="Rename (in every sample of this folder)">✎</button>
           <button class="icon-btn" data-act="fg-delete" aria-label="Delete folder gate ${esc(node.name)}" title="Delete…">×</button></li>`);
         if (confirming) {
           gateRows.push(`<li class="fg-confirm" data-group="${esc(g.id)}" data-gid="${esc(node.gid)}">
@@ -2520,6 +2522,7 @@ function renderToolbar() {
   }
   $('axis-y-wrap').hidden = hist;
   $('dot-size').disabled = !s || hist;
+  $('depth').disabled = !s || v?.type !== 'pseudo';
   const hint = TOOLS.find((t) => t.id === S.tool)?.hint ?? '';
   $('hint').textContent = S.mode === 'group'
     ? `${hint} Gates drawn or changed here apply to every sample in ${currentGroup().name}; to change one sample only, adjust its gate in its tile.`
@@ -2999,6 +3002,11 @@ function layoutEnv() {
     checkpoint,
     labelOf,
     folderSamples: () => visibleSamples(),
+    renameGate: (key, path, rect) => {
+      const s = S.samples.find((x) => sampleKey(x) === key);
+      const pop = s && findByPath(s.root, path);
+      if (pop?.gate) openNamePop(pop, rect.left - 6, rect.top - 6);
+    },
     plotDefaults: () => S.plotDefaults,
     setPlotDefaults: (d) => { S.plotDefaults = d; },
     setOrder: (key, raw) => { const s = S.samples.find((x) => sampleKey(x) === key); if (s) setSampleOrder(currentGroup(), s, raw); },
@@ -3264,10 +3272,18 @@ function toast(msg, isError = false) {
 
 // A small name box at a point on the page: right after a gate is drawn, or
 // from a gate's ✎ button in the trees.
-const NP = { pop: null };
+// `pop` is the population being named, or { name } with `opts.save` for a
+// folder gate; `opts.note` is shown under the box (a folder gate's note is
+// added by itself).
+const NP = { pop: null, save: null };
 
-function openNamePop(pop, x, y) {
+function openNamePop(pop, x, y, opts = {}) {
   NP.pop = pop;
+  NP.save = opts.save || null;
+  const note = opts.note ?? (pop?.link
+    ? `“${pop.name}” is a folder gate of ${folderGateName(pop.link)}: renaming it here renames it in every sample of that folder.` : '');
+  $('name-pop-note').textContent = note;
+  $('name-pop-note').hidden = !note;
   const f = $('name-pop');
   f.hidden = false;
   f.style.left = `${Math.max(8, Math.min(innerWidth - f.offsetWidth - 8, x))}px`;
@@ -3278,13 +3294,40 @@ function openNamePop(pop, x, y) {
   inp.select();
 }
 
-function closeNamePop(save) {
+// Saves the name typed (unless `save` is false) and closes the box; a name
+// that is taken keeps the box open, unless `force`.
+function closeNamePop(save, force = false) {
   const f = $('name-pop');
   if (f.hidden) return;
-  const pop = NP.pop;
-  if (save && pop && !renamePop(pop, $('name-pop-input').value)) return;
+  const { pop, save: saver } = NP;
+  if (save && pop) {
+    const ok = saver ? saver($('name-pop-input').value) : renamePop(pop, $('name-pop-input').value);
+    if (!ok && !force) return;
+  }
   NP.pop = null;
+  NP.save = null;
   f.hidden = true;
+}
+
+// Renames a folder gate: in the folder, and so in every sample of it.
+function renameFolderGate(groupId, gid, raw) {
+  const loc = indexTemplates(groupId).get(gid);
+  const name = String(raw).trim();
+  if (!loc || !name || name === loc.node.name) return true;
+  if (loc.siblings.some((n) => n !== loc.node && n.name === name)) {
+    toast(`Another gate beside it in ${groupById(groupId)?.name} is already called "${name}".`, true);
+    return false;
+  }
+  pushUndo();
+  const old = loc.node.name;
+  loc.node.name = name;
+  syncFolderGates();
+  // Keep viewing the same population if it was renamed.
+  const d = loc.parentPath.length;
+  if (S.viewPath[d] === old && S.viewPath.slice(0, d).join('\u0000') === loc.parentPath.join('\u0000')) S.viewPath = [...S.viewPath.slice(0, d), name, ...S.viewPath.slice(d + 1)];
+  renderAll();
+  toast(`Renamed “${old}” to “${name}” in every sample of ${groupById(groupId)?.name}.`);
+  return true;
 }
 
 // Renames a population; a folder gate is renamed in every sample. Returns
@@ -3765,6 +3808,17 @@ function bind() {
       const { group, gid } = fg.dataset;
       // A quadrant goes with its set of four.
       const set = () => { const loc = indexTemplates(group).get(gid); return loc ? templateSet(loc).map((n) => n.gid) : [gid]; };
+      if (act === 'fg-rename') {
+        const loc = indexTemplates(group).get(gid);
+        const r = fg.querySelector('.fg-name').getBoundingClientRect();
+        if (loc) {
+          openNamePop({ name: loc.node.name }, r.left - 6, r.top - 6, {
+            save: (v) => renameFolderGate(group, gid, v),
+            note: `Renames it in every sample of ${groupById(group)?.name}.`,
+          });
+        }
+        return;
+      }
       if (act === 'fg-delete') { GF.confirm = { group, gid }; renderGroups(); }
       if (act === 'fg-cancel') { GF.confirm = null; renderGroups(); }
       if (act === 'fg-del-all') { S.fgSel.clear(); deleteFolderGate(group, set(), true); }
@@ -3805,10 +3859,17 @@ function bind() {
   });
   $('name-pop-input').addEventListener('blur', () => setTimeout(() => {
     if (document.activeElement?.closest?.('#name-pop')) return;
-    if (NP.pop && !$('name-pop').hidden) { const pop = NP.pop; NP.pop = null; $('name-pop').hidden = true; renamePop(pop, $('name-pop-input').value); }
+    if (NP.pop && !$('name-pop').hidden) closeNamePop(true, true);
   }, 0));
   try { S.dotSize = Math.min(6, Math.max(1, Math.round(+localStorage.getItem('freeflow.dotSize')) || 1)); } catch { /* default */ }
   $('dot-size').value = String(S.dotSize);
+  try { S.depth = Math.min(1, Math.max(0, +localStorage.getItem('freeflow.depth') || 0)); } catch { /* default */ }
+  $('depth').value = String(S.depth);
+  $('depth').addEventListener('input', (e) => {
+    S.depth = +e.target.value;
+    try { localStorage.setItem('freeflow.depth', String(S.depth)); } catch { /* not stored */ }
+    requestPlot();
+  });
   $('dot-size').addEventListener('input', (e) => {
     S.dotSize = +e.target.value;
     try { localStorage.setItem('freeflow.dotSize', String(S.dotSize)); } catch { /* not stored */ }
