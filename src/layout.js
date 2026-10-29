@@ -2,7 +2,7 @@
 // repeated for every sample (batch) and exported as SVG or PNG.
 //
 // A layout: { id, name, size, width, height, items, batch, columns, rows, order, sampleKey,
-//            arrange, gridCols, gridRows, showStrategy, strategySize }
+//            arrange, gridCols, gridRows, showStrategy, strategySize, strategyFont, ... }
 // `arrange` is 'free' (items go where they are put) or 'grid' (plots snap to
 // a grid of gridCols x gridRows cells, in order; see tiling.js).
 // In batch, `columns` and `rows` set the grid (0 or missing: as many as
@@ -283,7 +283,9 @@ export function createLayoutEditor(root, env) {
     const steps = strategySteps(layout);
     if (!steps?.length) return null;
     const fs = layout.strategySize || 12;
-    const fit = Math.max(12, Math.floor((w - 32) / (fs * 0.55)));
+    // Roughly how many characters fit on a line (wider for bold and monospace).
+    const ch = fs * ((layout.strategyFont === 'mono' ? 0.6 : 0.55) + (layout.strategyBold ? 0.05 : 0));
+    const fit = Math.max(12, Math.floor((w - 32) / ch));
     const lines = [''];
     steps.forEach((st, i) => {
       const last = lines.length - 1;
@@ -292,7 +294,8 @@ export function createLayoutEditor(root, env) {
       else lines[last] += piece;
     });
     const h = Math.round(fs * (0.9 + 1.25 * lines.length));
-    return { h, svg: (x, y) => textSVG({ x: x + 16, y: y + Math.round(fs * 0.3), w: w - 32, h, text: lines.join('\n'), fontSize: fs, align: 'left' }) };
+    return { h, svg: (x, y) => textSVG({ x: x + 16, y: y + Math.round(fs * 0.3), w: w - 32, h, text: lines.join('\n'), fontSize: fs,
+      align: layout.strategyAlign || 'left', bold: !!layout.strategyBold, italic: !!layout.strategyItalic, color: layout.strategyColor, font: layout.strategyFont }) };
   }
 
   // Only the selected plots (each from its own copy in a batch, with its
@@ -621,9 +624,13 @@ export function createLayoutEditor(root, env) {
             const plots = l.items.filter((x) => x.kind === 'plot').length;
             const ok = plots === 1;
             const steps = ok ? strategySteps(l) : null;
-            return `<label class="check check-small${ok ? '' : ' is-off'}" title="${ok ? 'A line above the figure with each gate down to the plotted population, and the channels it was drawn on' : 'Needs exactly one plot on the page'}"><input id="lpg-strategy" type="checkbox" ${ok && l.showStrategy ? 'checked' : ''} ${ok ? '' : 'disabled'}> Show gating strategy</label>
+            const off = ok ? '' : 'disabled';
+            return `<div class="field-pair"><label class="check check-small${ok ? '' : ' is-off'}" title="${ok ? 'A line above the figure with each gate down to the plotted population, and the channels it was drawn on' : 'Needs exactly one plot on the page'}"><input id="lpg-strategy" type="checkbox" ${ok && l.showStrategy ? 'checked' : ''} ${off}> Show gating strategy</label>${field('', 'Size', num('lpg-stratsize', l.strategySize || 12, `min="6" max="48" step="0.5" title="Text size of the gating strategy" ${off}`))}</div>
           ${!ok ? `<p class="muted small">Needs exactly one plot on the page (there ${plots === 0 ? 'are none' : `are ${plots}`}); batch it to repeat it for every sample.</p>`
-            : l.showStrategy ? `${field('', 'Text size', num('lpg-stratsize', l.strategySize || 12, 'min="6" max="48" step="0.5"'))}
+            : l.showStrategy ? `
+          <div class="field-pair">${field('', 'Font', fontSelect('lpg-stratfont', l.strategyFont))}${field('', 'Align', `<select id="lpg-stratalign">${[['left', 'Left'], ['center', 'Centred'], ['right', 'Right']].map(([v, t]) => `<option value="${v}" ${(l.strategyAlign || 'left') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}</div>
+          <div class="field-pair">${check('lpg-stratbold', l.strategyBold, 'Bold')}${check('lpg-stratitalic', l.strategyItalic, 'Italic')}</div>
+          ${field('', 'Colour', `<input id="lpg-stratcolor" type="color" value="${escH(/^#[0-9a-f]{6}$/i.test(l.strategyColor || '') ? l.strategyColor : '#000000')}">`)}
           <p class="muted small">${steps?.length ? 'Each gate from All Events down to the plotted population, with the channels it was drawn on. Shown once, above the figure.' : 'The plot shows All Events, so there are no gates to list.'}</p>` : ''}`;
           })()}
           ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${env.batchSamples(l).length})`)}
@@ -903,6 +910,11 @@ export function createLayoutEditor(root, env) {
       case 'lpg-batch': l.batch = val; return changed({ props: true });
       case 'lpg-strategy': l.showStrategy = val; return changed({ props: true });
       case 'lpg-stratsize': if (n >= 6) { l.strategySize = n; changed(); } return;
+      case 'lpg-stratfont': l.strategyFont = val; return changed();
+      case 'lpg-stratalign': l.strategyAlign = val; return changed();
+      case 'lpg-stratbold': l.strategyBold = val; return changed();
+      case 'lpg-stratitalic': l.strategyItalic = val; return changed();
+      case 'lpg-stratcolor': l.strategyColor = val; return changed();
       case 'lpg-group': l.batchGroup = val || null; return changed({ props: true });
       case 'lpg-cols': l.columns = n >= 1 ? Math.round(n) : 0; $('lpg-grid').textContent = gridNote(l); return changed();
       case 'lpg-rows': l.rows = n >= 1 ? Math.round(n) : 0; $('lpg-grid').textContent = gridNote(l); return changed();

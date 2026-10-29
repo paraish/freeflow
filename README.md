@@ -219,7 +219,7 @@ Gating, **Add to layout** places the plot you are looking at.
   Events down to the plotted population and the channels it was drawn on, for example
   `Cells (FSC-A / SSC-A) → Singlets (FSC-A / FSC-H) → T cells (CD3 / CD19)`. It needs exactly
   one plot on the page (it is greyed out otherwise); in batch it is shown once, above all the
-  copies. Its text size can be set.
+  copies. Its size (beside the checkbox), font, alignment, bold, italic and colour can be set.
 - Text items and titles take fill-ins: `{sample}`, `{label}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
