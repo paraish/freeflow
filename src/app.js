@@ -1271,10 +1271,11 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
     if (!g) continue;
     if (only && c.link?.group !== only) continue;
     const sub = fmtPct(pct(c.indices.length, pop.indices.length));
+    const counts = { n: c.indices.length, parent: pop.indices.length, grand: (pop.parent || pop).indices.length };
     if (hist) {
       if (g.type !== 'range' || g.x !== v.x) continue;
       const fx = scalerFor(g.x).fwd;
-      out.push({ kind: 'range', pop: c, lo: fx(g.lo), hi: fx(g.hi), level: g.level ?? 0.82, label: c.name, sub, selected: c.id === S.selId, lab: c.lab || null });
+      out.push({ kind: 'range', pop: c, lo: fx(g.lo), hi: fx(g.hi), level: g.level ?? 0.82, label: c.name, sub, counts, selected: c.id === S.selId, lab: c.lab || null });
       continue;
     }
     // A gate drawn on the same two channels with the axes the other way round
@@ -1285,10 +1286,10 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
     const T = (pts) => (swap ? pts.map(([a, b]) => [b, a]) : pts);
     const L = (m) => (m && swap ? { dx: m.dy, dy: m.dx } : m || null);
     if (g.type === 'rect') {
-      out.push({ kind: 'poly', pop: c, pts: T(rectCorners(g)), label: c.name, sub, selected: c.id === S.selId, swap, lab: L(c.lab) });
+      out.push({ kind: 'poly', pop: c, pts: T(rectCorners(g)), label: c.name, sub, counts, selected: c.id === S.selId, swap, lab: L(c.lab) });
     } else if (g.type === 'polygon') {
       const fx = scalerFor(g.x).fwd, fy = scalerFor(g.y).fwd;
-      out.push({ kind: 'poly', pop: c, pts: T(g.points.map(([a, b]) => [fx(a), fy(b)])), label: c.name, sub, selected: c.id === S.selId, swap, lab: L(c.lab) });
+      out.push({ kind: 'poly', pop: c, pts: T(g.points.map(([a, b]) => [fx(a), fy(b)])), label: c.name, sub, counts, selected: c.id === S.selId, swap, lab: L(c.lab) });
     } else if (g.type === 'quad') {
       if (seenQuad.has(g.link)) continue;
       seenQuad.add(g.link);
@@ -1301,6 +1302,7 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
           // Mirrored, upper left and lower right trade places.
           pop: q, quadrant: swap ? { UL: 'LR', LR: 'UL' }[q.gate.quadrant] || q.gate.quadrant : q.gate.quadrant, label: q.name, selected: q.id === S.selId,
           sub: fmtPct(pct(q.indices.length, pop.indices.length)), lab: L(q.lab),
+          counts: { n: q.indices.length, parent: pop.indices.length, grand: (pop.parent || pop).indices.length },
         })),
       });
     }

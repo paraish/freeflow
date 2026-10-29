@@ -12,7 +12,7 @@
 // their sample by key (null = the page's sample), so a layout works on any
 // sample that has the same gates, and in batch mode on every sample.
 
-import { PAGE_SIZES, axisSpots, fillTokens, pageSVG, plotInner, plotSVG, textSVG } from './figure.js';
+import { PAGE_SIZES, axisSpots, fillTokens, pageSVG, plotInner, plotSizes, plotSVG, textSVG } from './figure.js';
 import { bivariatePixels } from './plot.js';
 import { applyGrid, cellAt, defaultGrid, gridCells, movePlot, titleTop } from './tiling.js';
 
@@ -121,7 +121,7 @@ export function createLayoutEditor(root, env) {
       return textSVG({ ...box, text: fillTokens(item.text, tokensFor(s, null, null)), fontSize: item.fontSize, bold: item.bold, italic: item.italic, color: item.color, font: item.font, align: item.align });
     }
     const s = sampleFor(item, pageSample);
-    const base = { ...box, fontSize: item.fontSize, xTicks: [], yTicks: [], gates: [] };
+    const base = { ...box, fontSize: item.fontSize, sizes: item.sizes, xTicks: [], yTicks: [], gates: [] };
     if (!s) return plotSVG({ ...base, title: item.title ? 'No sample' : '', message: 'No sample open' });
     const pop = env.findByPath(s.root, item.path || []);
     if (!pop) return plotSVG({ ...base, title: fillTokens(item.title, tokensFor(s, null, null)), message: `${s.name} has no "${(item.path || []).join(' / ')}"` });
@@ -134,17 +134,23 @@ export function createLayoutEditor(root, env) {
     const tk = tokensFor(s, pop, view);
     const title = fillTokens(item.title ?? '', tk);
     const hist = view.type === 'histogram';
-    const { pw, ph } = plotInner(item.w, item.h, item.fontSize, !!title);
+    const { pw, ph } = plotInner(item.w, item.h, item.fontSize, !!title, item.sizes);
     return plotSVG({
       ...base,
       title,
       xLabel: item.xLabel ? fillTokens(item.xLabel, tk) : env.channelLabel(s, view.x),
       yLabel: hist ? (item.yLabel ? fillTokens(item.yLabel, tk) : '% of max') : (item.yLabel ? fillTokens(item.yLabel, tk) : env.channelLabel(s, view.y)),
       xTicks: data.xTicks, yTicks: data.yTicks, gates: data.gates,
-      showGates: item.showGates !== false, showLabels: item.showLabels !== false,
+      showGates: item.showGates !== false, showLabels: item.showLabels !== false, stats: statsOf(item), pctSign: item.pctSign !== false,
       histogram: hist ? data.histogram : null,
       image: hist ? null : { href: densityHref(s, pop, view, data, pw, ph, item.dotSize || 1) },
     });
+  }
+
+  // Which numbers a plot shows under its gate names. Older plots without the
+  // setting show % of parent, or nothing if their labels were turned off.
+  function statsOf(it) {
+    return it.stats || (it.showLabels === false ? {} : { parent: true });
   }
 
   // A plot item's axes: its own, or else those its population was last shown on.
@@ -337,7 +343,7 @@ export function createLayoutEditor(root, env) {
       const s = sampleFor(it, pageSample);
       if (!s) return '';
       const view = itemView(it, s);
-      const spots = axisSpots({ x: it.x + o.dx, y: it.y + o.dy, w: it.w, h: it.h, fontSize: it.fontSize || 11, hasTitle: !!String(it.title ?? '').trim() });
+      const spots = axisSpots({ x: it.x + o.dx, y: it.y + o.dy, w: it.w, h: it.h, fontSize: it.fontSize || 11, sizes: it.sizes, hasTitle: !!String(it.title ?? '').trim() });
       const opts = (sel) => env.menuChannels(s, [view.x, view.y]).map((c) => `<option value="${escH(c.name)}" ${c.name === sel ? 'selected' : ''}>${escH(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('');
       const spot = (axis, r) => `<label class="lay-axis-hot" title="Click to change the ${axis.toUpperCase()} channel" style="left:${r.x * z}px;top:${r.y * z}px;width:${r.w * z}px;height:${r.h * z}px"><select data-item="${it.id}" data-axis="${axis}" aria-label="${axis.toUpperCase()} channel">${opts(view[axis])}</select></label>`;
       return spot('x', spots.x) + (view.type === 'histogram' ? '' : spot('y', spots.y));
@@ -356,6 +362,37 @@ export function createLayoutEditor(root, env) {
 
   function pageOptions(l) {
     return PAGE_SIZES.map((p) => `<option value="${p.id}" ${l.size === p.id ? 'selected' : ''}>${p.label}</option>`).join('');
+  }
+
+  // The text settings of a plot: title, axis titles, sizes, and the numbers
+  // shown with each gate.
+  function plotTextHTML(it, view) {
+    const field = (id, label, input) => `<label class="field"><span>${label}</span>${input}</label>`;
+    const num = (id, v, attrs = '') => `<input id="${id}" type="number" value="${+(+v).toFixed(1)}" ${attrs}>`;
+    const txt = (id, v, ph = '') => `<input id="${id}" type="text" value="${escH(v ?? '')}" placeholder="${escH(ph)}" autocomplete="off">`;
+    const check = (id, v, label) => `<label class="check check-small"><input id="${id}" type="checkbox" ${v ? 'checked' : ''}> ${label}</label>`;
+    const z = plotSizes(it.fontSize || 11, it.sizes || {});
+    const st = statsOf(it);
+    const presets = [['{population}', 'Population'], ['{label}', 'Sample name'], ['{sample}', 'File name'], ['{label}: {population}', 'Sample name: population'], ['', 'None']];
+    const title = it.title ?? '';
+    const preset = presets.some(([v]) => v === title) ? title : 'custom';
+    return `
+        <div class="fields">
+          ${field('', 'Title', `<select id="lp-title-preset">${presets.map(([v, t]) => `<option value="${escH(v)}" ${preset === v ? 'selected' : ''}>${t}</option>`).join('')}<option value="custom" ${preset === 'custom' ? 'selected' : ''}>Custom…</option></select>`)}
+          ${field('', 'Title text', txt('lp-title', title, 'No title'))}
+          ${field('', 'X axis title', txt('lp-xlabel', it.xLabel, 'Channel name'))}
+          ${field('', 'Y axis title', txt('lp-ylabel', it.yLabel, view.type === 'histogram' ? '% of max' : 'Channel name'))}
+          <p class="field-head">Sizes</p>
+          <div class="field-pair">${field('', 'Title', num('lp-font', z.title, 'min="4" max="48" step="0.5"'))}${field('', 'Axis titles', num('lp-axfs', z.axis, 'min="4" max="48" step="0.5"'))}</div>
+          <div class="field-pair">${field('', 'Axis numbers', num('lp-tickfs', z.ticks, 'min="4" max="48" step="0.5"'))}${field('', 'Gate names', num('lp-gnfs', z.gateName, 'min="4" max="48" step="0.5"'))}</div>
+          <div class="field-pair">${field('', 'Gate numbers', num('lp-gvfs', z.gateNum, 'min="4" max="48" step="0.5"'))}<span></span></div>
+          <p class="field-head">With each gate</p>
+          <div class="field-pair">${check('lp-labels', it.showLabels !== false, 'Name')}${check('lp-st-count', st.count, 'Count')}</div>
+          <div class="field-pair">${check('lp-st-parent', st.parent, '% of parent')}${check('lp-st-grand', st.grand, '% of grandparent')}</div>
+          ${check('lp-pct', it.pctSign !== false, 'Show the % sign')}
+        </div>
+        <p class="muted small">Fill-ins for titles: {sample} {label} {population} {parent} {count} {freq} {freqTotal} {x} {y}, or any keyword in braces such as {$DATE}.</p>
+        <div class="btn-row"><button class="btn" data-act="text-all" title="Copy these sizes and gate number settings (not the titles) to every plot on this page">Use for every plot</button></div>`;
   }
 
   function renderProps() {
@@ -394,17 +431,15 @@ export function createLayoutEditor(root, env) {
           ${field('', 'Plot type', `<select id="lp-type">${[['pseudo', 'Pseudocolor'], ['dot', 'Dot'], ['histogram', 'Histogram']].map(([v, t]) => `<option value="${v}" ${view.type === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
           ${field('', 'X channel', `<select id="lp-x">${chOpts(view.x)}</select>`)}
           ${view.type === 'histogram' ? '' : field('', 'Y channel', `<select id="lp-y">${chOpts(view.y)}</select>`)}
-          ${field('', 'Title', txt('lp-title', it.title, 'No title'))}
-          ${field('', 'X axis label', txt('lp-xlabel', it.xLabel, 'Channel name'))}
-          ${field('', 'Y axis label', txt('lp-ylabel', it.yLabel, view.type === 'histogram' ? '% of max' : 'Channel name'))}
-          ${field('', 'Font size', num('lp-font', it.fontSize, 'min="6" max="40" step="1"'))}
           ${view.type === 'histogram' ? '' : field('', 'Dot size', num('lp-dot', it.dotSize || 1, 'min="1" max="6" step="1"'))}
           ${isGrid(l) ? '<p class="muted small">Size and place are set by the grid (Page → Arrange).</p>' : `<div class="field-pair">${field('', 'Width', num('lp-w', it.w, 'min="80" step="4"'))}${field('', 'Height', num('lp-h', it.h, 'min="80" step="4"'))}</div>`}
           ${check('lp-gates', it.showGates !== false, 'Show gates')}
-          ${check('lp-labels', it.showLabels !== false, 'Show gate names and %')}
         </div>
-        ${tokensHelp}
-        <div class="btn-row"><button class="btn" data-act="copy-item">Copy plot as image</button><button class="btn" data-act="dup-item">Duplicate</button><button class="btn btn-danger" data-act="del-item">Delete</button></div>`;
+        <div class="btn-row"><button class="btn" data-act="copy-item">Copy plot as image</button><button class="btn" data-act="dup-item">Duplicate</button><button class="btn btn-danger" data-act="del-item">Delete</button></div>
+      </section>
+      <section class="card">
+        <header class="card-head"><span class="eyebrow">Plot text</span></header>
+        ${plotTextHTML(it, view)}`;
     } else if (it?.kind === 'text') {
       itemHTML = `
         <div class="fields">
@@ -633,6 +668,14 @@ export function createLayoutEditor(root, env) {
     const n = parseFloat(val);
     switch (t.id) {
       case 'lpg-name': l.name = val || 'Layout'; return changed();
+      case 'lp-title-preset': if (it && val !== 'custom') { it.title = val; return changed({ props: true }); } return;
+      case 'lp-axfs': case 'lp-tickfs': case 'lp-gnfs': case 'lp-gvfs':
+        if (it && n >= 4) { it.sizes = { ...(it.sizes || {}), [{ 'lp-axfs': 'axis', 'lp-tickfs': 'ticks', 'lp-gnfs': 'gateName', 'lp-gvfs': 'gateNum' }[t.id]]: n }; changed(); }
+        return;
+      case 'lp-st-count': case 'lp-st-parent': case 'lp-st-grand':
+        if (it) { it.stats = { ...statsOf(it), [t.id.slice(6)]: val }; changed(); }
+        return;
+      case 'lp-pct': if (it) { it.pctSign = val; changed(); } return;
       case 'lpg-arrange': {
         l.arrange = val === 'grid' ? 'grid' : 'free';
         if (isGrid(l) && !Number.isFinite(l.gridTop)) l.gridTop = titleTop(l);
@@ -772,6 +815,16 @@ export function createLayoutEditor(root, env) {
       return render();
     }
     if (act === 'copy-item' && it) return copyImage(singleItemSheet(it));
+    if (act === 'text-all' && it?.kind === 'plot') {
+      env.checkpoint();
+      for (const x of l.items) {
+        if (x.kind !== 'plot' || x === it) continue;
+        Object.assign(x, { fontSize: it.fontSize, sizes: it.sizes ? { ...it.sizes } : undefined, stats: { ...statsOf(it) }, pctSign: it.pctSign, showLabels: it.showLabels });
+      }
+      env.changed();
+      env.toast('Text settings applied to every plot on this page.');
+      return render();
+    }
     const sh = () => sheet(l);
     if (act === 'svg') return save(`${fileBase(l)}.svg`, sh().svg, 'image/svg+xml');
     if (act === 'png') {

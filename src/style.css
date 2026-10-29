@@ -614,3 +614,6 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .lay-axis-hot:hover, .lay-axis-hot:focus-within { outline: 1px dashed var(--accent); outline-offset: 1px; background: rgba(29, 95, 196, 0.06); }
 .lay-axis-hot select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 14px; }
 .lay-marquee { position: absolute; border: 1px solid var(--accent); background: rgba(29, 95, 196, 0.1); pointer-events: none; }
+
+/* Small headings inside a settings card. */
+.field-head { margin: 6px 0 -2px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }

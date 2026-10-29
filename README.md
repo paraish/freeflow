@@ -203,7 +203,12 @@ Gating, **Add to layout** places the plot you are looking at.
   double-click a gate to rename it, Delete to remove it, and change the axes; the figure
   updates as you go. Esc or **Done** closes it.
 - Per plot: sample, population, plot type (pseudocolor, dot, histogram), X and Y channels,
-  title, axis labels, font size, dot size, width and height, gates and gate labels on or off.
+  dot size, width and height, gates on or off.
+- **Plot text** (its own card): the title (population, sample name, file name, both, none, or
+  any text with fill-ins), axis titles, and separate sizes for the title, axis titles, axis
+  numbers, gate names and gate numbers. Each gate can show its name, count, % of parent and %
+  of grandparent, with or without the % sign. **Use for every plot** copies these settings to
+  the other plots on the page.
 - Text items and titles take fill-ins: `{sample}`, `{label}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).

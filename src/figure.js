@@ -73,9 +73,39 @@ function spacedLabels(ticks, pos, minGap) {
 }
 
 // The plot area inside a plot item of the given size, for sizing its image.
-export function plotInner(w, h, fontSize = 11, hasTitle = true) {
-  const titleH = hasTitle ? fontSize * 1.6 : 4;
-  return { pw: Math.max(10, w - fontSize * 4.4 - 8), ph: Math.max(10, h - (titleH + 4) - fontSize * 3.6) };
+// A plot's text sizes: the title (fontSize) and, unless set, axis titles at
+// that size and axis numbers, gate names and gate numbers a little smaller.
+export function plotSizes(fontSize = 11, sizes = {}) {
+  const fs = fontSize || 11;
+  const z = sizes || {};
+  return { title: fs, axis: z.axis || fs, ticks: z.ticks || fs * 0.85, gateName: z.gateName || fs * 0.85, gateNum: z.gateNum || fs * 0.85 };
+}
+
+// Where the plot area sits inside a plot item, making room for its text.
+export function plotFrame({ x = 0, y = 0, w, h, fontSize = 11, sizes, hasTitle = true }) {
+  const z = plotSizes(fontSize, sizes);
+  const l = (z.ticks * 2.8) / 0.85 + z.axis * 1.6, r = 8, t = (hasTitle ? z.title * 1.6 : 4) + 4, b = z.ticks + z.axis * 2.75;
+  return { z, px: x + l, py: y + t, pw: Math.max(10, w - l - r), ph: Math.max(10, h - t - b) };
+}
+
+export function plotInner(w, h, fontSize = 11, hasTitle = true, sizes = null) {
+  const { pw, ph } = plotFrame({ w, h, fontSize, sizes, hasTitle });
+  return { pw, ph };
+}
+
+// The numbers shown under a gate's name: any of its count, % of parent and %
+// of grandparent (`stats`), with or without a % sign.
+export function gateNumbers(counts, stats = { parent: true }, pctSign = true) {
+  if (!counts) return null;
+  const pc = (a, b) => {
+    const v = b > 0 ? (a / b) * 100 : 0;
+    return `${v < 10 ? v.toFixed(2) : v.toFixed(1)}${pctSign ? '%' : ''}`;
+  };
+  const parts = [];
+  if (stats.count) parts.push(counts.n.toLocaleString('en-US'));
+  if (stats.parent) parts.push(pc(counts.n, counts.parent));
+  if (stats.grand) parts.push(pc(counts.n, counts.grand));
+  return parts.join(' · ');
 }
 
 /**
@@ -87,27 +117,20 @@ export function plotInner(w, h, fontSize = 11, hasTitle = true) {
  */
 // Where a plot's axis titles are drawn, in page units, so the layout editor
 // can put a channel menu over each.
-export function axisSpots({ x, y, w, h, fontSize = 11, hasTitle = true }) {
-  const fs = fontSize;
-  const tickFs = fs * 0.85;
-  const l = fs * 4.4, r = 8, t = (hasTitle ? fs * 1.6 : 4) + 4, b = fs * 3.6;
-  const px = x + l, py = y + t;
-  const pw = Math.max(10, w - l - r), ph = Math.max(10, h - t - b);
-  const base = py + ph + tickFs + fs * 2.1;
+export function axisSpots({ x, y, w, h, fontSize = 11, sizes = null, hasTitle = true }) {
+  const { z, px, py, pw, ph } = plotFrame({ x, y, w, h, fontSize, sizes, hasTitle });
+  const base = py + ph + z.ticks + z.axis * 2.1;
   const xw = Math.min(pw, 240), yh = Math.min(ph, 240);
   return {
-    x: { x: px + pw / 2 - xw / 2, y: base - fs * 1.1, w: xw, h: fs * 1.5 },
-    y: { x: x + fs * 0.9 - fs * 0.85, y: py + ph / 2 - yh / 2, w: fs * 1.3, h: yh },
+    x: { x: px + pw / 2 - xw / 2, y: base - z.axis * 1.1, w: xw, h: z.axis * 1.5 },
+    y: { x: x + z.axis * 0.05, y: py + ph / 2 - yh / 2, w: z.axis * 1.3, h: yh },
   };
 }
 
 export function plotSVG(p) {
-  const fs = p.fontSize || 11;
-  const tickFs = fs * 0.85;
-  const titleH = p.title ? fs * 1.6 : 4;
-  const l = fs * 4.4, r = 8, t = titleH + 4, b = fs * 3.6;
-  const px = p.x + l, py = p.y + t;
-  const pw = Math.max(10, p.w - l - r), ph = Math.max(10, p.h - t - b);
+  const { z, px, py, pw, ph } = plotFrame({ ...p, hasTitle: !!p.title });
+  const fs = z.title;
+  const tickFs = z.ticks;
   const sx = (s) => px + Math.max(0, Math.min(1, s)) * pw;
   const sy = (s) => py + ph - Math.max(0, Math.min(1, s)) * ph;
   const out = [`<g class="plot">`];
@@ -141,18 +164,26 @@ export function plotSVG(p) {
   for (const tk of spacedLabels(p.yTicks, sy, tickFs * 1.6)) {
     out.push(`<text x="${f(px - 6)}" y="${f(tk.p + tickFs * 0.35)}" font-family="${FONT}" font-size="${f(tickFs)}" text-anchor="end">${tickLabelSVG(tk.label)}</text>`);
   }
-  if (p.xLabel) out.push(textLines([p.xLabel], px + pw / 2, py + ph + tickFs + fs * 2.1, fs, { anchor: 'middle' }));
+  if (p.xLabel) out.push(textLines([p.xLabel], px + pw / 2, py + ph + tickFs + z.axis * 2.1, z.axis, { anchor: 'middle' }));
   if (p.yLabel) {
-    const cx = p.x + fs * 0.9, cy = py + ph / 2;
-    out.push(`<text transform="translate(${f(cx)} ${f(cy)}) rotate(-90)" font-family="${FONT}" font-size="${f(fs)}" text-anchor="middle">${esc(p.yLabel)}</text>`);
+    const cx = p.x + z.axis * 0.9, cy = py + ph / 2;
+    out.push(`<text transform="translate(${f(cx)} ${f(cy)}) rotate(-90)" font-family="${FONT}" font-size="${f(z.axis)}" text-anchor="middle">${esc(p.yLabel)}</text>`);
   }
 
   // Gates.
   if (p.showGates !== false) {
-    const lab = (x, y, name, pct, anchor = 'middle') => {
-      if (p.showLabels === false) return '';
-      const lines = [name, pct].filter(Boolean);
-      return `<g class="gate-label">${textLines(lines, x, y, tickFs, { anchor })}</g>`;
+    // A gate's name (unless hidden) with the chosen numbers under it, each
+    // at its own size. `y` is the first line's baseline.
+    const stats = p.stats || (p.showLabels === false ? {} : { parent: true });
+    const numsFor = (m) => (m.counts ? gateNumbers(m.counts, stats, p.pctSign !== false) : (stats.parent ? m.sub : ''));
+    const showNames = p.showLabels !== false;
+    const hasNums = !!(stats.count || stats.parent || stats.grand);
+    const below = hasNums ? z.gateName * 0.25 + z.gateNum : 0; // from the name's baseline to the numbers'
+    const lab = (x, y, name, nums, anchor = 'middle') => {
+      const parts = [];
+      if (showNames && name) parts.push(textLines([name], x, y, z.gateName, { anchor }));
+      if (nums) parts.push(textLines([nums], x, showNames && name ? y + below : y, z.gateNum, { anchor }));
+      return parts.length ? `<g class="gate-label">${parts.join('')}</g>` : '';
     };
     // A label moved in the gating view keeps its place (fractions of the plot area).
     const off = (m) => ({ x: (m?.dx || 0) * pw, y: -(m?.dy || 0) * ph });
@@ -162,8 +193,8 @@ export function plotSVG(p) {
         let top = g.pts[0];
         for (const pt of g.pts) if (pt[1] > top[1]) top = pt;
         const cx = g.pts.reduce((acc, pt) => acc + Math.max(0, Math.min(1, pt[0])), 0) / g.pts.length;
-        const ly = Math.max(py + tickFs, sy(top[1]) - tickFs * 1.6);
-        out.push(lab(sx(cx) + off(g.lab).x, ly + off(g.lab).y, g.label, g.sub));
+        const ly = Math.max(py + z.gateName, sy(top[1]) - below - z.gateName * 0.4 - 2);
+        out.push(lab(sx(cx) + off(g.lab).x, ly + off(g.lab).y, g.label, numsFor(g)));
       } else if (g.kind === 'quad') {
         out.push(`<path d="M${f(px)} ${f(sy(g.cy))}H${f(px + pw)}M${f(sx(g.cx))} ${f(py)}V${f(py + ph)}" stroke="#000000" stroke-width="1" fill="none"/>`);
         // Arial averages about 0.55 em per character; a label wider than its
@@ -171,16 +202,16 @@ export function plotSVG(p) {
         const room = (side) => (side ? px + pw - sx(g.cx) : sx(g.cx) - px) - 8;
         for (const q of g.quads) {
           const right = q.quadrant === 'UR' || q.quadrant === 'LR';
-          if (q.label.length * tickFs * 0.55 > room(right)) q.label = q.label.split(':')[0];
+          if (q.label.length * z.gateName * 0.55 > room(right)) q.label = q.label.split(':')[0];
           const up = q.quadrant === 'UL' || q.quadrant === 'UR';
           const x = right ? px + pw - 4 : px + 4;
-          const y = up ? py + tickFs + 2 : py + ph - tickFs * 1.5;
-          out.push(lab(x + off(q.lab).x, y + off(q.lab).y, q.label, q.sub, right ? 'end' : 'start'));
+          const y = up ? py + z.gateName + 2 : py + ph - 4 - (showNames ? below : 0);
+          out.push(lab(x + off(q.lab).x, y + off(q.lab).y, q.label, numsFor(q), right ? 'end' : 'start'));
         }
       } else if (g.kind === 'range') {
         const x1 = sx(g.lo), x2 = sx(g.hi), y = py + ph - g.level * ph;
         out.push(`<path d="M${f(x1)} ${f(y)}H${f(x2)}M${f(x1)} ${f(y - 5)}v10M${f(x2)} ${f(y - 5)}v10" stroke="#000000" stroke-width="1" fill="none"/>`);
-        out.push(lab((x1 + x2) / 2 + off(g.lab).x, y - tickFs * 2.2 + off(g.lab).y, g.label, g.sub));
+        out.push(lab((x1 + x2) / 2 + off(g.lab).x, y - below - z.gateName * 0.6 - 4 + off(g.lab).y, g.label, numsFor(g)));
       }
     }
   }
