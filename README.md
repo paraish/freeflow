@@ -113,8 +113,9 @@ with one click).
   whether to **Delete gate for all samples** or **Delete only the grouping** (each sample keeps
   its copy as an ordinary gate). The folder gates listed there can be selected (click; Ctrl/⌘-click or
   Shift-click for several) and dragged onto a sample's name (copied to the same place in that
-  sample), onto any population (copied under it), or onto another folder (they become that
-  folder's gates too). A quadrant gate always goes as its set of four, when selected, copied or
+  sample), onto any population (copied under it), onto another folder (they become that
+  folder's gates too), or onto another folder gate (they become its sub-gates, in every sample
+  of that folder; gates from the sample trees can be dropped there too). A quadrant gate always goes as its set of four, when selected, copied or
   deleted. Folder gates and adjustments are kept in bundles and shared
   workspaces; .wsp files carry each sample's full gates plus the folder memberships.
 - **Samples column**: every sample with its own gating tree, each collapsible (per sample,

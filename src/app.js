@@ -2111,6 +2111,48 @@ function makeFolderGates(g, items, { relink = false } = {}) {
   toast(`${itemsLabel(fresh)} is now a folder gate in ${g.name}, applied to ${n} sample${n === 1 ? '' : 's'}. Adjusting it on one sample changes only that sample.${missing.length ? ` Not applied to ${missing.join(', ')}: missing its parent population.` : ''}`, missing.length > 0);
 }
 
+// Dropping gates on a folder gate in the Folders pane makes them its
+// sub-gates, in every sample of that folder. A sub-gate of the same name is
+// updated rather than duplicated, as when dropping on a population.
+function dropOnFolderGate(src, groupId, gid) {
+  const g = groupById(groupId);
+  const entries = templatesOf(groupId);
+  const holder = findTemplate(entries, gid);
+  if (!g || !holder || !src.items?.length) return;
+  // A folder gate cannot go inside itself or its own sub-gates.
+  const inside = src.items.some(({ pop }) => {
+    const own = pop.link?.group === groupId && findTemplate(entries, pop.link.gid);
+    return own && subtreeGids(own.node).has(gid);
+  });
+  if (inside) { toast(`A gate can't be put inside itself or one of its own sub-gates.`, true); return; }
+  const made = src.items.map(({ pop }) => templateFrom(pop));
+  // New quadrant links, so the copies never join another set of four.
+  const links = new Map();
+  walkTemplate(made, (node) => {
+    if (node.gate?.type !== 'quad') return;
+    if (!links.has(node.gate.link)) links.set(node.gate.link, newId('q'));
+    node.gate.link = links.get(node.gate.link);
+  });
+  const mergeNode = (dst, from) => {
+    dst.gate = cloneGate(from.gate);
+    for (const c of from.children) {
+      const same = dst.children.find((x) => x.name === c.name);
+      if (same) mergeNode(same, c); else dst.children.push(c);
+    }
+  };
+  pushUndo();
+  let updated = 0;
+  for (const node of made) {
+    const same = holder.node.children.find((c) => c.name === node.name);
+    if (same) { mergeNode(same, node); updated++; } else holder.node.children.push(node);
+  }
+  const missing = syncFolderGates();
+  renderAll();
+  const n = groupMembers(g).length - missing.length;
+  const label = itemsLabel(src.items);
+  toast(`${updated === made.length ? 'Updated' : 'Added'} ${label} under “${holder.node.name}” in ${g.name}, for ${n} sample${n === 1 ? '' : 's'}.${missing.length ? ` Not added to ${missing.join(', ')}: missing “${holder.node.name}”.` : ''}`, missing.length > 0);
+}
+
 function folderGateName(link) {
   return groupById(link.group)?.name || 'a folder';
 }
@@ -3534,9 +3576,10 @@ function bind() {
     list.addEventListener('dragstart', onDragStart);
     list.addEventListener('dragover', (e) => {
       if (!dragSrc) return;
-      const row = e.target.closest?.('.pop-row, .sample-row, .group-row');
+      const row = e.target.closest?.('.pop-row, .sample-row, .group-row, .fg-row');
       const bad = !row
         || (row.classList.contains('pop-row') && dragSrc.ids.has(row.dataset.id))
+        || (row.classList.contains('fg-row') && (dragSrc.sampleDrag || dragSrc.items?.some(({ pop }) => pop.link?.group === row.dataset.group && pop.link.gid === row.dataset.gid)))
         || (dragSrc.sampleDrag && (!row.classList.contains('group-row') || row.dataset.group === ALL || row.dataset.group === NONCONTROLS));
       if (bad) { clearDrop(); return; }
       e.preventDefault();
@@ -3550,10 +3593,11 @@ function bind() {
       clearDrop();
       const src = dragSrc;
       dragSrc = null;
-      const row = e.target.closest?.('.pop-row, .sample-row, .group-row');
+      const row = e.target.closest?.('.pop-row, .sample-row, .group-row, .fg-row');
       if (!row) return;
       if (row.classList.contains('group-row')) { dropOnGroup(src, row.dataset.group); return; }
       if (src.sampleDrag) return;
+      if (row.classList.contains('fg-row')) { dropOnFolderGate(src, row.dataset.group, row.dataset.gid); return; }
       if (row.classList.contains('pop-row')) {
         if (src.ids.has(row.dataset.id)) return;
         const target = findPop(row.dataset.id);
