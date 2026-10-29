@@ -220,7 +220,13 @@ Gating, **Add to layout** places the plot you are looking at.
   shows the file name, or the sample's name, above each copy, with its own alignment, size,
   font, bold, italic and colour.
   Double-click a plot in any copy to edit its gates for that copy's sample (the plot being
-  edited is outlined). Each copy is only as big as
+  edited is outlined).
+  - **Plot text — all plots in the batch**: the same title, size and gate label settings as a
+    single plot's, applied to every plot in every copy.
+  - Click a plot in any copy to select it (Shift- or Ctrl/⌘-click, or drag a box, for several).
+  - **Export → What**: **Entire batch** (the default) or **Selected plots**, which saves only
+    the selected plots, each with its sample ID, cropped to fit. It switches to the selection by
+    itself when two or more plots are selected. Each copy is only as big as
   the items on the page (plus a small margin), so a half-filled page gives compact copies.
 - Export: **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
   Illustrator, Inkscape or PowerPoint; density clouds embedded as images), **Download PNG**,

@@ -49,7 +49,9 @@ export function createLayoutEditor(root, env) {
   // sheet; editMark: the plot open for editing ({ id, block }).
   // sel: the item whose settings are shown; multi: every selected item (Shift-
   // or Ctrl/⌘-click selects several).
-  const ui = { layoutId: null, sel: null, multi: new Set(), zoom: 1, previewUrl: null, previewTimer: null, origin: null, blocks: null, editMark: null };
+  // copySel: plots selected in particular copies of a batch, as "<copy>:<item id>"
+  // (copy 0 is the one being edited); exportScope: 'all', 'sel' or null (automatic).
+  const ui = { layoutId: null, sel: null, multi: new Set(), copySel: new Set(), exportScope: null, zoom: 1, previewUrl: null, previewTimer: null, origin: null, blocks: null, editMark: null };
   const imageCache = new Map();
   const $ = (id) => root.querySelector(`#${id}`);
 
@@ -58,13 +60,41 @@ export function createLayoutEditor(root, env) {
   const itemById = (id) => current()?.items.find((i) => i.id === id) || null;
   const selection = () => (ui.multi.size ? [...ui.multi] : ui.sel ? [ui.sel] : []).map(itemById).filter(Boolean);
   // Selects one item (or none).
-  const pick = (id) => { ui.sel = id; ui.multi = new Set(id ? [id] : []); };
+  const pick = (id) => {
+    ui.sel = id;
+    ui.multi = new Set(id ? [id] : []);
+    ui.copySel = new Set(id ? [`0:${id}`] : []);
+    if (!id) ui.exportScope = null;
+  };
   // Adds an item to the selection, or takes it out.
   const toggle = (id) => {
     const set = new Set(selection().map((i) => i.id));
     if (set.has(id)) set.delete(id); else set.add(id);
     ui.multi = set;
     ui.sel = set.has(id) ? id : [...set][0] ?? null;
+    const key = `0:${id}`;
+    if (set.has(id)) ui.copySel.add(key); else ui.copySel.delete(key);
+  };
+  // Selects a plot in one copy of a batch (with `add`, adding it or taking it out).
+  const pickCopy = (block, id, add = false) => {
+    const key = `${block}:${id}`;
+    if (!add) ui.copySel = new Set([key]);
+    else if (ui.copySel.has(key)) ui.copySel.delete(key); else ui.copySel.add(key);
+    ui.multi = new Set([...ui.copySel].map((k) => k.split(':')[1]));
+    ui.sel = ui.copySel.has(key) ? id : [...ui.multi][0] ?? null;
+  };
+  // The plots selected for export: in batch, the ones picked in each copy.
+  const exportTargets = () => {
+    const l = current();
+    if (!l) return [];
+    if (!l.batch) return selection().map((it) => ({ b: 0, it }));
+    return [...ui.copySel].map((k) => { const [b, id] = k.split(':'); return { b: +b, it: itemById(id) }; }).filter((x) => x.it);
+  };
+  // Export the selection once two or more plots are picked, unless chosen otherwise.
+  const exportScope = () => {
+    const n = exportTargets().length;
+    if (!n) return 'all';
+    return ui.exportScope || (n >= 2 ? 'sel' : 'all');
   };
   const isGrid = (l) => l?.arrange === 'grid';
   // In grid mode, puts the plots back in their cells after any change.
@@ -154,6 +184,18 @@ export function createLayoutEditor(root, env) {
     return it.stats || (it.showLabels === false ? {} : { parent: true });
   }
 
+  // Outlines for plots selected in batch copies other than the first (whose
+  // own boxes show their selection).
+  function copyMarks() {
+    const z = ui.zoom;
+    return [...ui.copySel].map((k) => {
+      const [b, id] = k.split(':');
+      const it = itemById(id), bl = ui.blocks?.[+b];
+      if (+b === 0 || !it || !bl) return '';
+      return `<div class="lay-copy-sel" style="left:${(it.x + bl.dx) * z}px;top:${(it.y + bl.dy) * z}px;width:${it.w * z}px;height:${it.h * z}px"></div>`;
+    }).join('');
+  }
+
   // A plot item's axes: its own, or else those its population was last shown on.
   function itemView(it, s) {
     if (it.view) return it.view;
@@ -198,6 +240,49 @@ export function createLayoutEditor(root, env) {
     return `${n} cop${n === 1 ? 'y' : 'ies'} in ${g.cols} column${g.cols === 1 ? '' : 's'} × ${g.rows} row${g.rows === 1 ? '' : 's'}. Leave columns or rows empty to fit every sample. Double-click a plot in any copy to edit its gates for that sample.`;
   }
 
+  // The sample ID shown above each copy of a batch: the file name or the
+  // sample's name, with its text settings; null when it is off.
+  function batchId(layout) {
+    if (!layout.batch || (layout.idShow !== 'file' && layout.idShow !== 'name')) return null;
+    const size = layout.idSize || 14;
+    return {
+      h: Math.round(size * 1.5),
+      style: { fontSize: size, align: layout.idAlign || 'left', bold: layout.idBold !== false, italic: !!layout.idItalic, color: layout.idColor, font: layout.idFont },
+      text: (s) => (layout.idShow === 'name' ? (env.labelOf(s) || s.name) : s.name),
+    };
+  }
+
+  // Only the selected plots (each from its own copy in a batch, with its
+  // sample ID above it), cropped to fit.
+  function selectionSheet(layout, targets) {
+    const sh = sheet(layout);
+    const id = batchId(layout);
+    const parts = [];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const { b, it } of targets) {
+      const bl = sh.blocks[b];
+      if (!bl) continue;
+      const X = it.x + bl.dx, Y = it.y + bl.dy;
+      let top = Y;
+      if (id && bl.sample && it.kind === 'plot') {
+        top = Y - id.h;
+        parts.push(textSVG({ ...id.style, x: X, y: top, w: it.w, h: id.h, text: id.text(bl.sample) }));
+      }
+      parts.push(itemSVG(it, bl.sample, bl.dx, bl.dy));
+      x0 = Math.min(x0, X); y0 = Math.min(y0, top); x1 = Math.max(x1, X + it.w); y1 = Math.max(y1, Y + it.h);
+    }
+    if (!parts.length) return sh;
+    const m = 12;
+    const width = x1 - x0 + 2 * m, height = y1 - y0 + 2 * m;
+    return { width, height, svg: pageSVG({ width, height, parts: [`<g transform="translate(${m - x0} ${m - y0})">${parts.join('')}</g>`] }) };
+  }
+
+  // What the export buttons and the preview use.
+  function exportSheet(layout) {
+    const targets = exportTargets();
+    return exportScope() === 'sel' && targets.length ? selectionSheet(layout, targets) : sheet(layout);
+  }
+
   function sheet(layout) {
     if (!layout) return { width: 800, height: 600, svg: pageSVG({ width: 800, height: 600, parts: [] }), blocks: [], origin: { dx: 0, dy: 0 }, cell: { x0: 0, y0: 0, w: 800, h: 600 } };
     // Batch copies skip compensation controls.
@@ -206,10 +291,8 @@ export function createLayoutEditor(root, env) {
     // In batch, each copy is only as big as the items on the page (plus a
     // margin), not the whole page.
     let cell = batchCell(layout);
-    // A sample ID above each copy (batch): the file name or the sample's name.
-    const id = layout.batch && (layout.idShow === 'file' || layout.idShow === 'name')
-      ? { size: layout.idSize || 14, align: layout.idAlign || 'left', bold: layout.idBold !== false, italic: !!layout.idItalic, color: layout.idColor, font: layout.idFont } : null;
-    const idH = id ? Math.round(id.size * 1.5) : 0;
+    const id = batchId(layout);
+    const idH = id ? id.h : 0;
     if (idH) cell = { ...cell, y0: cell.y0 - idH, h: cell.h + idH };
     const width = cell.w * cols;
     const height = cell.h * rows;
@@ -222,10 +305,7 @@ export function createLayoutEditor(root, env) {
       const dx = cx - cell.x0, dy = cy - cell.y0;
       blocks.push({ dx, dy, sample: s });
       if (layout.batch && r > 0) parts.push(`<line x1="${cx}" y1="${cy}" x2="${cx + cell.w}" y2="${cy}" stroke="#dddddd" stroke-width="0.5"/>`);
-      if (id && s) {
-        const text = layout.idShow === 'name' ? (env.labelOf(s) || s.name) : s.name;
-        parts.push(textSVG({ x: cx + 16, y: cy + 4, w: cell.w - 32, h: idH, text, fontSize: id.size, bold: id.bold, italic: id.italic, color: id.color, font: id.font, align: id.align }));
-      }
+      if (id && s) parts.push(textSVG({ ...id.style, x: cx + 16, y: cy + 4, w: cell.w - 32, h: idH, text: id.text(s) }));
       for (const item of layout.items) parts.push(itemSVG(item, s, dx, dy));
     });
     return { width, height, svg: pageSVG({ width, height, parts }), blocks, origin: { dx: -cell.x0, dy: -cell.y0 }, cell };
@@ -298,7 +378,7 @@ export function createLayoutEditor(root, env) {
     ui.previewTimer = setTimeout(async () => {
       const img = $('lay-preview');
       if (!img || root.hidden) return;
-      const sh = sheet(current());
+      const sh = exportSheet(current());
       try {
         const blob = await svgToPngBlob(sh.svg, sh.width, sh.height, 1.5);
         if (ui.previewUrl) URL.revokeObjectURL(ui.previewUrl);
@@ -354,7 +434,7 @@ export function createLayoutEditor(root, env) {
     stage.innerHTML = `<div class="lay-sheet" style="width:${sh.width * z}px;height:${sh.height * z}px">
       <div class="lay-svg">${sh.svg}</div>
       ${l.batch ? `<div class="lay-block-hint" style="width:${sh.cell.w * z}px;height:${sh.cell.h * z}px"></div>` : ''}
-      <div class="lay-overlay">${cells}${editMark}${overlays}${axisHot}</div></div>`;
+      <div class="lay-overlay">${cells}${editMark}${copyMarks()}${overlays}${axisHot}</div></div>`;
     const svg = stage.querySelector('.lay-svg svg');
     svg.setAttribute('width', sh.width * z);
     svg.setAttribute('height', sh.height * z);
@@ -367,7 +447,10 @@ export function createLayoutEditor(root, env) {
 
   // The text settings of a plot: title, axis titles, sizes, and the numbers
   // shown with each gate.
-  function plotTextHTML(it, view, s) {
+  // `P` prefixes the ids: 'lp' for the selected plot, 'lb' for the batch card
+  // (which sets every plot and leaves out the axis titles and the buttons).
+  function plotTextHTML(it, view, s, P = 'lp') {
+    const all = P === 'lb';
     const field = (id, label, input) => `<label class="field"><span>${label}</span>${input}</label>`;
     const num = (id, v, attrs = '') => `<input id="${id}" type="number" value="${+(+v).toFixed(1)}" ${attrs}>`;
     const txt = (id, v, ph = '') => `<input id="${id}" type="text" value="${escH(v ?? '')}" placeholder="${escH(ph)}" autocomplete="off">`;
@@ -387,27 +470,27 @@ export function createLayoutEditor(root, env) {
     const keys = Object.keys(kw).filter((k) => !k.startsWith('$') && !/^(P\d|SPILL|COMP)/i.test(k)).slice(0, 40);
     for (const k of ['$DATE', '$BTIM', '$CYT', '$SRC', '$OP', '$INST']) if (kw[k] !== undefined) keys.push(k);
     const opt = (v, name) => `<option value="${escH(v)}">${escH(name)}${v ? ` → ${escH(shown(v) || '(empty)')}` : ''}</option>`;
-    const picker = `<select id="lp-title-pick" class="combo-pick" aria-label="Choose a title" title="Choose a title">
+    const picker = `<select id="${P}-title-pick" class="combo-pick" aria-label="Choose a title" title="Choose a title">
         <option value="" selected disabled hidden>Choose</option>
         <optgroup label="Titles">${presets.map(([v, t]) => opt(v, t)).join('')}<option value="__none">None</option></optgroup>
         ${keys.length ? `<optgroup label="Keywords of this sample">${keys.map((k) => opt(`{${k}}`, k)).join('')}</optgroup>` : ''}
       </select>`;
     return `
         <div class="fields">
-          ${field('', 'Title', `<span class="combo">${txt('lp-title', title, 'No title')}${picker}</span>`)}
-          ${field('', 'X axis title', txt('lp-xlabel', it.xLabel, 'Channel name'))}
-          ${field('', 'Y axis title', txt('lp-ylabel', it.yLabel, view.type === 'histogram' ? '% of max' : 'Channel name'))}
+          ${field('', 'Title', `<span class="combo">${txt(`${P}-title`, title, 'No title')}${picker}</span>`)}
+          ${all ? '' : `${field('', 'X axis title', txt(`${P}-xlabel`, it.xLabel, 'Channel name'))}
+          ${field('', 'Y axis title', txt(`${P}-ylabel`, it.yLabel, view.type === 'histogram' ? '% of max' : 'Channel name'))}`}
           <p class="field-head">Sizes</p>
-          <div class="field-pair">${field('', 'Title', num('lp-font', z.title, 'min="4" max="48" step="0.5"'))}${field('', 'Axis titles', num('lp-axfs', z.axis, 'min="4" max="48" step="0.5"'))}</div>
-          <div class="field-pair">${field('', 'Axis numbers', num('lp-tickfs', z.ticks, 'min="4" max="48" step="0.5"'))}${field('', 'Gate names', num('lp-gnfs', z.gateName, 'min="4" max="48" step="0.5"'))}</div>
-          <div class="field-pair">${field('', 'Gate numbers', num('lp-gvfs', z.gateNum, 'min="4" max="48" step="0.5"'))}<span></span></div>
-          <div class="btn-row"><button class="btn btn-small" data-act="sizes-all" title="Use these five sizes for every plot in every layout, and for new plots">Set for all plots</button></div>
-          <p class="muted small">Sets these sizes on every plot in every layout; new plots start with them too.</p>
+          <div class="field-pair">${field('', 'Title', num(`${P}-font`, z.title, 'min="4" max="48" step="0.5"'))}${field('', 'Axis titles', num(`${P}-axfs`, z.axis, 'min="4" max="48" step="0.5"'))}</div>
+          <div class="field-pair">${field('', 'Axis numbers', num(`${P}-tickfs`, z.ticks, 'min="4" max="48" step="0.5"'))}${field('', 'Gate names', num(`${P}-gnfs`, z.gateName, 'min="4" max="48" step="0.5"'))}</div>
+          <div class="field-pair">${field('', 'Gate numbers', num(`${P}-gvfs`, z.gateNum, 'min="4" max="48" step="0.5"'))}<span></span></div>
+          ${all ? '' : `<div class="btn-row"><button class="btn btn-small" data-act="sizes-all" title="Use these five sizes for every plot in every layout, and for new plots">Set for all plots</button></div>
+          <p class="muted small">Sets these sizes on every plot in every layout; new plots start with them too.</p>`}
           <p class="field-head">With each gate</p>
-          <div class="field-pair">${check('lp-labels', it.showLabels !== false, 'Name')}${check('lp-st-count', st.count, 'Count')}</div>
-          <div class="field-pair">${check('lp-st-parent', st.parent, '% of parent')}${check('lp-st-grand', st.grand, '% of grandparent')}</div>
-          ${check('lp-pct', it.pctSign !== false, 'Show the % sign')}
-          <div class="btn-row"><button class="btn btn-small" data-act="text-all" title="Copy these gate name and number settings to every plot on this page">Use these gate labels for every plot on this page</button></div>
+          <div class="field-pair">${check(`${P}-labels`, it.showLabels !== false, 'Name')}${check(`${P}-st-count`, st.count, 'Count')}</div>
+          <div class="field-pair">${check(`${P}-st-parent`, st.parent, '% of parent')}${check(`${P}-st-grand`, st.grand, '% of grandparent')}</div>
+          ${check(`${P}-pct`, it.pctSign !== false, 'Show the % sign')}
+          ${all ? '' : '<div class="btn-row"><button class="btn btn-small" data-act="text-all" title="Copy these gate name and number settings to every plot on this page">Use these gate labels for every plot on this page</button></div>'}
         </div>
         <p class="muted small">Fill-ins for titles: {sample} {label} {population} {parent} {count} {freq} {freqTotal} {x} {y}, or any keyword in braces such as {$DATE}.</p>
 `;
@@ -499,12 +582,29 @@ export function createLayoutEditor(root, env) {
           <p class="muted small">Shown above each copy. "Name" is the name given to the sample in the Samples pane.</p>` : ''}` : ''}
         </div>
       </section>
+      ${l.batch && l.items.some((x) => x.kind === 'plot') ? (() => {
+        const ref = l.items.find((x) => x.kind === 'plot');
+        const ps = sampleFor(ref, pageSampleOf(l));
+        return `<section class="card">
+        <header class="card-head"><span class="eyebrow">Plot text — all plots in the batch</span></header>
+        <p class="muted small">Changes here apply to every plot, in every copy. Shown: the first plot's settings.</p>
+        ${plotTextHTML(ref, itemView(ref, ps), ps, 'lb')}
+      </section>`;
+      })() : ''}
       <section class="card">
         <header class="card-head"><span class="eyebrow">${many > 1 ? 'Items' : it ? (it.kind === 'text' ? 'Text' : 'Plot') : 'Item'}</span></header>
         ${itemHTML}
       </section>
       <section class="card">
         <header class="card-head"><span class="eyebrow">Export</span></header>
+        ${(() => {
+          const n = exportTargets().length;
+          const scope = exportScope();
+          return `<div class="fields"><label class="field"><span>What</span><select id="lay-export-scope">
+            <option value="all" ${scope === 'all' ? 'selected' : ''}>${l.batch ? 'Entire batch' : 'Entire page'}</option>
+            <option value="sel" ${scope === 'sel' ? 'selected' : ''} ${n ? '' : 'disabled'}>Selected ${l.batch ? 'plot' : 'item'}${n === 1 ? '' : 's'}${n ? ` (${n})` : ''}</option>
+          </select></label></div>`;
+        })()}
         <div class="btn-row">
           <button class="btn btn-primary" data-act="svg">Download SVG</button>
           <button class="btn" data-act="png">Download PNG</button>
@@ -678,25 +778,40 @@ export function createLayoutEditor(root, env) {
     render();
   }
 
+  // One text setting of a plot (from the plot's card or the batch card).
+  function setPlotText(x, key, val, n) {
+    const sizeKey = { axfs: 'axis', tickfs: 'ticks', gnfs: 'gateName', gvfs: 'gateNum' }[key];
+    if (key === 'title-pick') x.title = val === '__none' ? '' : val;
+    else if (key === 'title') x.title = val;
+    else if (key === 'xlabel') x.xLabel = val;
+    else if (key === 'ylabel') x.yLabel = val;
+    else if (key === 'font') { if (n >= 4) x.fontSize = n; }
+    else if (sizeKey) { if (n >= 4) x.sizes = { ...(x.sizes || {}), [sizeKey]: n }; }
+    else if (key === 'labels') x.showLabels = val;
+    else if (key.startsWith('st-')) x.stats = { ...statsOf(x), [key.slice(3)]: val };
+    else if (key === 'pct') x.pctSign = val;
+  }
+
   function onPropInput(e) {
     const l = current();
     if (!l) return;
     const t = e.target;
+    if (t.id === 'lay-export-scope') { ui.exportScope = t.value; schedulePreview(); return; }
     // One undo step per field being edited, not per keystroke.
     env.checkpoint(`${t.id}:${ui.sel}`);
     const it = itemById(ui.sel);
     const val = t.type === 'checkbox' ? t.checked : t.value;
     const n = parseFloat(val);
+    const tm = t.id.match(/^(lp|lb)-(title-pick|title|xlabel|ylabel|font|axfs|tickfs|gnfs|gvfs|labels|st-count|st-parent|st-grand|pct)$/);
+    if (tm) {
+      const targets = tm[1] === 'lb' ? l.items.filter((x) => x.kind === 'plot') : it?.kind === 'plot' ? [it] : [];
+      const key = tm[2];
+      if (key === 'title-pick' && !val) return;
+      for (const x of targets) setPlotText(x, key, val, n);
+      return changed({ props: key === 'title-pick' });
+    }
     switch (t.id) {
       case 'lpg-name': l.name = val || 'Layout'; return changed();
-      case 'lp-title-pick': if (it && val) { it.title = val === '__none' ? '' : val; return changed({ props: true }); } return;
-      case 'lp-axfs': case 'lp-tickfs': case 'lp-gnfs': case 'lp-gvfs':
-        if (it && n >= 4) { it.sizes = { ...(it.sizes || {}), [{ 'lp-axfs': 'axis', 'lp-tickfs': 'ticks', 'lp-gnfs': 'gateName', 'lp-gvfs': 'gateNum' }[t.id]]: n }; changed(); }
-        return;
-      case 'lp-st-count': case 'lp-st-parent': case 'lp-st-grand':
-        if (it) { it.stats = { ...statsOf(it), [t.id.slice(6)]: val }; changed(); }
-        return;
-      case 'lp-pct': if (it) { it.pctSign = val; changed(); } return;
       case 'lpg-arrange': {
         l.arrange = val === 'grid' ? 'grid' : 'free';
         if (isGrid(l) && !Number.isFinite(l.gridTop)) l.gridTop = titleTop(l);
@@ -741,15 +856,10 @@ export function createLayoutEditor(root, env) {
         case 'lp-type': it.view.type = val; return changed({ props: true });
         case 'lp-x': it.view.x = val; return changed();
         case 'lp-y': it.view.y = val; return changed();
-        case 'lp-title': it.title = val; return changed();
-        case 'lp-xlabel': it.xLabel = val; return changed();
-        case 'lp-ylabel': it.yLabel = val; return changed();
-        case 'lp-font': if (n >= 6) { it.fontSize = n; changed(); } return;
         case 'lp-dot': if (n >= 1 && n <= 6) { it.dotSize = Math.round(n); changed(); } return;
         case 'lp-w': if (n >= 80) { it.w = n; changed(); } return;
         case 'lp-h': if (n >= 80) { it.h = n; changed(); } return;
         case 'lp-gates': it.showGates = val; return changed();
-        case 'lp-labels': it.showLabels = val; return changed();
         default: return;
       }
     }
@@ -859,11 +969,12 @@ export function createLayoutEditor(root, env) {
       env.toast('Text sizes set for every plot; new plots will start with them.');
       return render();
     }
-    const sh = () => sheet(l);
-    if (act === 'svg') return save(`${fileBase(l)}.svg`, sh().svg, 'image/svg+xml');
+    const sh = () => exportSheet(l);
+    const name = `${fileBase(l)}${exportScope() === 'sel' ? '-selected' : ''}`;
+    if (act === 'svg') return save(`${name}.svg`, sh().svg, 'image/svg+xml');
     if (act === 'png') {
       const x = sh();
-      try { return save(`${fileBase(l)}.png`, await svgToPngBlob(x.svg, x.width, x.height, 2), 'image/png'); } catch (err) { return env.toast(err.message, true); }
+      try { return save(`${name}.png`, await svgToPngBlob(x.svg, x.width, x.height, 2), 'image/png'); } catch (err) { return env.toast(err.message, true); }
     }
     if (act === 'copy') return copyImage(sh());
   }
@@ -915,10 +1026,16 @@ export function createLayoutEditor(root, env) {
         return;
       }
       lastDown = hit ? { id: `${hit.block}:${hit.it.id}`, t: now } : { id: null, t: 0 };
+      const add = e.shiftKey || e.ctrlKey || e.metaKey;
+      // In batch, a click on a plot in any copy selects it there.
+      if (hit && current().batch) {
+        pickCopy(hit.block, hit.it.id, add);
+        render();
+        return;
+      }
       // Dragging on the page draws a box that selects the items it touches
       // (with Shift or Ctrl/⌘, adding to the selection).
-      const add = e.shiftKey || e.ctrlKey || e.metaKey;
-      marquee = { x0: e.clientX, y0: e.clientY, add, base: add ? selection().map((x) => x.id) : [], moved: false };
+      marquee = { x0: e.clientX, y0: e.clientY, add, base: add ? [...ui.copySel] : [], moved: false };
       stage.setPointerCapture?.(e.pointerId);
       if (!add && (ui.sel || ui.multi.size)) { pick(null); render(); }
       return;
@@ -964,15 +1081,22 @@ export function createLayoutEditor(root, env) {
     let el = sheetEl.querySelector('.lay-marquee');
     if (!el) { el = document.createElement('div'); el.className = 'lay-marquee'; sheetEl.querySelector('.lay-overlay').append(el); }
     Object.assign(el.style, { left: `${x1 - r.left}px`, top: `${y1 - r.top}px`, width: `${x2 - x1}px`, height: `${y2 - y1}px` });
-    // Items of the first copy that the box touches, in page units.
-    const z = ui.zoom, o = ui.origin || { dx: 0, dy: 0 };
-    const px1 = (x1 - r.left) / z - o.dx, px2 = (x2 - r.left) / z - o.dx;
-    const py1 = (y1 - r.top) / z - o.dy, py2 = (y2 - r.top) / z - o.dy;
-    const hits = current().items.filter((it) => it.x < px2 && it.x + it.w > px1 && it.y < py2 && it.y + it.h > py1).map((it) => it.id);
-    const ids = new Set([...m.base, ...hits]);
+    // Items the box touches, in every copy of a batch (sheet units).
+    const z = ui.zoom;
+    const X1 = (x1 - r.left) / z, X2 = (x2 - r.left) / z, Y1 = (y1 - r.top) / z, Y2 = (y2 - r.top) / z;
+    const keys = new Set(m.base);
+    (ui.blocks || []).forEach((bl, b) => {
+      for (const it of current().items) {
+        if (it.x + bl.dx < X2 && it.x + it.w + bl.dx > X1 && it.y + bl.dy < Y2 && it.y + it.h + bl.dy > Y1) keys.add(`${b}:${it.id}`);
+      }
+    });
+    ui.copySel = keys;
+    const ids = new Set([...keys].map((k) => k.split(':')[1]));
     ui.multi = ids;
-    ui.sel = hits[0] || m.base[0] || null;
+    ui.sel = [...ids][0] || null;
     root.querySelectorAll('.lay-box').forEach((b) => b.classList.toggle('is-sel', ids.has(b.dataset.id)));
+    root.querySelectorAll('.lay-copy-sel').forEach((n) => n.remove());
+    root.querySelector('.lay-overlay')?.insertAdjacentHTML('afterbegin', copyMarks());
   }
 
   function onPointerMove(e) {
