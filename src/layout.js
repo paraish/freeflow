@@ -319,7 +319,8 @@ export function createLayoutEditor(root, env) {
       }
       const chans = s ? env.channels(s) : [];
       const view = it.view || { x: chans[0]?.name, y: chans[1]?.name, type: 'pseudo' };
-      const chOpts = (sel) => chans.map((c) => `<option value="${escH(c.name)}" ${c.name === sel ? 'selected' : ''}>${escH(c.label)}</option>`).join('');
+      const menu = s ? env.menuChannels(s, [view.x, view.y]) : [];
+      const chOpts = (sel) => menu.map((c) => `<option value="${escH(c.name)}" ${c.name === sel ? 'selected' : ''}>${escH(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('');
       itemHTML = `
         <div class="fields">
           ${field('', 'Sample', `<select id="lp-sample"><option value="">${l.batch ? 'Each sample (batch)' : 'Page sample'}</option>${samples.map((x) => `<option value="${escH(env.sampleKey(x))}" ${it.sampleKey === env.sampleKey(x) ? 'selected' : ''}>${escH(x.name)}</option>`).join('')}</select>`)}

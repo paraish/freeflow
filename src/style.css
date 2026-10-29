@@ -588,3 +588,7 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .order-box { flex: none; width: 28px; height: 22px; align-self: center; text-align: center; font: 11px var(--font-mono); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; background: var(--sunk); padding: 0; margin-right: 4px; }
 .order-box:focus { color: var(--fg); border-color: var(--accent); outline: none; background: var(--surface); }
 .ws-sample.is-picked > .sample-row { background: var(--multi-soft); border-left-color: var(--gate-sel); }
+
+/* The Hide uncompensated checkbox beside the Compensation button. */
+.topbar-check { white-space: nowrap; color: var(--muted); margin-right: 2px; }
+.topbar-check[hidden] { display: none; }

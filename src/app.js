@@ -53,6 +53,7 @@ const S = {
   fgSel: new Set(), // folder gates selected in the Folders pane, as "<folder id>|<gid>"
   fgAnchor: null, // the last clicked folder gate, for Shift-click ranges
   dotSize: 1, // pixels per event on pseudocolor and dot plots
+  hideUncomp: false, // leave uncompensated detector channels out of channel menus
 };
 
 const $ = (id) => document.getElementById(id);
@@ -95,6 +96,13 @@ function scaled(s, name) {
 
 function ctxFor(s) {
   return gatingContext(s, getTransform);
+}
+
+// The channels offered in menus: all of them, or without the uncompensated
+// copies of compensated detectors when those are hidden. Channels in `keep`
+// (the ones in use) stay so a menu can show them.
+function menuChannels(s, keep = []) {
+  return s.channels.filter((c) => !(S.hideUncomp && c.uncomp) || keep.includes(c.name));
 }
 
 function channelInfo(s, name) {
@@ -1833,6 +1841,7 @@ function renderHeader() {
   updateUndoButtons();
   const s = sample();
   $('comp-btn').disabled = !s;
+  $('hide-uncomp-wrap').hidden = !S.samples.some((x) => x.comp);
   $('comp-btn').textContent = s?.comp ? `Compensation${s.comp.enabled ? '' : ' (off)'}` : 'Compensation';
 }
 
@@ -2426,7 +2435,7 @@ function renderToolbar() {
     b.classList.toggle('is-on', v?.type === b.dataset.type);
     b.disabled = !s;
   });
-  const opts = s ? s.channels.map((c) => `<option value="${esc(c.name)}">${esc(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('') : '';
+  const opts = s ? menuChannels(s, v ? [v.x, v.y] : []).map((c) => `<option value="${esc(c.name)}">${esc(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('') : '';
   for (const [xs, ys] of [[$('axis-x'), $('axis-y')], [$('axis-x2'), $('axis-y2')]]) {
     xs.innerHTML = opts; ys.innerHTML = opts;
     if (v) { xs.value = v.x; ys.value = v.y; }
@@ -2652,7 +2661,7 @@ function renderStats() {
   const needsChannel = S.stat.metric === 'median' || S.stat.metric === 'mean';
   $('stat-channel-wrap').hidden = !needsChannel;
   if (s0) {
-    const chans = s0.channels.filter((c) => channelKind(c.name) !== 'time');
+    const chans = menuChannels(s0).filter((c) => channelKind(c.name) !== 'time');
     chSel.innerHTML = chans.map((c) => `<option value="${esc(c.name)}">${esc(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('');
     if (!S.stat.channel || !chans.some((c) => c.name === S.stat.channel)) {
       S.stat.channel = (chans.find((c) => c.name.startsWith('Comp-')) || chans[0])?.name ?? null;
@@ -2886,6 +2895,7 @@ function layoutEnv() {
     pathOf,
     viewOf: (pop) => savedView(pop) || { x: 'FSC-A', y: 'SSC-A', type: 'pseudo' },
     channels: (s) => s.channels,
+    menuChannels,
     channelLabel: (s, n) => channelInfo(s, n).label,
     stats: (s, pop) => ({
       count: pop.indices.length,
@@ -3355,6 +3365,13 @@ function bind() {
   $('undo').addEventListener('click', undo);
   $('redo').addEventListener('click', redo);
   $('comp-btn').addEventListener('click', () => { $('comp-panel').hidden = false; renderComp(); });
+  try { S.hideUncomp = localStorage.getItem('freeflow.hideUncomp') === '1'; } catch { /* default */ }
+  $('hide-uncomp').checked = S.hideUncomp;
+  $('hide-uncomp').addEventListener('change', (e) => {
+    S.hideUncomp = e.target.checked;
+    try { localStorage.setItem('freeflow.hideUncomp', S.hideUncomp ? '1' : '0'); } catch { /* not stored */ }
+    renderAll();
+  });
   $('comp-close').addEventListener('click', () => { $('comp-panel').hidden = true; });
   $('comp-panel').addEventListener('click', (e) => {
     if (e.target === $('comp-panel')) $('comp-panel').hidden = true;

@@ -52,7 +52,9 @@ with one click).
   order, log-amplified integer channels (`$PnE`), and supplemental text segments.
   Drop files anywhere on the page or use **Open FCS files**.
 - **Compensation**: the acquisition matrix (`$SPILLOVER`, `SPILL`, `$SPILL`) is read and
-  applied automatically, creating `Comp-` parameters. The matrix can be edited per sample,
+  applied automatically, creating `Comp-` parameters. **Hide uncompensated** (beside the Compensation
+  button) leaves the raw detector channels out of the channel menus (plot axes, axis titles,
+  layouts and statistics); a plot already using one keeps it. The matrix can be edited per sample,
   switched off, reset, or applied to all samples.
 - **Compensation from single-stain controls** (Compensation → Calculate from controls):
   - Finds the unstained control and one single-stain control per fluorochrome automatically,
