@@ -127,7 +127,11 @@ with one click).
   that Ctrl/⌘+Z undoes. A quadrant gate always goes as its set of four, when selected, copied or
   deleted. Folder gates and adjustments are kept in bundles and shared
   workspaces; .wsp files carry each sample's full gates plus the folder memberships.
-- **Samples column**: every sample with its own gating tree, each collapsible (per sample,
+- **Folders and samples sidebar**: in Gating and Group gating, the Folders pane and the
+  folder's samples share one sidebar at the far left, about a fifth of the window wide. It
+  stays in view (beside the statistics table too) and scrolls on its own: down, and sideways
+  when names are long (numbers and row buttons stay at its right edge).
+- **Samples pane**: every sample with its own gating tree, each collapsible (per sample,
   per population, or **Expand all** / **Collapse all**). It scrolls separately from the
   active sample's **Populations** column, so you can drag between any two trees. Clicking a
   population in any sample's tree opens it.

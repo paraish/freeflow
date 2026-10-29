@@ -64,8 +64,6 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
   padding-block: 12px 20px;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  max-width: 1680px;
-  margin: 0 auto;
 }
 
 /* ---- top bar */
@@ -93,16 +91,24 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .file-btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* ---- main grid: all samples | active sample's populations | plot | controls */
-.work {
+/* ---- Folders and samples beside the gating area and the statistics */
+.gating-body {
+  /* The sidebar: about a fifth of the window. */
+  --nav-w: max(220px, 20vw);
   display: grid;
-  grid-template-columns: 190px 240px 280px minmax(0, 1fr) 320px;
-  grid-template-areas: "groups ws left center right";
+  grid-template-columns: var(--nav-w) minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
-.groups { grid-area: groups; }
-.ws { grid-area: ws; }
+.gating-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* ---- main grid: active sample's populations | plot | controls */
+.work {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  grid-template-areas: "left center right";
+  gap: 12px;
+  align-items: start;
+}
 .left { grid-area: left; }
 .center { grid-area: center; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .right { grid-area: right; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -118,7 +124,7 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 }
 .right.is-collapsed .right-toggle::before { content: "‹ "; }
 @media (min-width: 1641px) {
-  .work.right-collapsed { grid-template-columns: 190px 240px 280px minmax(0, 1fr) 36px; }
+  .work.right-collapsed { grid-template-columns: 280px minmax(0, 1fr) 36px; }
 }
 /* Each sidebar sticks in view and scrolls on its own. */
 .sidebar {
@@ -132,8 +138,46 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 }
 .sidebar > .panel { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
 .sidebar .scroll { overflow-y: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
+/* Folders above the folder's samples, in one sidebar at the far left that
+   stays in view (beside the statistics too) and scrolls on its own: down,
+   and sideways for long names. */
+.nav-side {
+  position: sticky;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  max-height: calc(100vh - 76px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow: auto;
+  min-width: 0;
+  border-radius: var(--r);
+  container-type: inline-size;
+}
+.nav-side.is-tall { overscroll-behavior: contain; }
+.nav-inner { width: max-content; min-width: 100%; display: flex; flex-direction: column; gap: 12px; }
+.nav-side .sidebar { position: static; max-height: none; }
+.nav-side .scroll { overflow: visible; }
+/* Names keep to one line (scroll sideways to read them); headings, hints and
+   forms keep to the sidebar's visible width (100cqw). */
+.nav-side .panel > :not(ul) { max-width: calc(100cqw - 2px); }
+.nav-side .panel > .tree-hint, .nav-side .panel > .group-form { max-width: calc(100cqw - 26px); }
+.nav-side .sample-name { overflow: visible; text-overflow: clip; }
+.nav-side .group-name { overflow-wrap: normal; white-space: nowrap; }
+.nav-side .pop-pick { flex-wrap: nowrap; }
+.nav-side .pop-name { white-space: nowrap; }
+/* A population's % stays at the sidebar's right edge when it scrolls sideways. */
+.nav-side .pop-pick { padding-right: 0; }
+.nav-side .pop-stats { position: sticky; right: 0; padding: 0 10px 0 8px; background: var(--surface); }
+.nav-side .pop-row:hover .pop-stats { background: var(--sunk); }
+.nav-side .pop-row.is-view .pop-stats, .nav-side .pop-row.is-drop .pop-stats { background: var(--accent-soft); }
+.nav-side .pop-row.is-multi .pop-stats { background: var(--multi-soft); }
+/* So do a folder's count and the buttons at the end of folder and sample rows. */
+.nav-side .group-row > .icon-btn, .nav-side .sample-row > .icon-btn { position: sticky; right: 0; flex: none; width: 32px; padding: 0; background: var(--surface); }
+.nav-side .group-pick { padding-right: 0; }
+.nav-side .group-count { position: sticky; right: 0; padding: 0 8px; background: var(--surface); }
+.nav-side .group-row:has(> .icon-btn) .group-count { right: 32px; }
+.nav-side .group-row:hover :is(.group-count, .icon-btn), .nav-side .sample-row:hover > .icon-btn { background: var(--sunk); }
+.nav-side .group-row:is(.is-sel, .is-drop) :is(.group-count, .icon-btn), .nav-side .ws-sample.is-active > .sample-row > .icon-btn, .nav-side .sample-row.is-drop > .icon-btn { background: var(--accent-soft); }
+.nav-side .ws-sample.is-picked > .sample-row > .icon-btn { background: var(--multi-soft); }
 @media (max-width: 1640px) {
-  .work { grid-template-columns: 190px 240px 280px minmax(0, 1fr); grid-template-areas: "groups ws left center" "right right right right"; }
+  .work { grid-template-columns: 280px minmax(0, 1fr); grid-template-areas: "left center" "right right"; }
   .right { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
   .right > #axes { display: contents; }
   .right-toggle { grid-column: 1 / -1; justify-self: start; }
@@ -141,26 +185,20 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
   .right.is-collapsed .right-toggle { writing-mode: horizontal-tb; position: static; padding: 6px 12px; }
   .right.is-collapsed .right-toggle::before { content: "▸ "; }
 }
-@media (max-width: 1400px) {
-  .work { grid-template-columns: 250px 280px minmax(0, 1fr); grid-template-areas: "groups left center" "ws left center" "right right right"; }
-  .groups.sidebar, .ws.sidebar { position: static; max-height: 46vh; }
+@media (max-width: 1000px) {
+  .work { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "left" "right"; }
+  .left.sidebar { position: static; max-height: 46vh; }
 }
-@media (max-width: 1120px) {
-  .work { grid-template-columns: 290px minmax(0, 1fr); grid-template-areas: "groups center" "ws center" "left center" "right right"; }
-  .sidebar { position: static; max-height: 46vh; }
-}
+/* Phones: the sidebar above the plot, as wide as the screen. */
 @media (max-width: 760px) {
-  .work { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "groups" "ws" "left" "right"; }
+  .gating-body { grid-template-columns: minmax(0, 1fr); }
+  .nav-side { position: static; max-height: 45vh; }
 }
-/* Group gating: folders above samples, the main plot with every sample tiled below. */
-.work.is-group { grid-template-columns: 270px minmax(0, 1fr) 300px; grid-template-areas: "groups center right" "ws center right"; grid-template-rows: auto 1fr; }
+/* Group gating: the same sidebar, the main plot with every sample tiled below. */
+.work.is-group { grid-template-columns: minmax(0, 1fr) 300px; grid-template-areas: "center right"; }
 .work.is-group .left { display: none; }
-.work.is-group .groups.sidebar, .work.is-group .ws.sidebar { position: static; }
-.work.is-group .groups.sidebar { max-height: 42vh; }
-.work.is-group .ws.sidebar { max-height: 80vh; }
-@media (min-width: 1641px) { .work.is-group.right-collapsed { grid-template-columns: 270px minmax(0, 1fr) 36px; } }
-@media (max-width: 1640px) { .work.is-group { grid-template-columns: 270px minmax(0, 1fr); grid-template-areas: "groups center" "ws center" "right right"; } }
-@media (max-width: 760px) { .work.is-group { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "groups" "ws" "right"; grid-template-rows: auto; } }
+@media (min-width: 1641px) { .work.is-group.right-collapsed { grid-template-columns: minmax(0, 1fr) 36px; } }
+@media (max-width: 1640px) { .work.is-group { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "right"; } }
 .pop-row.is-context .pop-name { color: var(--muted); }
 .group-gate:empty, .group-gate #inspector:empty { display: none; }
 .group-gate .card { width: 100%; }

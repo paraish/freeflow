@@ -69,39 +69,46 @@
     </div>
     <p class="welcome-foot">You can also drop files or a folder anywhere on this page.</p>
   </section>
+  <div id="gating-body" class="gating-body">
+  <!-- Folders and the folder's samples share one sidebar that scrolls on its own. -->
+  <div id="nav-side" class="nav-side" role="region" aria-label="Folders and samples">
+  <div id="nav-inner" class="nav-inner">
+  <aside class="groups sidebar" aria-label="Folders">
+    <section class="panel">
+      <header class="panel-head">
+        <h2>Folders</h2>
+      </header>
+      <div id="group-form" class="group-form" hidden></div>
+      <ul id="groups" class="group-list scroll"></ul>
+      <form id="group-quick" class="group-quick" autocomplete="off">
+        <input id="gq-name" type="text" placeholder="Name (Group 1)" aria-label="New folder name">
+        <input id="gq-contains" type="text" placeholder="File name contains…" aria-label="Add files whose names contain">
+        <button type="submit" class="btn btn-primary gq-add" title="Create folder" aria-label="Create folder">+</button>
+        <p id="gq-hint" class="group-preview" aria-live="polite"></p>
+      </form>
+      <p class="tree-hint">A sample can be in several folders. Drag a sample onto a folder to add it; drag a gate onto a folder to copy it to every sample in it.</p>
+    </section>
+  </aside>
+
+  <aside class="ws sidebar" aria-label="Samples">
+    <section class="panel">
+      <header class="panel-head">
+        <h2 id="samples-title">Samples</h2>
+        <span class="head-actions">
+          <button id="ws-runorder" class="btn btn-quiet btn-small" hidden title="Put this folder back in the order the samples were run">Run order</button>
+          <button id="ws-expand" class="btn btn-quiet btn-small">Expand all</button>
+          <button id="ws-collapse" class="btn btn-quiet btn-small">Collapse all</button>
+        </span>
+      </header>
+      <ul id="samples" class="ws-list scroll"></ul>
+      <p class="tree-hint">Samples are in the order they were run; type a number in a box to change the order in this folder. Ctrl/⌘- or Shift-click to select several, then drag them to a folder or press Delete. Drag gates onto any population to copy them there.</p>
+    </section>
+  </aside>
+  </div>
+  </div>
+
+  <div class="gating-main">
   <main id="gating-work" class="work">
-    <aside class="groups sidebar" aria-label="Folders">
-      <section class="panel">
-        <header class="panel-head">
-          <h2>Folders</h2>
-        </header>
-        <div id="group-form" class="group-form" hidden></div>
-        <ul id="groups" class="group-list scroll"></ul>
-        <form id="group-quick" class="group-quick" autocomplete="off">
-          <input id="gq-name" type="text" placeholder="Name (Group 1)" aria-label="New folder name">
-          <input id="gq-contains" type="text" placeholder="File name contains…" aria-label="Add files whose names contain">
-          <button type="submit" class="btn btn-primary gq-add" title="Create folder" aria-label="Create folder">+</button>
-          <p id="gq-hint" class="group-preview" aria-live="polite"></p>
-        </form>
-        <p class="tree-hint">A sample can be in several folders. Drag a sample onto a folder to add it; drag a gate onto a folder to copy it to every sample in it.</p>
-      </section>
-    </aside>
-
-    <aside class="ws sidebar" aria-label="Samples">
-      <section class="panel">
-        <header class="panel-head">
-          <h2 id="samples-title">Samples</h2>
-          <span class="head-actions">
-            <button id="ws-runorder" class="btn btn-quiet btn-small" hidden title="Put this folder back in the order the samples were run">Run order</button>
-            <button id="ws-expand" class="btn btn-quiet btn-small">Expand all</button>
-            <button id="ws-collapse" class="btn btn-quiet btn-small">Collapse all</button>
-          </span>
-        </header>
-        <ul id="samples" class="ws-list scroll"></ul>
-        <p class="tree-hint">Samples are in the order they were run; type a number in a box to change the order in this folder. Ctrl/⌘- or Shift-click to select several, then drag them to a folder or press Delete. Drag gates onto any population to copy them there.</p>
-      </section>
-    </aside>
-
     <aside class="left sidebar" aria-label="Populations of the active sample">
       <section class="panel">
         <header class="panel-head">
@@ -171,6 +178,8 @@
     <div class="table-scroll"><table id="stats-table" class="stats-table"></table></div>
     <textarea id="copy-fallback" class="copy-fallback" hidden readonly aria-label="Statistics table as tab-separated text"></textarea>
   </section>
+  </div>
+  </div>
   </div>
 
   <section id="layout-view" class="layout-view" hidden aria-label="Layout editor">

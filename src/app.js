@@ -1954,10 +1954,14 @@ function fitGroupView() {
   if (sel && sel.link?.group !== S.groupId) S.selId = null;
 }
 
+// Keeps a list where it was scrolled to while it is redrawn, and the
+// Folders and samples sidebar around it.
 function keepScroll(el, fn) {
-  const top = el.scrollTop;
+  const box = el.closest('.nav-side');
+  const top = el.scrollTop, boxTop = box?.scrollTop, boxLeft = box?.scrollLeft;
   fn();
   el.scrollTop = top;
+  if (box) { box.scrollTop = boxTop; box.scrollLeft = boxLeft; }
 }
 
 // ---------------------------------------------------------------- folders
@@ -3095,7 +3099,7 @@ function setMode(mode) {
   // The Folders pane goes with the view: above the folder's samples in Layout.
   const folders = document.querySelector('aside.groups');
   if (layout) $('lay-folders-slot').append(folders);
-  else if (folders.parentElement !== $('gating-work')) $('gating-work').prepend(folders);
+  else if (folders.parentElement !== $('nav-inner')) $('nav-inner').prepend(folders);
   $('gating-work').classList.toggle('is-group', mode === 'group');
   $('tiles-section').hidden = mode !== 'group';
   // Group gating keeps the gate card under the main plot, in view.
@@ -3367,6 +3371,7 @@ function renderAll() {
   renderHeader();
   const empty = S.samples.length === 0;
   $('welcome').hidden = !empty;
+  $('gating-body').hidden = empty;
   $('gating-work').hidden = empty;
   $('stats-section').hidden = empty;
   if (empty) return;
@@ -4157,6 +4162,12 @@ function bind() {
   });
 
   new ResizeObserver(sizePlot).observe($('plot-wrap'));
+  // The Folders and samples sidebar keeps the wheel to itself only while it
+  // has more to scroll; otherwise the page scrolls under the pointer.
+  const nav = $('nav-side');
+  const navFit = new ResizeObserver(() => nav.classList.toggle('is-tall', nav.scrollHeight > nav.clientHeight + 1));
+  navFit.observe(nav);
+  navFit.observe($('nav-inner'));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', requestPlot);
   new MutationObserver(requestPlot).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 }
