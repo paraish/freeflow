@@ -3533,7 +3533,10 @@ function bind() {
       const keys = S.fgSel.has(key) ? [...S.fgSel] : [key];
       const items = folderGateItems(keys);
       if (!items.length) { e.preventDefault(); return; }
-      dragSrc = { items, ids: new Set(), label: itemsLabel(items), fromFolder: fgRow.dataset.group };
+      // The dragged folder gates and their sub-gates fade, and are not places to drop them.
+      const dragged = new Set(items.flatMap(({ pop }) => [...subtreeGids(findTemplate(templatesOf(pop.link.group), pop.link.gid)?.node || { gid: null, children: [] })].map((g) => `${pop.link.group}|${g}`)));
+      dragSrc = { items, ids: new Set(), label: itemsLabel(items), fromFolder: fgRow.dataset.group, blocked: dragged };
+      requestAnimationFrame(() => $('groups').querySelectorAll('.fg-row').forEach((r) => { if (dragged.has(`${r.dataset.group}|${r.dataset.gid}`)) r.classList.add('is-dragging'); }));
       e.dataTransfer.setData('text/plain', items.map((i) => i.pop.name).join(', '));
       e.dataTransfer.effectAllowed = 'copy';
       $('drag-ghost').textContent = items.length === 1 ? items[0].pop.name : dragSrc.label;
@@ -3579,7 +3582,8 @@ function bind() {
       const row = e.target.closest?.('.pop-row, .sample-row, .group-row, .fg-row');
       const bad = !row
         || (row.classList.contains('pop-row') && dragSrc.ids.has(row.dataset.id))
-        || (row.classList.contains('fg-row') && (dragSrc.sampleDrag || dragSrc.items?.some(({ pop }) => pop.link?.group === row.dataset.group && pop.link.gid === row.dataset.gid)))
+        || (row.classList.contains('fg-row') && (dragSrc.sampleDrag || dragSrc.blocked?.has(`${row.dataset.group}|${row.dataset.gid}`)
+          || dragSrc.items?.some(({ pop }) => pop.link?.group === row.dataset.group && pop.link.gid === row.dataset.gid)))
         || (dragSrc.sampleDrag && (!row.classList.contains('group-row') || row.dataset.group === ALL || row.dataset.group === NONCONTROLS));
       if (bad) { clearDrop(); return; }
       e.preventDefault();

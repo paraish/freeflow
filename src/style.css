@@ -490,7 +490,13 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .group-row { display: flex; align-items: stretch; border-left: 3px solid transparent; }
 .group-row:hover { background: var(--sunk); }
 .group-row.is-sel { background: var(--accent-soft); border-left-color: var(--accent); }
-.group-row.is-drop, .fg-row.is-drop { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.group-row.is-drop { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+/* The folder gate a dragged gate would land under: filled, with a tag. */
+.fg-row.is-drop { background: var(--accent); color: var(--accent-ink); }
+.fg-row.is-drop .fg-name, .fg-row.is-drop .fg-name::before, .fg-row.is-drop .fg-adj { color: var(--accent-ink); font-weight: 600; }
+.fg-row.is-drop .icon-btn { display: none; }
+.fg-row.is-drop::after { content: "add as sub-gate"; flex: none; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; background: color-mix(in srgb, var(--accent-ink) 18%, transparent); }
+.fg-row.is-dragging { opacity: 0.45; }
 .group-pick { flex: 1; min-width: 0; border: 0; background: none; cursor: pointer; text-align: left; padding: 7px 4px 7px 12px; display: flex; gap: 6px; align-items: baseline; }
 .group-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .group-row.is-sel .group-name { font-weight: 600; }
