@@ -3113,9 +3113,13 @@ function setMode(mode) {
   else if (folders.parentElement !== $('nav-inner')) $('nav-inner').prepend(folders);
   $('gating-work').classList.toggle('is-group', mode === 'group');
   $('tiles-section').hidden = mode !== 'group';
-  // Group gating keeps the gate card under the main plot, in view.
+  // Group gating keeps the gate card under the main plot, in view, and puts
+  // the plot type, dot size and colour depth with the axis settings.
   if (mode === 'group') $('group-gate').append($('inspector'));
   else $('right-pane').insertBefore($('inspector'), $('popstats'));
+  $('display-card').hidden = mode !== 'group';
+  if (mode === 'group') $('display-body').append($('plot-types'), $('dot-size-wrap'), $('depth-wrap'));
+  else if ($('plot-types').parentElement !== $('tools').parentElement) $('tools').after($('plot-types'), $('dot-size-wrap'), $('depth-wrap'));
   S.draft = null;
   S.tool = 'select';
   S.multi.clear();
@@ -3124,8 +3128,8 @@ function setMode(mode) {
   renderAll();
 }
 
-// The settings pane: open by default in Gating, folded in Group gating so
-// the tiles have room. A choice to open or fold it is remembered per view.
+// The settings pane: open by default (beside the plot, also in Group
+// gating). A choice to open or fold it is remembered per view.
 const rightKey = () => (S.mode === 'group' ? 'freeflow.groupSettingsOpen' : 'freeflow.settingsOpen');
 function setRight(open, remember) {
   $('right-pane').classList.toggle('is-collapsed', !open);
@@ -3138,7 +3142,7 @@ function setRight(open, remember) {
   sizePlot();
 }
 function restoreRight() {
-  let open = S.mode !== 'group';
+  let open = true;
   try { const v = localStorage.getItem(rightKey()); if (v) open = v === '1'; } catch { /* default */ }
   setRight(open, false);
 }
@@ -4179,6 +4183,10 @@ function bind() {
   const navFit = new ResizeObserver(() => nav.classList.toggle('is-tall', nav.scrollHeight > nav.clientHeight + 1));
   navFit.observe(nav);
   navFit.observe($('nav-inner'));
+  // So does the settings pane beside the plot in Group gating.
+  const right = $('right-pane');
+  const rightFit = new ResizeObserver(() => right.classList.toggle('is-tall', right.scrollHeight > right.clientHeight + 1));
+  for (const el of [right, $('display-card'), $('axes'), $('popstats'), $('keywords')]) rightFit.observe(el);
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', requestPlot);
   new MutationObserver(requestPlot).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 }

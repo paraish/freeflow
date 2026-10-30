@@ -30,6 +30,9 @@ How it works:
   sample in the folder shows the same population on the same axes. Click a tile, anywhere
   including on a gate, or a sample on the left to show it large (a tile keeps the axes you
   were looking at); dragging a gate in a tile adjusts it for that sample instead.
+- The settings sit beside the large plot, in view and scrolling on their own: **Display**
+  (plot type, dot size, colour depth), the X and Y axis scales (linear, log, biex, logicle,
+  arcsinh, with their widths), and the population's statistics. **Hide settings** folds them.
 - Gates drawn on the large plot are added to every sample in the folder, nested under the
   population that is open. Moving, reshaping, renaming or deleting a gate there changes it
   for the whole folder.

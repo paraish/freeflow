@@ -129,9 +129,9 @@
           <button class="seg" data-type="dot">Dot</button>
           <button class="seg" data-type="histogram">Histogram</button>
         </div>
-        <label class="dot-size" title="Size of each event on pseudocolor and dot plots">Dot size
+        <label id="dot-size-wrap" class="dot-size" title="Size of each event on pseudocolor and dot plots">Dot size
           <input id="dot-size" type="range" min="1" max="6" step="1" value="1"></label>
-        <label class="dot-size" title="Pseudocolor: deeper colours (same colour scale), for plots that look pale">Colour depth
+        <label id="depth-wrap" class="dot-size" title="Pseudocolor: deeper colours (same colour scale), for plots that look pale">Colour depth
           <input id="depth" type="range" min="0" max="1" step="0.1" value="0"></label>
       </div>
       <div class="axis-row">
@@ -162,6 +162,11 @@
 
     <aside id="right-pane" class="right">
       <button id="right-toggle" class="right-toggle" aria-expanded="true" aria-controls="right-pane" title="Hide axis, gate and statistics settings"><span class="rt-label">Hide settings</span></button>
+      <!-- Group gating moves the plot type, dot size and colour depth here. -->
+      <section id="display-card" class="card" hidden>
+        <header class="card-head"><span class="eyebrow">Display</span></header>
+        <div id="display-body" class="display-body"></div>
+      </section>
       <div id="axes" class="stack"></div>
       <div id="inspector"></div>
       <div id="popstats"></div>
