@@ -261,8 +261,10 @@ Gating, **Add to layout** places the plot you are looking at.
 FreeFlow saves your session in the browser's own storage every 15 seconds when something has
 changed (and when you switch away from the tab): the FCS files, gates, compensation, axis
 settings, folders and layouts. Reload the page or reopen it later in the same browser and it
-picks up where you left off, with a note saying so; **Start a new session** in that note
-closes everything and forgets the saved copy. The data stays on your computer, in this browser
+picks up where you left off, with a note saying so. **New session** (top right, shown while
+anything is open; click it twice to confirm) closes everything and forgets the saved copy, as
+does **Start a new session** in that note. Your files are never changed; save a bundle first
+to keep the work. The data stays on your computer, in this browser
 only. Sample data and opened share links are not kept this way. For a copy you can move or
 send, use an analysis bundle.
 

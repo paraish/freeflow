@@ -1913,6 +1913,7 @@ function deleteGate(pop) {
 
 function renderHeader() {
   $('example-note').hidden = !S.examples;
+  $('new-session').hidden = !S.samples.length;
   updateUndoButtons();
   const s = sample();
   $('comp-btn').disabled = !s;
@@ -4222,10 +4223,22 @@ export function start() {
   sizePlot();
   renderAll();
   // Keep the session in this browser, and bring back the last one.
-  $('restore-new').addEventListener('click', async () => {
+  // A new session closes everything and forgets the stored one.
+  const startOver = async () => {
     AS.off = true;
     try { await clearAll(); } catch { /* nothing stored */ }
     location.reload();
+  };
+  $('restore-new').addEventListener('click', startOver);
+  // The top bar's New session asks first: a second click within a few
+  // seconds clears everything.
+  let armed = null;
+  $('new-session').addEventListener('click', () => {
+    const b = $('new-session');
+    if (armed) { clearTimeout(armed); startOver(); return; }
+    b.textContent = 'Click again to clear everything';
+    b.classList.add('is-confirm');
+    armed = setTimeout(() => { armed = null; b.textContent = 'New session'; b.classList.remove('is-confirm'); }, 4000);
   });
   $('restore-hide').addEventListener('click', () => { $('restore-note').hidden = true; });
   (sharedFile ? Promise.resolve() : restoreSession()).finally(() => {
