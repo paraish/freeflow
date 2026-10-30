@@ -20,7 +20,12 @@ const css = await read('src/style.css');
 const template = await read('src/index.html');
 const code = js.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const fragment = template.replace('/*__CSS__*/', () => css).replace('/*__JS__*/', () => code);
-const page = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n</head>\n<body>\n${fragment}\n</body>\n</html>\n`;
+// In the full page, the title, tab icon, fonts and styles (everything before
+// the app itself) go in <head>.
+const split = fragment.indexOf('<div class="app">');
+const head = fragment.slice(0, split).trim();
+const body = fragment.slice(split);
+const page = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n${head}\n</head>\n<body>\n${body}\n</body>\n</html>\n`;
 
 await mkdir(new URL('dist/', root), { recursive: true });
 await writeFile(new URL('dist/freeflow.fragment.html', root), fragment);
