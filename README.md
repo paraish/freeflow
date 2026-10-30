@@ -28,8 +28,8 @@ How it works:
 
 - Folders sit above the samples on the left. One sample is shown large; below it, every
   sample in the folder shows the same population on the same axes. Click a tile, anywhere
-  including on a gate, or a sample on the left to show it large; dragging a gate in a tile
-  adjusts it for that sample instead.
+  including on a gate, or a sample on the left to show it large (a tile keeps the axes you
+  were looking at); dragging a gate in a tile adjusts it for that sample instead.
 - Gates drawn on the large plot are added to every sample in the folder, nested under the
   population that is open. Moving, reshaping, renaming or deleting a gate there changes it
   for the whole folder.
@@ -219,7 +219,7 @@ Gating, **Add to layout** places the plot you are looking at.
   name, file name, combinations, % of parent, count, or any of the sample's keywords such as
   donor or condition, each shown with what it gives for that plot), axis titles, and separate sizes for the title, axis titles, axis
   numbers, gate names and gate numbers. Each gate can show its name, count, % of parent and %
-  of grandparent, with or without the % sign. **Set for all plots & keep for this session**
+  of grandparent, with or without the % sign; turning the name off (Q1, say) keeps the numbers. **Set for all plots & keep for this session**
   puts the sizes and gate label choices on every plot in every layout, and new plots start with
   them for the rest of the session (it is saved with the work). Titles are left as they are.
 - **Show gating strategy** (Page card) adds a line above the figure with each gate from All
@@ -230,7 +230,8 @@ Gating, **Add to layout** places the plot you are looking at.
 - Text items and titles take fill-ins: `{sample}`, `{label}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
-- **Batch** repeats the page for every sample, in a grid: set the number of **Columns** and/or
+- **Batch** repeats the page for every sample of a folder (**Repeat for**, which can be picked
+  before Batch is turned on), in a grid: set the number of **Columns** and/or
   **Rows** (leave one empty to fit every sample) and the **Fill order** (across, then down; or
   down, then across). Each copy fills in its own sample's numbers and keywords. **Sample ID**
   shows the file name, or the sample's name, above each copy, with its own alignment, size,

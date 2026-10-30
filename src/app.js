@@ -1531,9 +1531,17 @@ let tilePress = null; // the gate last pressed in a tile: { s, id, t }
 
 // Shows a sample on the main plot, optionally with one of its gates selected.
 function showMain(s, selId = null) {
+  // The axes being looked at stay: the sample's population takes the main
+  // plot's view (when it has the same population and channels).
+  const from = viewedPop();
+  const v = from ? { ...viewOf(from) } : null;
   S.sampleId = s.id;
   S.selId = selId;
   S.draft = null;
+  const to = viewedPop();
+  const names = new Set(s.channels.map((c) => c.name));
+  if (v && to && to !== from && pathOf(to).join('\u0000') === S.viewPath.join('\u0000')
+    && names.has(v.x) && (v.type === 'histogram' || names.has(v.y))) to.view = v;
   renderAll();
 }
 
