@@ -2983,7 +2983,8 @@ function layoutEnv() {
       const g = layout?.batchGroup && groupById(layout.batchGroup);
       return groupMembers(g || groupById(NONCONTROLS));
     },
-    folders: () => [...S.groups.map((g) => ({ id: g.id, name: g.name })), { id: CONTROLS, name: 'Compensation controls' }],
+    // Folders a batch can repeat for (besides the default, the non-control samples).
+    folders: () => [{ id: ALL, name: 'All samples (with controls)' }, ...S.groups.map((g) => ({ id: g.id, name: g.name })), { id: CONTROLS, name: 'Compensation controls' }],
     activeSample: () => (LE.item ? S.samples.find((x) => x.id === LE.saved.sampleId) || sample() : sample()),
     sampleKey,
     findByPath,

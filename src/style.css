@@ -429,6 +429,20 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
   grid-template-columns: 260px minmax(0, 1fr) 320px;
 }
 .lay-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* The settings column stays in view beside the page and scrolls on its own,
+   so reaching a setting never scrolls the plots away. */
+@media (min-width: 1241px) {
+  .lay-right {
+    position: sticky;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    max-height: calc(100vh - 76px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    border-radius: var(--r);
+  }
+  .lay-right.is-tall { overscroll-behavior: contain; }
+}
 .lay-left { grid-column: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 /* In Layout the Folders pane sits above the folder's samples. */
 .lay-left .sidebar { position: static; }

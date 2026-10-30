@@ -230,8 +230,9 @@ Gating, **Add to layout** places the plot you are looking at.
 - Text items and titles take fill-ins: `{sample}`, `{label}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
-- **Batch** repeats the page for every sample of a folder (**Repeat for**, which can be picked
-  before Batch is turned on), in a grid: set the number of **Columns** and/or
+- **Batch** repeats the page for every sample of a folder (**Repeat for**: the non-control
+  samples by default, all samples including controls, any folder of yours, or the compensation
+  controls; it can be picked before Batch is turned on), in a grid: set the number of **Columns** and/or
   **Rows** (leave one empty to fit every sample) and the **Fill order** (across, then down; or
   down, then across). Each copy fills in its own sample's numbers and keywords. **Sample ID**
   shows the file name, or the sample's name, above each copy, with its own alignment, size,
@@ -247,7 +248,8 @@ Gating, **Add to layout** places the plot you are looking at.
     itself when two or more plots are selected. Each copy is only as big as
   the items on the page (plus a small margin), so a half-filled page gives compact copies.
 - The cards on the right (Export, Page, the plot or text settings, Plot text, All plots in the
-  batch) each fold away from their heading; the browser remembers which are folded.
+  batch) each fold away from their heading; the browser remembers which are folded. The column
+  stays in view and scrolls on its own, so the page stays in sight while you reach a setting.
 - Export (the first card on the right): **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
   Illustrator, Inkscape or PowerPoint; density clouds embedded as images), **Download PNG**,
   **Copy as image**, **Copy plot as image** for one plot, and a preview image you can

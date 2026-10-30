@@ -677,7 +677,7 @@ export function createLayoutEditor(root, env) {
           <p class="muted small">${steps?.length ? 'Each gate from All Events down to the plotted population, with the channels it was drawn on. Shown once, above the figure.' : 'The plot shows All Events, so there are no gates to list.'}</p>` : ''}`;
           })()}
           ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${env.batchSamples(l).length})`)}
-          ${field('', 'Repeat for', `<select id="lpg-group" title="The folder whose samples the batch repeats for (it can be picked before turning Batch on)"><option value="">All samples (not controls)</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`)}
+          ${field('', 'Repeat for', `<select id="lpg-group" title="The folder whose samples the batch repeats for (it can be picked before turning Batch on)"><option value="">Non-control samples</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`)}
           ${l.batch ? `<div class="field-pair">${field('', 'Columns', `<input id="lpg-cols" type="number" min="0" max="24" step="1" value="${l.columns || ''}" placeholder="Auto">`)}${field('', 'Rows', `<input id="lpg-rows" type="number" min="0" max="24" step="1" value="${l.rows || ''}" placeholder="Auto">`)}</div>
           ${field('', 'Fill order', `<select id="lpg-order"><option value="row" ${l.order !== 'col' ? 'selected' : ''}>Across, then down</option><option value="col" ${l.order === 'col' ? 'selected' : ''}>Down, then across</option></select>`)}
           <p id="lpg-grid" class="muted small">${gridNote(l)}</p>
@@ -1414,6 +1414,12 @@ export function createLayoutEditor(root, env) {
     stageW = w;
     renderStage();
   }).observe(root);
+  // The settings column keeps the wheel to itself only while it has more to
+  // scroll; otherwise the page scrolls under the pointer.
+  const side = root.querySelector('.lay-right');
+  const sideFit = new ResizeObserver(() => side.classList.toggle('is-tall', side.scrollHeight > side.clientHeight + 1));
+  sideFit.observe(side);
+  sideFit.observe($('lay-props'));
 
   return {
     render,
