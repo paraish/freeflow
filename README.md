@@ -97,7 +97,9 @@ with one click).
   delete, with **Undo** and **Redo** buttons in the header (Ctrl/⌘+Z, Ctrl/⌘+Shift+Z or Ctrl+Y). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
   Drag a gate's label box (its name and %) to move it out of the way; it keeps that place on
-  that sample, in Group gating tiles and in Layout figures.
+  that sample, in Group gating tiles and in Layout figures. In Group gating, a folder gate's
+  label moved on the large plot moves for every sample of the folder; moved in a tile, it moves
+  for that sample only (and a later move on the large plot leaves it there).
   A gate stays visible and editable when the plot shows its two channels the other way round
   (for example APC vs FITC for a FITC vs APC gate): it is drawn mirrored, and moving it there
   changes the same gate.
@@ -121,8 +123,10 @@ with one click).
   **Apply this gate to the whole folder**. Under each folder in the Folders pane, × on a gate asks
   whether to **Delete gate for all samples** or **Delete only the grouping** (each sample keeps
   its copy as an ordinary gate), and ✎ renames it in every sample of the folder (in every view).
-  Renaming a folder gate from one sample's tree does the same, and the name box says so. The folder gates listed there can be selected (click; Ctrl/⌘-click or
-  Shift-click for several) and dragged onto a sample's name (copied to the same place in that
+  Renaming a folder gate from one sample's tree does the same, and the name box says so.
+  Clicking a folder gate opens its folder and shows the gate, selected, on the population it
+  is drawn on (on the open sample if it is in the folder). The folder gates listed there can be selected (click; Ctrl/⌘-click or
+  Shift-click for several; a red **⚠ Delete N folder gates** button appears for several) and dragged onto a sample's name (copied to the same place in that
   sample), onto any population (copied under it), onto another folder (they become that
   folder's gates too), or onto another folder gate (they become its sub-gates, in every sample
   of that folder; gates from the sample trees can be dropped there too). Delete or Backspace deletes the
@@ -152,6 +156,10 @@ with one click).
   - **Delete / Backspace** with samples selected does what their row button does: in a folder
     you made it takes them out of the folder; elsewhere it closes them (press twice to
     confirm). Your files are never changed.
+- **Deleting several gates**: Ctrl/⌘-click or Shift-click gates in the Samples or Populations
+  pane, then press Delete or the red **⚠ Delete N gates** button that appears: they go with
+  their sub-gates, in one step that Ctrl/⌘+Z undoes (in Group gating, the folder's own gates go
+  from every sample of the folder).
 - **Copying gates between populations**:
   - Drag a gate onto any population, in the same sample or any other sample's tree, to
     copy it (with its sub-gates) there. If that population already has a gate with the same
@@ -190,7 +198,9 @@ with one click).
 Switch to **Layout** (top bar) to arrange figures. On the left are the **Folders** and, below
 them, the picked folder's samples in that folder's order and with their names, each with its
 populations: click a population to add its plot, or drag it to where you want it on the page. A plot taken from another sample stays on that
-sample; one from the page's sample follows the page (and every sample in batch mode). In
+sample; one from the page's sample follows the page (and every sample in batch mode). Turning
+on **Batch** makes every plot follow each copy's own sample; a plot set to one sample under
+Plot → Sample in a batch is flagged, with a button to make it follow each copy again. In
 Gating, **Add to layout** places the plot you are looking at.
 
 - Drag items to move them, drag the corner to resize, arrow keys to nudge (Shift for bigger

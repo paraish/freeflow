@@ -119,6 +119,9 @@ export function createLayoutEditor(root, env) {
     return pageSample;
   }
 
+  // Plots kept on one sample (not following the page's, or each copy's, sample).
+  const pinnedPlots = (layout) => layout.items.filter((x) => x.kind === 'plot' && x.sampleKey);
+
   function pageSampleOf(layout) {
     return (layout.sampleKey && env.samples().find((s) => env.sampleKey(s) === layout.sampleKey)) || env.activeSample() || env.samples()[0] || null;
   }
@@ -600,6 +603,7 @@ export function createLayoutEditor(root, env) {
       const chOpts = (sel) => menu.map((c) => `<option value="${escH(c.name)}" ${c.name === sel ? 'selected' : ''}>${escH(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('');
       itemHTML = `
         <div class="fields">
+          ${l.batch && it.sampleKey ? `<p class="notice is-warn">Shows ${escH(s?.name || 'one sample')} in every copy. Pick "Each sample (batch)" to show each copy's own sample.</p>` : ''}
           ${field('', 'Sample', `<select id="lp-sample"><option value="">${l.batch ? 'Each sample (batch)' : 'Page sample'}</option>${samples.map((x) => `<option value="${escH(env.sampleKey(x))}" ${it.sampleKey === env.sampleKey(x) ? 'selected' : ''}>${escH(x.name)}</option>`).join('')}</select>`)}
           ${field('', 'Population', `<select id="lp-path">${pops.map((p) => `<option value="${escH(JSON.stringify(p))}" ${JSON.stringify(p) === JSON.stringify(it.path) ? 'selected' : ''}>${escH(['All Events', ...p].join(' / '))}</option>`).join('')}</select>`)}
           ${field('', 'Plot type', `<select id="lp-type">${[['pseudo', 'Pseudocolor'], ['dot', 'Dot'], ['histogram', 'Histogram']].map(([v, t]) => `<option value="${v}" ${view.type === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
@@ -677,6 +681,8 @@ export function createLayoutEditor(root, env) {
           <p class="muted small">${steps?.length ? 'Each gate from All Events down to the plotted population, with the channels it was drawn on. Shown once, above the figure.' : 'The plot shows All Events, so there are no gates to list.'}</p>` : ''}`;
           })()}
           ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${env.batchSamples(l).length})`)}
+          ${l.batch && pinnedPlots(l).length ? `<div class="notice is-warn">⚠ ${pinnedPlots(l).length} plot${pinnedPlots(l).length === 1 ? ' shows' : 's show'} the same sample in every copy.
+            <div class="btn-row"><button class="btn btn-small" data-act="follow-each">Show each copy's own sample</button></div></div>` : ''}
           ${field('', 'Repeat for', `<select id="lpg-group" title="The folder whose samples the batch repeats for (it can be picked before turning Batch on)"><option value="">Non-control samples</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`)}
           ${l.batch ? `<div class="field-pair">${field('', 'Columns', `<input id="lpg-cols" type="number" min="0" max="24" step="1" value="${l.columns || ''}" placeholder="Auto">`)}${field('', 'Rows', `<input id="lpg-rows" type="number" min="0" max="24" step="1" value="${l.rows || ''}" placeholder="Auto">`)}</div>
           ${field('', 'Fill order', `<select id="lpg-order"><option value="row" ${l.order !== 'col' ? 'selected' : ''}>Across, then down</option><option value="col" ${l.order === 'col' ? 'selected' : ''}>Down, then across</option></select>`)}
@@ -947,7 +953,16 @@ export function createLayoutEditor(root, env) {
       case 'lpg-w': if (n >= 200) { l.width = n; tidy(l); changed(); } return;
       case 'lpg-h': if (n >= 200) { l.height = n; tidy(l); changed(); } return;
       case 'lpg-sample': l.sampleKey = val || null; return changed({ props: true });
-      case 'lpg-batch': l.batch = val; return changed({ props: true });
+      case 'lpg-batch': {
+        l.batch = val;
+        // A batch repeats the page for every sample: plots kept on one sample
+        // (added from another sample's tree) would show that sample in every
+        // copy, so they follow each copy's sample instead (Undo keeps them).
+        const kept = val ? pinnedPlots(l) : [];
+        for (const x of kept) x.sampleKey = null;
+        if (kept.length) env.toast(`${kept.length} plot${kept.length === 1 ? ' that showed one sample now follows' : 's that showed one sample now follow'} each copy's sample. To show one sample in every copy, pick it under Plot → Sample.`);
+        return changed({ props: true });
+      }
       case 'lpg-strategy': l.showStrategy = val; return changed({ props: true });
       case 'lb-dot': case 'lb-depth':
         for (const x of l.items) {
@@ -1079,6 +1094,12 @@ export function createLayoutEditor(root, env) {
       return render();
     }
     if (act === 'copy-item' && it) return copyImage(singleItemSheet(it));
+    if (act === 'follow-each') {
+      env.checkpoint();
+      for (const x of pinnedPlots(l)) x.sampleKey = null;
+      env.changed();
+      return render();
+    }
     if (act === 'look-all' && it?.kind === 'plot') {
       env.checkpoint();
       for (const x of l.items) if (x.kind === 'plot') Object.assign(x, { dotSize: it.dotSize || 1, depth: it.depth || 0 });

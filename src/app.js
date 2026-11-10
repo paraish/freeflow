@@ -325,7 +325,7 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
         const x = S.samples.find((y) => sampleKey(y) === key);
         for (const g of x ? list : []) {
           const p = findByPath(x.root, g.path);
-          if (p && g.lab) p.lab = { dx: +g.lab.dx || 0, dy: +g.lab.dy || 0 };
+          if (p && g.lab) p.lab = { dx: +g.lab.dx || 0, dy: +g.lab.dy || 0, ...(g.lab.own ? { own: true } : {}) };
         }
       }
       for (const [key, links] of Object.entries(info.links || {})) {
@@ -1646,8 +1646,16 @@ function applyDrag(sx, sy) {
   if (!d.undoPushed) return;
   if (d.mode === 'label') {
     // A moved label keeps its place relative to the plot (and in figures).
+    // On the main plot of group gating it moves for every sample of the
+    // folder, except samples whose label was moved in their own tile; moved
+    // in a tile, it is that sample's own.
     const o0 = d.origLab || { dx: 0, dy: 0 };
-    d.pop.lab = { dx: o0.dx + dx, dy: o0.dy + dy };
+    const at = { dx: o0.dx + dx, dy: o0.dy + dy };
+    d.pop.lab = d.tile ? { ...at, own: true } : at;
+    if (d.labFolder) {
+      for (const q of folderCopies(d.pop)) if (q !== d.pop && !q.lab?.own) q.lab = { ...at };
+      drawTiles();
+    }
     if (d.tile) drawTile(d.sample);
     if (d.sample === sample()) requestPlot();
     return;
@@ -1691,6 +1699,58 @@ function applyDrag(sx, sy) {
   if (d.tile) drawTile(d.sample);
   if (d.sample === sample()) requestPlot();
   renderTrees();
+}
+
+// Opens a folder and shows one of its gates: on the sample that is open if it
+// is in the folder (else the folder's first sample that has the gate), the
+// population the gate is drawn on, on the gate's channels, with the gate
+// selected.
+function showFolderGate(groupId, gid) {
+  const g = groupById(groupId);
+  if (!g) return;
+  S.groupId = groupId;
+  S.sampleSel.clear();
+  S.multi.clear();
+  const members = groupMembers(g);
+  const find = (s) => { let hit = null; walk(s.root, (p) => { if (!hit && p.link?.group === groupId && p.link.gid === gid) hit = p; }); return hit; };
+  let s = null, pop = null;
+  for (const x of [sample(), ...members]) {
+    if (!x || !members.includes(x)) continue;
+    pop = find(x);
+    if (pop) { s = x; break; }
+  }
+  if (!pop?.parent) {
+    if (members.length && !members.includes(sample())) { S.sampleId = members[0].id; S.selId = null; }
+    renderAll();
+    return;
+  }
+  S.sampleId = s.id;
+  S.viewPath = pathOf(pop.parent);
+  S.draft = null;
+  // On the gate's channels (either way round), so the gate is in view.
+  const v = viewOf(pop.parent);
+  const gt = pop.gate;
+  if (gt.type === 'range') {
+    if (v.type !== 'histogram' || v.x !== gt.x) pop.parent.view = { ...v, x: gt.x, type: 'histogram' };
+  } else if (!((v.x === gt.x && v.y === gt.y) || (v.x === gt.y && v.y === gt.x)) || v.type === 'histogram') {
+    pop.parent.view = { ...v, x: gt.x, y: gt.y, type: v.type === 'histogram' ? 'pseudo' : v.type };
+  }
+  const nv = viewOf(pop.parent);
+  if (nv.type === 'histogram' && S.tool !== 'range') S.tool = 'select';
+  if (nv.type !== 'histogram' && S.tool === 'range') S.tool = 'select';
+  S.selId = pop.id;
+  renderAll();
+}
+
+// The same folder gate in every sample of the folder shown in group gating.
+function folderCopies(pop) {
+  const { group, gid } = pop.link || {};
+  const out = [];
+  if (!group) return out;
+  for (const s of groupMembers(groupById(group) || currentGroup())) {
+    walk(s.root, (p) => { if (p.link?.group === group && p.link.gid === gid) out.push(p); });
+  }
+  return out;
 }
 
 // The end of a drag on the main plot of group gating: the folder's gate
@@ -1751,6 +1811,7 @@ function onPointerDown(ev) {
       undoSnap: snapshot(), undoPushed: false, sample: sample(), swap: !!hit.shape.swap,
       origLab: hit.pop.lab ? { ...hit.pop.lab } : null,
       forFolder: S.mode === 'group' && hit.pop.link?.group === S.groupId && hit.mode !== 'label',
+      labFolder: S.mode === 'group' && hit.pop.link?.group === S.groupId && hit.mode === 'label',
     };
     plot.canvas.setPointerCapture(ev.pointerId);
   }
@@ -2025,6 +2086,55 @@ function renderGroups() {
     el.innerHTML = BUILT_IN.map(row).join('') + (S.groups.length ? '<li class="group-sep" aria-hidden="true"></li>' : '') + S.groups.map(row).join('');
   });
   renderGroupForm();
+  renderSelBars();
+}
+
+// A red bar over the gates selected with Ctrl/⌘- or Shift-click (in the
+// Samples or the Populations pane, wherever the selection was made) and over
+// several selected folder gates, to delete them all.
+function renderSelBars() {
+  const n = S.multi.size;
+  const inTree = S.anchor?.list === 'active';
+  const bar = (id, count, act, what) => {
+    const el = $(id);
+    el.hidden = !count;
+    el.innerHTML = count ? `<button class="btn btn-small btn-warn" data-act="${act}" title="Delete them with their sub-gates (or press Delete). Undo (Ctrl+Z) brings them back.">⚠ Delete ${count} ${what}${count === 1 ? '' : 's'}</button>
+      <button class="btn btn-quiet btn-small" data-act="sel-clear" title="Clear the selection (Esc)">Clear</button>` : '';
+  };
+  bar('ws-selbar', inTree ? 0 : n, 'del-gates', 'gate');
+  bar('tree-selbar', inTree ? n : 0, 'del-gates', 'gate');
+  bar('fg-selbar', S.fgSel.size >= 2 ? S.fgSel.size : 0, 'del-fgates', 'folder gate');
+}
+
+// Deletes the gates selected with Ctrl/⌘- or Shift-click, with their
+// sub-gates, in one step. In group gating, the gates of the folder that is
+// open go from every sample of the folder, as when deleting one.
+function deleteSelectedGates() {
+  const found = [...S.multi].map(findPop).filter((f) => f?.pop.gate);
+  if (!found.length) return;
+  // Quadrants go as their set of four; a gate under another selected gate
+  // goes with it.
+  const owner = new Map();
+  for (const { sample: s, pop } of found) for (const q of pop.gate.type === 'quad' ? quadSiblings(pop) : [pop]) owner.set(q, s);
+  const under = (p) => { for (let a = p.parent; a; a = a.parent) if (owner.has(a)) return true; return false; };
+  const pops = [...owner.keys()].filter((p) => !under(p));
+  pushUndo();
+  const ofFolder = (q) => S.mode === 'group' && q.link?.group === S.groupId;
+  const gids = [...new Set(pops.filter(ofFolder).map((q) => q.link.gid))];
+  let n = gids.length ? removeFolderGates(S.groupId, gids, true).length : 0;
+  for (const q of pops) {
+    if (ofFolder(q)) continue;
+    const t = templateFor(q);
+    if (t) t.node.omit = [...new Set([...(t.node.omit || []), sampleKey(owner.get(q))])];
+    q.parent.children = q.parent.children.filter((c) => c !== q);
+    n++;
+  }
+  S.multi.clear();
+  S.viewPath = pathOf(viewedPop());
+  S.selId = null;
+  S.version++;
+  renderAll();
+  toast(`Deleted ${n} gate${n === 1 ? '' : 's'}, with any sub-gates. Undo (Ctrl+Z) brings ${n === 1 ? 'it' : 'them'} back.`);
 }
 
 function renderGroupForm() {
@@ -2446,6 +2556,7 @@ function setSampleOrder(g, s, raw) {
 }
 
 function renderSamples() {
+  renderSelBars();
   const el = $('samples');
   const g = currentGroup();
   const shown = visibleSamples();
@@ -2490,6 +2601,7 @@ function renderSamples() {
 }
 
 function renderTree() {
+  renderSelBars();
   const el = $('tree');
   const s = sample();
   if (!s) { el.innerHTML = ''; return; }
@@ -3720,6 +3832,15 @@ function bind() {
     navigate(found.pop);
   };
   $('samples').addEventListener('click', onPopRowClick);
+  // The red delete bars over selected gates.
+  for (const id of ['ws-selbar', 'tree-selbar', 'fg-selbar']) {
+    $(id).addEventListener('click', (e) => {
+      const act = e.target.closest('[data-act]')?.dataset.act;
+      if (act === 'del-gates') deleteSelectedGates();
+      if (act === 'del-fgates') deleteSelectedFolderGates();
+      if (act === 'sel-clear') { S.multi.clear(); S.fgSel.clear(); renderTrees(); }
+    });
+  }
   $('tree').addEventListener('click', onPopRowClick);
   // Keep Shift-click from selecting page text.
   for (const list of [$('samples'), $('tree')]) {
@@ -3860,6 +3981,8 @@ function bind() {
         } else {
           S.fgSel = new Set([key]);
           S.fgAnchor = key;
+          // A plain click also opens the folder and shows the gate.
+          if (S.mode !== 'layout') { showFolderGate(group, gid); return; }
         }
         renderGroups();
       }
@@ -4146,6 +4269,11 @@ function bind() {
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.focus === 'samples' && S.sampleSel.size) {
       e.preventDefault();
       deleteSelectedSamples();
+      return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && S.focus === 'gates' && S.multi.size) {
+      e.preventDefault();
+      deleteSelectedGates();
       return;
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.selId && S.focus !== 'folders') {

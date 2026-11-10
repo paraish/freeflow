@@ -129,7 +129,8 @@ export function cloneGate(g) {
 // A population that came from a folder gate carries `link`
 // ({ group, gid }); `custom` marks one whose gate was adjusted for this
 // sample only; `lab` is where its label was moved to ({ dx, dy }, fractions
-// of the plot area). All travel with the tree.
+// of the plot area; `own` when moved for this sample alone in group gating).
+// All travel with the tree.
 export function serialize(pop) {
   const o = {
     name: pop.name,

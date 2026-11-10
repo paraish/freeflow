@@ -87,6 +87,11 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 .btn-quiet:hover:not(:disabled) { border-color: var(--line); }
 .btn-small { height: 24px; padding: 0 8px; font-size: 12px; }
 .btn-danger { color: var(--danger); }
+.btn-warn { background: var(--danger); border-color: var(--danger); color: #ffffff; font-weight: 600; }
+.btn-warn:hover:not(:disabled) { border-color: var(--danger); filter: brightness(1.08); }
+/* Over several selected gates: delete them all. */
+.sel-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 12px 8px; padding: 6px 8px; border-radius: var(--r); background: var(--multi-soft); flex: none; }
+.nav-side .sel-bar { position: sticky; top: 0; left: 0; z-index: 2; }
 .btn.is-confirm { color: var(--danger); border-color: var(--danger); font-weight: 600; }
 .file-btn { position: relative; overflow: hidden; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
@@ -158,7 +163,7 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 /* Names keep to one line (scroll sideways to read them); headings, hints and
    forms keep to the sidebar's visible width (100cqw). */
 .nav-side .panel > :not(ul) { max-width: calc(100cqw - 2px); }
-.nav-side .panel > .tree-hint, .nav-side .panel > .group-form { max-width: calc(100cqw - 26px); }
+.nav-side .panel > .tree-hint, .nav-side .panel > .group-form, .nav-side .panel > .sel-bar { max-width: calc(100cqw - 26px); }
 .nav-side .sample-name { overflow: visible; text-overflow: clip; }
 .nav-side .group-name { overflow-wrap: normal; white-space: nowrap; }
 .nav-side .pop-pick { flex-wrap: nowrap; }

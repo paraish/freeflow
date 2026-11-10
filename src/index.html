@@ -79,6 +79,7 @@
       <header class="panel-head">
         <h2>Folders</h2>
       </header>
+      <div id="fg-selbar" class="sel-bar" hidden></div>
       <div id="group-form" class="group-form" hidden></div>
       <ul id="groups" class="group-list scroll"></ul>
       <form id="group-quick" class="group-quick" autocomplete="off">
@@ -101,6 +102,7 @@
           <button id="ws-collapse" class="btn btn-quiet btn-small">Collapse all</button>
         </span>
       </header>
+      <div id="ws-selbar" class="sel-bar" hidden></div>
       <ul id="samples" class="ws-list scroll"></ul>
       <p class="tree-hint">Samples are in the order they were run; type a number in a box to change the order in this folder. Ctrl/⌘- or Shift-click to select several, then drag them to a folder or press Delete. Drag gates onto any population to copy them there.</p>
     </section>
@@ -116,6 +118,7 @@
           <h2>Populations</h2>
           <button id="copy-tree" class="btn btn-quiet btn-small" title="Copy this sample's whole gating tree to every other sample">Copy tree to all</button>
         </header>
+        <div id="tree-selbar" class="sel-bar" hidden></div>
         <ul id="tree" class="tree scroll"></ul>
         <p class="tree-hint">Ctrl/⌘-click or Shift-click to select several gates, then drag them together. Esc clears the selection.</p>
       </section>
