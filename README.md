@@ -97,9 +97,9 @@ with one click).
   delete, with **Undo** and **Redo** buttons in the header (Ctrl/⌘+Z, Ctrl/⌘+Shift+Z or Ctrl+Y). Rectangle edges drawn at the plot border stay open-ended, so
   off-scale events are kept. Double-click a gate to open that population.
   Drag a gate's label box (its name and %) to move it out of the way; it keeps that place on
-  that sample, in Group gating tiles and in Layout figures. In Group gating, a folder gate's
-  label moved on the large plot moves for every sample of the folder; moved in a tile, it moves
-  for that sample only (and a later move on the large plot leaves it there).
+  that sample, in Group gating tiles and in Layout figures. In Group gating, a label moved on
+  the large plot moves for every sample of the folder; moved in a tile, it moves for that sample
+  only. Labels sit on a see-through background, so the events behind them still show.
   A gate stays visible and editable when the plot shows its two channels the other way round
   (for example APC vs FITC for a FITC vs APC gate): it is drawn mirrored, and moving it there
   changes the same gate.
@@ -232,7 +232,9 @@ Gating, **Add to layout** places the plot you are looking at.
   name, file name, combinations, % of parent, count, or any of the sample's keywords such as
   donor or condition, each shown with what it gives for that plot), axis titles, and separate sizes for the title, axis titles, axis
   numbers, gate names and gate numbers. Each gate can show its name, count, % of parent and %
-  of grandparent, with or without the % sign; turning the name off (Q1, say) keeps the numbers. **Set for all plots & keep for this session**
+  of grandparent, with or without the % sign; turning the name off (Q1, say) keeps the numbers.
+  Gate labels sit on a see-through white box and always stay inside the plot, however they were
+  moved and whatever their size. **Set for all plots & keep for this session**
   puts the sizes and gate label choices on every plot in every layout, and new plots start with
   them for the rest of the session (it is saved with the work). Titles are left as they are.
 - **Show gating strategy** (Page card) adds a line above the figure with each gate from All
@@ -243,6 +245,8 @@ Gating, **Add to layout** places the plot you are looking at.
 - Text items and titles take fill-ins: `{sample}`, `{label}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
+- A batch of a single plot shows that plot's **X** and **Y** channels (and **Swap**) above the
+  page, to change them for every copy at once.
 - **Batch** repeats the page for every sample of a folder (**Repeat for**: the non-control
   samples by default, all samples including controls, any folder of yours, or the compensation
   controls; it can be picked before Batch is turned on), in a grid: set the number of **Columns** and/or

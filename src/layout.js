@@ -500,6 +500,24 @@ export function createLayoutEditor(root, env) {
     schedulePreview();
   }
 
+  // A batch of one plot gets that plot's channels over the page, to change
+  // them quickly for every copy.
+  function renderQuick() {
+    const l = current();
+    const el = $('lay-quick');
+    const plots = l ? l.items.filter((x) => x.kind === 'plot') : [];
+    const it = l?.batch && plots.length === 1 ? plots[0] : null;
+    const s = it && sampleFor(it, ui.blocks?.[0]?.sample || env.batchSamples(l)[0] || pageSampleOf(l));
+    el.hidden = !s;
+    if (!s) { el.innerHTML = ''; return; }
+    const view = itemView(it, s);
+    const opts = (sel) => env.menuChannels(s, [view.x, view.y]).map((c) => `<option value="${escH(c.name)}" ${c.name === sel ? 'selected' : ''}>${escH(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('');
+    el.innerHTML = `<span class="lq-title" title="Channels of the page's plot, in every copy">${escH((it.path || []).slice(-1)[0] || 'All Events')}: every copy</span>
+      <label class="axis-pick"><span>X</span><select id="lq-x" data-item="${it.id}" data-axis="x" aria-label="X channel">${opts(view.x)}</select></label>
+      ${view.type === 'histogram' ? '' : `<label class="axis-pick"><span>Y</span><select id="lq-y" data-item="${it.id}" data-axis="y" aria-label="Y channel">${opts(view.y)}</select></label>
+      <button class="btn btn-quiet btn-small" data-act="lq-swap" data-item="${it.id}" title="Swap X and Y">Swap</button>`}`;
+  }
+
   // Fills an axis title's channel menu as it opens.
   function fillAxisMenu(sel) {
     if (sel.dataset.filled) return;
@@ -788,6 +806,7 @@ export function createLayoutEditor(root, env) {
     renderSamplesSide();
     renderList();
     renderStage();
+    renderQuick();
     const active = document.activeElement;
     const keepFocus = active && $('lay-props').contains(active) && active.id ? { id: active.id, start: active.selectionStart } : null;
     renderProps();
@@ -800,7 +819,7 @@ export function createLayoutEditor(root, env) {
   let renderTimer = null;
   function renderSoon() {
     clearTimeout(renderTimer);
-    renderTimer = setTimeout(() => { renderList(); renderStage(); }, 120);
+    renderTimer = setTimeout(() => { renderList(); renderStage(); renderQuick(); }, 120);
   }
 
   function changed({ props = false } = {}) {
@@ -1094,6 +1113,15 @@ export function createLayoutEditor(root, env) {
       return render();
     }
     if (act === 'copy-item' && it) return copyImage(singleItemSheet(it));
+    if (act === 'lq-swap') {
+      const x = itemById(b.dataset.item);
+      const s = x && sampleFor(x, ui.blocks?.[0]?.sample || pageSampleOf(l));
+      if (!x) return;
+      env.checkpoint();
+      const v = itemView(x, s);
+      x.view = { ...v, x: v.y, y: v.x };
+      return changed({ props: true });
+    }
     if (act === 'follow-each') {
       env.checkpoint();
       for (const x of pinnedPlots(l)) x.sampleKey = null;
@@ -1367,8 +1395,9 @@ export function createLayoutEditor(root, env) {
   root.addEventListener('input', (e) => { if (e.target.closest('#lay-props')) onPropInput(e); });
   root.addEventListener('change', (e) => {
     const t = e.target;
-    // A channel picked from an axis title on the page.
-    const hot = t.closest('.lay-axis-hot');
+    // A channel picked from an axis title on the page, or from the channels
+    // over a batch of one plot.
+    const hot = t.closest('.lay-axis-hot, #lay-quick');
     if (hot) {
       const it = itemById(t.dataset.item);
       const s = it && sampleFor(it, ui.blocks?.[+t.dataset.block || 0]?.sample || pageSampleOf(current()));

@@ -209,6 +209,7 @@
     </aside>
     </div>
     <div id="lay-main" class="lay-main">
+      <div id="lay-quick" class="lay-quick" hidden></div>
       <div id="lay-stage" class="lay-stage"></div>
       <section id="lay-edit" class="lay-edit" hidden aria-label="Edit this plot's gates">
         <header class="lay-edit-head">
@@ -223,12 +224,16 @@
       <section class="panel lay-side">
         <header class="panel-head"><h2>Layouts</h2><button class="btn btn-quiet btn-small" data-act="new-layout">New layout</button></header>
         <ul id="lay-list" class="lay-list"></ul>
-        <header class="panel-head lay-sub"><h2>On this page</h2></header>
+        <div class="btn-row lay-add">
+          <button class="btn btn-small btn-danger" data-act="del-layout">Delete layout</button>
+        </div>
+      </section>
+      <section class="panel lay-side">
+        <header class="panel-head"><h2>On this page</h2></header>
         <ul id="lay-items" class="lay-list"></ul>
         <div class="btn-row lay-add">
           <button class="btn btn-small" data-act="add-text">Add text</button>
           <button class="btn btn-small" data-act="add-label" title="A text item showing each sample's name from the Samples pane; filled in for every copy in batch">Add name label</button>
-          <button class="btn btn-small btn-danger" data-act="del-layout">Delete layout</button>
         </div>
         <p class="tree-hint">Shift- or Ctrl/⌘-click to select several. Arrow keys nudge the selection; with Shift, further.</p>
       </section>
@@ -247,7 +252,7 @@
       Not affiliated with or endorsed by BD Biosciences or FlowJo.
       Free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU AGPL v3</a>;
       <a href="https://github.com/paraish/freeflow" target="_blank" rel="noopener">source code</a>.
-      Your FCS files stay on your computer.</p>
+      Your FCS files stay on your computer. Build <span class="build">__BUILD__</span>.</p>
   </footer>
 </div>
 

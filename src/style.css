@@ -19,7 +19,7 @@
   --multi-soft: #f8e3ee;
   --ok: #1d7a4c;
   --ok-soft: #e1f3e9;
-  --label-bg: rgba(255, 255, 255, 0.9);
+  --label-bg: rgba(255, 255, 255, 0.62);
   --dot: #17212c;
   --hist-fill: rgba(29, 95, 196, 0.22);
   --hist-line: #1d5fc4;
@@ -31,7 +31,7 @@
   :root:not([data-theme="light"]) {
     --bg: #0e1318; --surface: #151c23; --sunk: #11171d; --fg: #e3e9ef; --muted: #8e9bab; --line: #26313c;
     --accent: #6ea2ff; --accent-ink: #0b1220; --accent-soft: #1b2a42; --danger: #ff7b80;
-    --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --multi-soft: #3a1f30; --ok: #6fd6a0; --ok-soft: #173326; --label-bg: rgba(10, 15, 20, 0.88);
+    --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --multi-soft: #3a1f30; --ok: #6fd6a0; --ok-soft: #173326; --label-bg: rgba(10, 15, 20, 0.62);
     --dot: #d6dee6; --hist-fill: rgba(110, 162, 255, 0.25); --hist-line: #6ea2ff;
     color-scheme: dark;
   }
@@ -39,7 +39,7 @@
 :root[data-theme="dark"] {
   --bg: #0e1318; --surface: #151c23; --sunk: #11171d; --fg: #e3e9ef; --muted: #8e9bab; --line: #26313c;
   --accent: #6ea2ff; --accent-ink: #0b1220; --accent-soft: #1b2a42; --danger: #ff7b80;
-  --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --multi-soft: #3a1f30; --ok: #6fd6a0; --ok-soft: #173326; --label-bg: rgba(10, 15, 20, 0.88);
+  --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --multi-soft: #3a1f30; --ok: #6fd6a0; --ok-soft: #173326; --label-bg: rgba(10, 15, 20, 0.62);
   --dot: #d6dee6; --hist-fill: rgba(110, 162, 255, 0.25); --hist-line: #6ea2ff;
   color-scheme: dark;
 }
@@ -485,12 +485,16 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .lay-label { color: var(--accent); }
 .lay-pop[draggable="true"] .pop-pick { cursor: grab; }
 .lay-stage.is-drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; }
-.lay-sub { margin-top: 10px; }
 .lay-list { list-style: none; margin: 0; padding: 0; }
 .lay-pick { width: 100%; text-align: left; border: 0; background: none; padding: 6px 12px; cursor: pointer; display: flex; flex-direction: column; border-left: 3px solid transparent; }
 .lay-pick:hover { background: var(--sunk); }
 .lay-pick.is-sel { background: var(--accent-soft); border-left-color: var(--accent); font-weight: 600; }
 .lay-add { padding: 8px 12px 0; }
+/* Over the page of a batch with one plot: its channels, for every copy. */
+.lay-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.lay-quick[hidden] { display: none; }
+.lay-quick .lq-title { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lay-quick select { height: 28px; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunk); padding: 0 6px; max-width: 260px; }
 .lay-stage { min-width: 0; overflow: auto; background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; max-height: calc(100vh - 90px); }
 .lay-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .lay-main.is-editing .lay-stage { max-height: 48vh; }

@@ -19,7 +19,10 @@ const js = await build({
 const css = await read('src/style.css');
 const template = await read('src/index.html');
 const code = js.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
-const fragment = template.replace('/*__CSS__*/', () => css).replace('/*__JS__*/', () => code);
+// The build's date and time (UTC), shown in the footer, so an old copy held
+// by the browser is easy to spot.
+const built = new Date().toISOString().slice(0, 16).replace('T', ' ');
+const fragment = template.replace('/*__CSS__*/', () => css).replace('/*__JS__*/', () => code).replace('__BUILD__', `${built} UTC`);
 // In the full page, the title, tab icon, fonts and styles (everything before
 // the app itself) go in <head>.
 const split = fragment.indexOf('<div class="app">');

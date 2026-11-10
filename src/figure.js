@@ -179,11 +179,28 @@ export function plotSVG(p) {
     const showNames = p.showLabels !== false;
     const hasNums = !!(stats.count || stats.parent || stats.grand);
     const below = hasNums ? z.gateName * 0.25 + z.gateNum : 0; // from the name's baseline to the numbers'
+    // Each label sits on a see-through white box, and is kept inside the plot
+    // area however it was moved or sized.
     const lab = (x, y, name, nums, anchor = 'middle') => {
-      const parts = [];
-      if (showNames && name) parts.push(textLines([name], x, y, z.gateName, { anchor }));
-      if (nums) parts.push(textLines([nums], x, showNames && name ? y + below : y, z.gateNum, { anchor }));
-      return parts.length ? `<g class="gate-label">${parts.join('')}</g>` : '';
+      const lines = [];
+      if (showNames && name) lines.push({ text: name, size: z.gateName });
+      if (nums) lines.push({ text: nums, size: z.gateNum });
+      if (!lines.length) return '';
+      const w = Math.max(...lines.map((l) => textWidth(l.text, l.size)));
+      const lastY = lines.length > 1 ? y + below : y;
+      const pad = 2;
+      const box = {
+        x: (anchor === 'middle' ? x - w / 2 : anchor === 'end' ? x - w : x) - pad,
+        y: y - lines[0].size * 0.78 - pad,
+        w: w + 2 * pad,
+        h: lastY + lines[lines.length - 1].size * 0.24 + pad - (y - lines[0].size * 0.78 - pad),
+      };
+      const shift = (lo, size, min, room) => (size >= room ? min - lo : Math.max(min - lo, Math.min(0, min + room - (lo + size))));
+      const sx = shift(box.x, box.w, px, pw), sy = shift(box.y, box.h, py, ph);
+      x += sx; y += sy; box.x += sx; box.y += sy;
+      const parts = [`<rect x="${f(box.x)}" y="${f(box.y)}" width="${f(box.w)}" height="${f(box.h)}" rx="1.5" fill="#ffffff" fill-opacity="0.65"/>`];
+      lines.forEach((l, i) => parts.push(textLines([l.text], x, i ? y + below : y, l.size, { anchor })));
+      return `<g class="gate-label">${parts.join('')}</g>`;
     };
     // A label moved in the gating view keeps its place (fractions of the plot area).
     const off = (m) => ({ x: (m?.dx || 0) * pw, y: -(m?.dy || 0) * ph });
@@ -225,6 +242,16 @@ export function textSVG(t) {
   const anchor = t.align === 'center' ? 'middle' : t.align === 'right' ? 'end' : 'start';
   const x = anchor === 'middle' ? t.x + t.w / 2 : anchor === 'end' ? t.x + t.w : t.x;
   return `<g class="text">${textLines(lines, x, t.y + fs, fs, { anchor, bold: t.bold, italic: t.italic, fill: t.color, font: t.font })}</g>`;
+}
+
+// About how wide a line of Arial is: narrow, wide and capital letters,
+// digits and the rest, in ems.
+function textWidth(text, size) {
+  let w = 0;
+  for (const ch of String(text)) {
+    w += /[il.,:;|!'() ]/.test(ch) ? 0.28 : /[mwMW%]/.test(ch) ? 0.85 : /[A-Z]/.test(ch) ? 0.68 : /[0-9]/.test(ch) ? 0.556 : 0.52;
+  }
+  return w * size;
 }
 
 // A whole page (or batch sheet) as a standalone SVG document.

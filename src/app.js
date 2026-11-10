@@ -325,7 +325,7 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
         const x = S.samples.find((y) => sampleKey(y) === key);
         for (const g of x ? list : []) {
           const p = findByPath(x.root, g.path);
-          if (p && g.lab) p.lab = { dx: +g.lab.dx || 0, dy: +g.lab.dy || 0, ...(g.lab.own ? { own: true } : {}) };
+          if (p && g.lab) p.lab = { dx: +g.lab.dx || 0, dy: +g.lab.dy || 0 };
         }
       }
       for (const [key, links] of Object.entries(info.links || {})) {
@@ -1646,14 +1646,17 @@ function applyDrag(sx, sy) {
   if (!d.undoPushed) return;
   if (d.mode === 'label') {
     // A moved label keeps its place relative to the plot (and in figures).
-    // On the main plot of group gating it moves for every sample of the
-    // folder, except samples whose label was moved in their own tile; moved
-    // in a tile, it is that sample's own.
+    // On the main plot of group gating it moves for the same gate in every
+    // sample of the folder; moved in a tile, for that sample only.
     const o0 = d.origLab || { dx: 0, dy: 0 };
     const at = { dx: o0.dx + dx, dy: o0.dy + dy };
-    d.pop.lab = d.tile ? { ...at, own: true } : at;
+    d.pop.lab = at;
     if (d.labFolder) {
-      for (const q of folderCopies(d.pop)) if (q !== d.pop && !q.lab?.own) q.lab = { ...at };
+      const path = pathOf(d.pop);
+      for (const s of visibleSamples()) {
+        const q = s === d.sample ? null : findByPath(s.root, path);
+        if (q?.gate) q.lab = { ...at };
+      }
       drawTiles();
     }
     if (d.tile) drawTile(d.sample);
@@ -1742,17 +1745,6 @@ function showFolderGate(groupId, gid) {
   renderAll();
 }
 
-// The same folder gate in every sample of the folder shown in group gating.
-function folderCopies(pop) {
-  const { group, gid } = pop.link || {};
-  const out = [];
-  if (!group) return out;
-  for (const s of groupMembers(groupById(group) || currentGroup())) {
-    walk(s.root, (p) => { if (p.link?.group === group && p.link.gid === gid) out.push(p); });
-  }
-  return out;
-}
-
 // The end of a drag on the main plot of group gating: the folder's gate
 // becomes what was drawn, for every sample not adjusted on its own.
 function commitFolderDrag(d) {
@@ -1811,7 +1803,7 @@ function onPointerDown(ev) {
       undoSnap: snapshot(), undoPushed: false, sample: sample(), swap: !!hit.shape.swap,
       origLab: hit.pop.lab ? { ...hit.pop.lab } : null,
       forFolder: S.mode === 'group' && hit.pop.link?.group === S.groupId && hit.mode !== 'label',
-      labFolder: S.mode === 'group' && hit.pop.link?.group === S.groupId && hit.mode === 'label',
+      labFolder: S.mode === 'group' && hit.mode === 'label',
     };
     plot.canvas.setPointerCapture(ev.pointerId);
   }
