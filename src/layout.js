@@ -238,7 +238,7 @@ export function createLayoutEditor(root, env) {
     const byCol = layout.order === 'col';
     let cols = Math.max(0, Math.round(layout.columns || 0));
     let rows = Math.max(0, Math.round(layout.rows || 0));
-    if (!cols && !rows) cols = Math.max(1, Math.floor(Math.sqrt(n)));
+    if (!cols && !rows) cols = autoColumns(n);
     if (cols && !rows) rows = Math.ceil(n / cols);
     else if (rows && !cols) cols = Math.ceil(n / rows);
     else if (cols * rows < n) { if (byCol) cols = Math.ceil(n / rows); else rows = Math.ceil(n / cols); }
@@ -248,10 +248,13 @@ export function createLayoutEditor(root, env) {
     return { cols, rows, byCol };
   }
 
+  // Columns of a batch when none are set: √n rounded down, plus one.
+  const autoColumns = (n) => Math.floor(Math.sqrt(Math.max(1, n))) + 1;
+
   function gridNote(l) {
     const n = batchList(l).length;
     const g = batchGrid(l, n);
-    return `${n} cop${n === 1 ? 'y' : 'ies'} in ${g.cols} column${g.cols === 1 ? '' : 's'} × ${g.rows} row${g.rows === 1 ? '' : 's'}. Leave columns or rows empty to fit every sample (with both empty, as many columns as the square root of the number of copies). Double-click a plot in any copy to edit its gates for that sample; the corner of each copy moves it (drag, or ◀ ▶) or takes it out (×).`;
+    return `${n} cop${n === 1 ? 'y' : 'ies'} in ${g.cols} column${g.cols === 1 ? '' : 's'} × ${g.rows} row${g.rows === 1 ? '' : 's'}. Leave columns or rows empty to fit every sample (with both empty, the square root of the number of copies, rounded down, plus one columns). Double-click a plot in any copy to edit its gates for that sample; the corner of each copy moves it (drag, or ◀ ▶) or takes it out (×).`;
   }
 
   // The samples a batch repeats for: the folder's, less those taken out of
@@ -758,7 +761,7 @@ export function createLayoutEditor(root, env) {
           ${l.batch && pinnedPlots(l).length ? `<div class="notice is-warn">⚠ ${pinnedPlots(l).length} plot${pinnedPlots(l).length === 1 ? ' shows' : 's show'} the same sample in every copy.
             <div class="btn-row"><button class="btn btn-small" data-act="follow-each">Show each copy's own sample</button></div></div>` : ''}
           ${field('', 'Repeat for', `<select id="lpg-group" title="The folder whose samples the batch repeats for (it can be picked before turning Batch on)"><option value="">Non-control samples</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`)}
-          ${l.batch ? `<div class="field-pair">${field('', 'Columns', `<input id="lpg-cols" type="number" min="0" max="24" step="1" value="${l.columns || ''}" placeholder="Auto (${Math.max(1, Math.floor(Math.sqrt(batchList(l).length)))})">`)}${field('', 'Rows', `<input id="lpg-rows" type="number" min="0" max="24" step="1" value="${l.rows || ''}" placeholder="Auto">`)}</div>
+          ${l.batch ? `<div class="field-pair">${field('', 'Columns', `<input id="lpg-cols" type="number" min="0" max="24" step="1" value="${l.columns || ''}" placeholder="Auto (${Math.min(batchList(l).length || 1, autoColumns(batchList(l).length))})">`)}${field('', 'Rows', `<input id="lpg-rows" type="number" min="0" max="24" step="1" value="${l.rows || ''}" placeholder="Auto">`)}</div>
           ${field('', 'Fill order', `<select id="lpg-order"><option value="row" ${l.order !== 'col' ? 'selected' : ''}>Across, then down</option><option value="col" ${l.order === 'col' ? 'selected' : ''}>Down, then across</option></select>`)}
           <p id="lpg-grid" class="muted small">${gridNote(l)}</p>
           ${field('', 'Sample ID', `<select id="lpg-id">${[['none', 'None'], ['file', 'File name'], ['name', 'Name (or file name)']].map(([v, t]) => `<option value="${v}" ${(l.idShow || 'none') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}

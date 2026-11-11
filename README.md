@@ -40,6 +40,10 @@ How it works:
   the large plot. Double-click a gate to open that population on every sample.
 - The Samples pane shows every population. Gates that aren't the folder's are greyed: open
   one to start folder gates under it.
+- The large plot also shows the population's other gates (drawn in Gating on that sample, or
+  another folder's) as faint dashed outlines, so they are not mistaken for missing. Click one
+  to select it; **Make this a folder gate** copies it, with its sub-gates, to every sample of
+  the folder as the folder's gate.
 
 ## Use it
 
@@ -255,7 +259,7 @@ Gating, **Add to layout** places the plot you are looking at.
   samples by default, all samples including controls, any folder of yours, or the compensation
   controls; it can be picked before Batch is turned on), in a grid: set the number of **Columns** and/or
   **Rows** (leave one empty to fit every sample; with both empty, the number of columns is the
-  whole number at or below the square root of the number of copies, e.g. 3 for 10) and the
+  square root of the number of copies rounded down, plus one, e.g. 3 for 6 and 4 for 10) and the
   **Fill order** (across, then down; or down, then across). Each copy fills in its own sample's numbers and keywords. **Sample ID**
   shows the file name, or the sample's name, above each copy, with its own alignment, size,
   font, bold, italic and colour.

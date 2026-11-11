@@ -1267,16 +1267,23 @@ function rectCorners(g) {
 }
 
 // Gates drawn on a plot of `pop` with view `v`, in display-scale coordinates.
-function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
+// In group gating only the open folder's gates are shown, except that the
+// main plot (`ghosts`) also shows the population's other gates (this
+// sample's own, or another folder's), faint and read-only.
+function gateShapes(pop = viewedPop(), v = pop && viewOf(pop), { ghosts = false } = {}) {
   if (!pop) return [];
   const hist = v.type === 'histogram';
-  const out = [];
+  const own = [];
+  const faint = [];
   const seenQuad = new Set();
   const only = S.mode === 'group' ? S.groupId : null;
   for (const c of pop.children) {
     const g = c.gate;
     if (!g) continue;
-    if (only && c.link?.group !== only) continue;
+    const ghost = !!only && c.link?.group !== only;
+    if (ghost && !ghosts) continue;
+    // This gate's shape goes with the folder's gates, or with the faint ones.
+    const out = { push: (sh) => (ghost ? faint : own).push(ghost ? { ...sh, ghost: true } : sh) };
     const sub = fmtPct(pct(c.indices.length, pop.indices.length));
     const counts = { n: c.indices.length, parent: pop.indices.length, grand: (pop.parent || pop).indices.length };
     if (hist) {
@@ -1314,7 +1321,8 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop)) {
       });
     }
   }
-  return out;
+  // Drawn under the folder's gates, which are found first when clicked.
+  return [...faint, ...own];
 }
 
 // ---------------------------------------------------------------- plot
@@ -1380,7 +1388,7 @@ function drawPlot() {
     type: v.type, xs: scaled(s, v.x), ys: hist ? null : scaled(s, v.y), idx: pop.indices, dotSize: S.dotSize, depth: S.depth,
     xTicks: sx.ticks(), yTicks,
     xLabel: channelInfo(s, v.x).label, yLabel: hist ? '% of max' : channelInfo(s, v.y).label,
-    gates: gateShapes(), draft,
+    gates: mainShapes(), draft,
   });
   $('plot-count').textContent = `${fmtInt(pop.indices.length)} events`;
   if (LE.item) syncLayoutEdit();
@@ -1582,12 +1590,22 @@ const near = (geo, a, b, px, py, tol) => {
   return Math.hypot(x - px, y - py) <= tol;
 };
 
-function hitTest(px, py, geo = plot.geo, shapes = gateShapes()) {
+// The gates on the main plot: in group gating with the population's other
+// gates, faint.
+const mainShapes = () => gateShapes(viewedPop(), undefined, { ghosts: S.mode === 'group' });
+
+function hitTest(px, py, geo = plot.geo, shapes = mainShapes()) {
+  const hit = hitShape(px, py, geo, shapes);
+  // A faint gate can be selected, not moved or reshaped.
+  return hit?.shape.ghost ? { ...hit, mode: 'select' } : hit;
+}
+
+function hitShape(px, py, geo, shapes) {
   const [sx, sy] = geo.toScale(px, py);
   const clamp = (v) => Math.max(0, Math.min(1, v));
   // Handles of the selected gate first.
   for (const sh of shapes) {
-    if (!sh.selected) continue;
+    if (!sh.selected || sh.ghost) continue;
     if (sh.kind === 'poly') {
       const i = sh.pts.findIndex(([a, b]) => near(geo, clamp(a), clamp(b), px, py, 7));
       if (i >= 0) return { shape: sh, pop: sh.pop, mode: 'vertex', index: i };
@@ -2014,8 +2032,9 @@ function treeRows(s, list) {
 function fitGroupView() {
   const shown = visibleSamples();
   if (shown.length && !shown.includes(sample())) { S.sampleId = shown[0].id; S.selId = null; S.draft = null; }
+  // A gate that is not the folder's stays selected only on the main plot.
   const sel = S.selId && popById(S.selId);
-  if (sel && sel.link?.group !== S.groupId) S.selId = null;
+  if (sel && sel.link?.group !== S.groupId && sel.parent !== viewedPop()) S.selId = null;
 }
 
 // Keeps a list where it was scrolled to while it is redrawn, and the
@@ -2736,7 +2755,11 @@ function renderInspector() {
       <div><dt>Of parent</dt><dd>${fmtPct(pct(pop.indices.length, pop.parent.indices.length))}</dd></div>
       <div><dt>Of total</dt><dd>${fmtPct(pct(pop.indices.length, s.n))}</dd></div>
     </dl>
-    ${pop.link ? `<div class="fg-status${pop.custom ? ' is-custom' : ''}">
+    ${S.mode === 'group' && pop.link?.group !== S.groupId ? `<div class="fg-status">
+      <p><strong>Not a gate of ${esc(currentGroup().name)}.</strong> ${pop.link ? `It is ${esc(folderGateName(pop.link))}’s` : `It is only on ${esc(s.name)}`}, so it is shown faint and cannot be moved here.</p>
+      <div class="btn-row"><button class="btn btn-small btn-primary" data-act="fg-make">Make this a folder gate</button></div>
+      <p class="muted small">Copies it (with its sub-gates) to every sample of ${esc(currentGroup().name)}, as the folder’s gate.</p>
+    </div>` : pop.link ? `<div class="fg-status${pop.custom ? ' is-custom' : ''}">
       <p><strong>Folder gate</strong> from ${esc(folderGateName(pop.link))}. ${pop.custom
         ? `Adjusted for this sample only: the other samples keep the folder’s gate.${grouping ? ' Moving it here applies it to the whole folder.' : ''}`
         : grouping ? 'Changes here apply to every sample in the folder that has not been adjusted in its tile.' : 'Moving or reshaping it here changes this sample only.'}</p>
@@ -4168,6 +4191,14 @@ function bind() {
     const pop = inspectorPop();
     if (!pop) return;
     if (act === 'open-gate') navigate(pop);
+    // A gate shown faint in group gating becomes the open folder's gate.
+    if (act === 'fg-make') {
+      const items = copyItems([{ sample: sample(), pop }]);
+      makeFolderGates(currentGroup(), items, { relink: !!pop.link });
+      const made = sample() && findByPath(sample().root, pathOf(pop));
+      if (made?.link?.group === S.groupId) { S.selId = made.id; renderAll(); }
+      return;
+    }
     if (act === 'fg-use' || act === 'fg-promote') {
       const t = templateFor(pop);
       if (!t) return;

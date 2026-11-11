@@ -308,62 +308,70 @@ function labelBox(g, o, x, y, lines, selected, ref = null, lab = null) {
 function drawGates(g, geo, o) {
   const clampS = (v) => Math.max(0, Math.min(1, v));
   for (const s of o.gates) {
-    const col = s.selected ? o.colors.gateSel : o.colors.gate;
-    g.strokeStyle = col;
-    g.lineWidth = s.selected ? 2 : 1.5;
-    if (s.kind === 'poly') {
-      g.beginPath();
-      s.pts.forEach(([sx, sy], i) => {
+    // A gate shown only for reference (`ghost`) is faint and dashed.
+    g.save();
+    if (s.ghost) { g.globalAlpha = s.selected ? 0.8 : 0.45; g.setLineDash([5, 4]); }
+    drawGate(g, geo, o, s, clampS);
+    g.restore();
+  }
+}
+
+function drawGate(g, geo, o, s, clampS) {
+  const col = s.selected ? o.colors.gateSel : o.colors.gate;
+  g.strokeStyle = col;
+  g.lineWidth = s.selected ? 2 : 1.5;
+  if (s.kind === 'poly') {
+    g.beginPath();
+    s.pts.forEach(([sx, sy], i) => {
+      const [x, y] = geo.toPx(clampS(sx), clampS(sy));
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    });
+    g.closePath();
+    g.stroke();
+    if (s.selected && !s.ghost) {
+      g.fillStyle = col;
+      for (const [sx, sy] of s.handles ?? s.pts) {
         const [x, y] = geo.toPx(clampS(sx), clampS(sy));
-        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
-      });
-      g.closePath();
-      g.stroke();
-      if (s.selected) {
-        g.fillStyle = col;
-        for (const [sx, sy] of s.handles ?? s.pts) {
-          const [x, y] = geo.toPx(clampS(sx), clampS(sy));
-          g.fillRect(x - 3.5, y - 3.5, 7, 7);
-        }
+        g.fillRect(x - 3.5, y - 3.5, 7, 7);
       }
-      let top = s.pts[0];
-      for (const p of s.pts) if (p[1] > top[1]) top = p;
-      const cx = s.pts.reduce((a, p) => a + clampS(p[0]), 0) / s.pts.length;
-      const [lx, ly] = geo.toPx(cx, clampS(top[1]));
-      labelBox(g, o, lx, ly - (o.compact ? 9 : 14), [s.label, s.sub], s.selected, { shape: s, pop: s.pop }, s.lab);
-    } else if (s.kind === 'quad') {
-      const [x, y] = geo.toPx(clampS(s.cx), clampS(s.cy));
-      g.beginPath();
-      g.moveTo(geo.l, y); g.lineTo(geo.r, y);
-      g.moveTo(x, geo.t); g.lineTo(x, geo.b);
-      g.stroke();
-      if (s.selected) { g.fillStyle = col; g.fillRect(x - 4, y - 4, 8, 8); }
-      const pos = { UL: [geo.l + 4, geo.t + 4], UR: [geo.r - 4, geo.t + 4], LR: [geo.r - 4, geo.b - 4], LL: [geo.l + 4, geo.b - 4] };
-      for (const q of s.quads) {
-        const [qx, qy] = pos[q.quadrant];
-        g.font = `600 11px ${o.fontSans}`;
-        const lines = o.compact ? [q.sub] : [q.label, q.sub];
-        const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 10;
-        const bx = q.quadrant === 'UL' || q.quadrant === 'LL' ? qx + w / 2 : qx - w / 2;
-        const by = q.quadrant === 'UL' || q.quadrant === 'UR' ? qy + (o.compact ? 9 : 16) : qy - (o.compact ? 9 : 16);
-        labelBox(g, o, bx, by, [q.label, q.sub], q.selected, { shape: s, pop: q.pop }, q.lab);
-      }
-    } else if (s.kind === 'range') {
-      const [x1] = geo.toPx(clampS(s.lo), 0);
-      const [x2] = geo.toPx(clampS(s.hi), 0);
-      const y = geo.b - s.level * geo.ph;
-      g.beginPath();
-      g.moveTo(x1, y); g.lineTo(x2, y);
-      g.moveTo(x1, y - 7); g.lineTo(x1, y + 7);
-      g.moveTo(x2, y - 7); g.lineTo(x2, y + 7);
-      g.stroke();
-      if (s.selected) {
-        g.fillStyle = col;
-        g.fillRect(x1 - 3.5, y - 3.5, 7, 7);
-        g.fillRect(x2 - 3.5, y - 3.5, 7, 7);
-      }
-      labelBox(g, o, (x1 + x2) / 2, y - 22, [s.label, s.sub], s.selected, { shape: s, pop: s.pop }, s.lab);
     }
+    let top = s.pts[0];
+    for (const p of s.pts) if (p[1] > top[1]) top = p;
+    const cx = s.pts.reduce((a, p) => a + clampS(p[0]), 0) / s.pts.length;
+    const [lx, ly] = geo.toPx(cx, clampS(top[1]));
+    labelBox(g, o, lx, ly - (o.compact ? 9 : 14), [s.label, s.sub], s.selected, { shape: s, pop: s.pop }, s.lab);
+  } else if (s.kind === 'quad') {
+    const [x, y] = geo.toPx(clampS(s.cx), clampS(s.cy));
+    g.beginPath();
+    g.moveTo(geo.l, y); g.lineTo(geo.r, y);
+    g.moveTo(x, geo.t); g.lineTo(x, geo.b);
+    g.stroke();
+    if (s.selected && !s.ghost) { g.fillStyle = col; g.fillRect(x - 4, y - 4, 8, 8); }
+    const pos = { UL: [geo.l + 4, geo.t + 4], UR: [geo.r - 4, geo.t + 4], LR: [geo.r - 4, geo.b - 4], LL: [geo.l + 4, geo.b - 4] };
+    for (const q of s.quads) {
+      const [qx, qy] = pos[q.quadrant];
+      g.font = `600 11px ${o.fontSans}`;
+      const lines = o.compact ? [q.sub] : [q.label, q.sub];
+      const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 10;
+      const bx = q.quadrant === 'UL' || q.quadrant === 'LL' ? qx + w / 2 : qx - w / 2;
+      const by = q.quadrant === 'UL' || q.quadrant === 'UR' ? qy + (o.compact ? 9 : 16) : qy - (o.compact ? 9 : 16);
+      labelBox(g, o, bx, by, [q.label, q.sub], q.selected, { shape: s, pop: q.pop }, q.lab);
+    }
+  } else if (s.kind === 'range') {
+    const [x1] = geo.toPx(clampS(s.lo), 0);
+    const [x2] = geo.toPx(clampS(s.hi), 0);
+    const y = geo.b - s.level * geo.ph;
+    g.beginPath();
+    g.moveTo(x1, y); g.lineTo(x2, y);
+    g.moveTo(x1, y - 7); g.lineTo(x1, y + 7);
+    g.moveTo(x2, y - 7); g.lineTo(x2, y + 7);
+    g.stroke();
+    if (s.selected && !s.ghost) {
+      g.fillStyle = col;
+      g.fillRect(x1 - 3.5, y - 3.5, 7, 7);
+      g.fillRect(x2 - 3.5, y - 3.5, 7, 7);
+    }
+    labelBox(g, o, (x1 + x2) / 2, y - 22, [s.label, s.sub], s.selected, { shape: s, pop: s.pop }, s.lab);
   }
 }
 
