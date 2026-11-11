@@ -228,6 +228,10 @@ Gating, **Add to layout** places the plot you are looking at.
   **Dot size** and **Colour depth** sliders (the plot changes when you let go; **Same dot size &
   colour depth for every plot** copies them to the rest of the page), width and height, gates
   on or off.
+- New plots start with a 16 pt title, axis titles, gate names and gate numbers and 12 pt axis
+  numbers; after that, with the title and text settings last used on a plot. New layouts start
+  with the batch columns, rows and fill order, the gating strategy and the sample ID settings
+  last used on a layout. Both are kept with the session.
 - **Plot text** (its own card): the title, typed or picked from its ▾ list (population, sample
   name, file name, combinations, % of parent, count, or any of the sample's keywords such as
   donor or condition, each shown with what it gives for that plot), axis titles, and separate sizes for the title, axis titles, axis
@@ -250,12 +254,18 @@ Gating, **Add to layout** places the plot you are looking at.
 - **Batch** repeats the page for every sample of a folder (**Repeat for**: the non-control
   samples by default, all samples including controls, any folder of yours, or the compensation
   controls; it can be picked before Batch is turned on), in a grid: set the number of **Columns** and/or
-  **Rows** (leave one empty to fit every sample) and the **Fill order** (across, then down; or
-  down, then across). Each copy fills in its own sample's numbers and keywords. **Sample ID**
+  **Rows** (leave one empty to fit every sample; with both empty, the number of columns is the
+  whole number at or below the square root of the number of copies, e.g. 3 for 10) and the
+  **Fill order** (across, then down; or down, then across). Each copy fills in its own sample's numbers and keywords. **Sample ID**
   shows the file name, or the sample's name, above each copy, with its own alignment, size,
   font, bold, italic and colour.
   Double-click a plot in any copy to edit its gates for that copy's sample (the plot being
   edited is outlined).
+  - The corner of each copy has **⠿** (drag the copy to another place), **◀ ▶** (move it
+    earlier or later) and **×** (take its sample out of the batch). The copies stay in the grid,
+    with its columns and fill order. A warning over the page says which samples are out and
+    whether the order was changed, with **Reset** beside it; turning Batch off and on again
+    also starts it afresh.
   - **All plots in the batch**: Dot size and Colour depth, and the same title, size and gate
     label settings as a single plot's, applied to every plot in every copy, with its own **Set
     for all plots & keep for this session**.

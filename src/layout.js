@@ -6,7 +6,9 @@
 // `arrange` is 'free' (items go where they are put) or 'grid' (plots snap to
 // a grid of gridCols x gridRows cells, in order; see tiling.js).
 // In batch, `columns` and `rows` set the grid (0 or missing: as many as
-// needed) and `order` fills it across rows first ('row') or down columns ('col').
+// needed; with neither, √n columns) and `order` fills it across rows first
+// ('row') or down columns ('col'). `batchOmit` lists the samples taken out of
+// the batch and `batchOrder` an order set for its copies (sample keys).
 // `showStrategy` lists the gates down to the page's one plot above the figure.
 // An item:  { id, kind: 'plot' | 'text', x, y, w, h, ... } in page units
 // (CSS pixels, 96 per inch). Plot items name their population by path and
@@ -25,7 +27,7 @@ const newId = (p) => `${p}${Date.now().toString(36)}${(idN++).toString(36)}`;
 
 export function newLayout(name = 'Layout 1') {
   const size = PAGE_SIZES[0];
-  return { id: newId('L'), name, size: size.id, width: size.w, height: size.h, items: [], batch: false, columns: 2, sampleKey: null };
+  return { id: newId('L'), name, size: size.id, width: size.w, height: size.h, items: [], batch: false, columns: 0, idSize: 16, sampleKey: null };
 }
 
 /**
@@ -43,6 +45,7 @@ export function newLayout(name = 'Layout 1') {
  *   folderSamples(), folderName()   the folder picked in the Folders pane
  *   setOrder(key, n), setLabel(key, name)   change a sample's place or name
  *   plotDefaults(), setPlotDefaults(d)       text sizes and gate labels new plots start with
+ *   layoutLast(), setLayoutLast(part)        the last-used page ({ layout }) and plot ({ plot }) settings
  *   renameGate(key, path, rect)              open the name box for a gate
  *   shortLabel(s, name)                      a channel's stain, or its name
  *   look()                                   { dotSize, depth } used in Gating
@@ -235,7 +238,7 @@ export function createLayoutEditor(root, env) {
     const byCol = layout.order === 'col';
     let cols = Math.max(0, Math.round(layout.columns || 0));
     let rows = Math.max(0, Math.round(layout.rows || 0));
-    if (!cols && !rows) cols = 2;
+    if (!cols && !rows) cols = Math.max(1, Math.floor(Math.sqrt(n)));
     if (cols && !rows) rows = Math.ceil(n / cols);
     else if (rows && !cols) cols = Math.ceil(n / rows);
     else if (cols * rows < n) { if (byCol) cols = Math.ceil(n / rows); else rows = Math.ceil(n / cols); }
@@ -246,9 +249,47 @@ export function createLayoutEditor(root, env) {
   }
 
   function gridNote(l) {
-    const n = env.batchSamples(l).length;
+    const n = batchList(l).length;
     const g = batchGrid(l, n);
-    return `${n} cop${n === 1 ? 'y' : 'ies'} in ${g.cols} column${g.cols === 1 ? '' : 's'} × ${g.rows} row${g.rows === 1 ? '' : 's'}. Leave columns or rows empty to fit every sample. Double-click a plot in any copy to edit its gates for that sample.`;
+    return `${n} cop${n === 1 ? 'y' : 'ies'} in ${g.cols} column${g.cols === 1 ? '' : 's'} × ${g.rows} row${g.rows === 1 ? '' : 's'}. Leave columns or rows empty to fit every sample (with both empty, as many columns as the square root of the number of copies). Double-click a plot in any copy to edit its gates for that sample; the corner of each copy moves it (drag, or ◀ ▶) or takes it out (×).`;
+  }
+
+  // The samples a batch repeats for: the folder's, less those taken out of
+  // this batch, in the batch's own order where one was set.
+  function batchList(l) {
+    const omit = new Set(l.batchOmit || []);
+    const list = env.batchSamples(l).filter((s) => !omit.has(env.sampleKey(s)));
+    const order = l.batchOrder || [];
+    if (!order.length) return list;
+    const rank = new Map(order.map((k, i) => [k, i]));
+    const at = (s, i) => (rank.has(env.sampleKey(s)) ? rank.get(env.sampleKey(s)) : order.length + i);
+    return list.map((s, i) => ({ s, r: at(s, i) })).sort((a, b) => a.r - b.r).map((x) => x.s);
+  }
+
+  // How a batch differs from its folder: samples taken out, and whether the
+  // copies were put in another order.
+  function batchChanges(l) {
+    const keys = new Set(env.batchSamples(l).map((s) => env.sampleKey(s)));
+    const out = (l.batchOmit || []).filter((k) => keys.has(k));
+    return { out, moved: !!(l.batchOrder || []).length };
+  }
+
+  // Takes the sample of copy `b` out of the batch, or moves it to place `to`.
+  function editCopies(l, b, to = null) {
+    const list = batchList(l).map((s) => env.sampleKey(s));
+    const key = list[b];
+    if (!key) return;
+    env.checkpoint();
+    if (to === null) l.batchOmit = [...new Set([...(l.batchOmit || []), key])];
+    else {
+      list.splice(b, 1);
+      list.splice(Math.max(0, Math.min(list.length, to)), 0, key);
+      l.batchOrder = list;
+    }
+    ui.editMark = null;
+    pick(null);
+    env.changed();
+    render();
   }
 
   // The sample ID shown above each copy of a batch: the file name or the
@@ -271,7 +312,7 @@ export function createLayoutEditor(root, env) {
     const plots = layout.items.filter((x) => x.kind === 'plot');
     if (plots.length !== 1) return null;
     const it = plots[0];
-    const s = sampleFor(it, layout.batch ? env.batchSamples(layout)[0] || null : pageSampleOf(layout));
+    const s = sampleFor(it, layout.batch ? batchList(layout)[0] || null : pageSampleOf(layout));
     if (!s) return null;
     const steps = [];
     let p = s.root;
@@ -342,7 +383,7 @@ export function createLayoutEditor(root, env) {
   function sheet(layout) {
     if (!layout) return { width: 800, height: 600, svg: pageSVG({ width: 800, height: 600, parts: [] }), blocks: [], origin: { dx: 0, dy: 0 }, cell: { x0: 0, y0: 0, w: 800, h: 600 }, top: 0 };
     // Batch copies skip compensation controls.
-    const samples = layout.batch ? env.batchSamples(layout) : [pageSampleOf(layout)];
+    const samples = layout.batch ? batchList(layout) : [pageSampleOf(layout)];
     const { cols, rows, byCol } = batchGrid(layout, samples.length);
     // In batch, each copy is only as big as the items on the page (plus a
     // margin), not the whole page.
@@ -468,6 +509,7 @@ export function createLayoutEditor(root, env) {
     const z = ui.zoom;
     ui.origin = sh.origin;
     ui.blocks = sh.blocks;
+    ui.cell = sh.cell;
     const o = sh.origin;
     // Outline the plot open for editing below, in whichever copy it is.
     const em = env.editing() && ui.editMark && l.items.find((x) => x.id === ui.editMark.id);
@@ -488,12 +530,16 @@ export function createLayoutEditor(root, env) {
       const spot = (axis, r) => `<label class="lay-axis-hot" title="Click to change the ${axis.toUpperCase()} channel${l.batch ? ' (in every copy)' : ''}" style="left:${r.x * z}px;top:${r.y * z}px;width:${r.w * z}px;height:${r.h * z}px"><select data-item="${it.id}" data-block="${b}" data-axis="${axis}" aria-label="${axis.toUpperCase()} channel"><option value="${escH(view[axis])}" selected>${escH(env.channelLabel(s, view[axis]))}</option></select></label>`;
       return spot('x', spots.x) + (view.type === 'histogram' ? '' : spot('y', spots.y));
     }).join('')).join('');
+    // In a batch, the corner of each copy: drag it (or ◀ ▶) to another place,
+    // or × to take its sample out of the batch.
+    const copyTools = l.batch ? sh.blocks.map((bl, b) => (bl.sample ? `<div class="lay-copy-tools" style="left:${(bl.dx + sh.cell.x0 + sh.cell.w) * z}px;top:${(bl.dy + sh.cell.y0) * z}px">
+      <button class="lay-copy-handle" data-act="copy-drag" data-block="${b}" title="Drag to move ${escH(bl.sample.name)} to another place in the batch">⠿</button><button data-act="copy-move" data-block="${b}" data-to="${b - 1}" title="Move earlier" ${b ? '' : 'disabled'}>◀</button><button data-act="copy-move" data-block="${b}" data-to="${b + 1}" title="Move later" ${b < sh.blocks.length - 1 ? '' : 'disabled'}>▶</button><button class="lay-copy-out" data-act="copy-out" data-block="${b}" title="Take ${escH(bl.sample.name)} out of this batch">×</button></div>` : '')).join('') : '';
     // The grid's cells, faintly, while editing (not part of the figure).
     const cells = isGrid(l) ? gridCells(l).cells.map((c) => `<div class="lay-cell" style="left:${(c.x + o.dx) * z}px;top:${(c.y + o.dy) * z}px;width:${c.w * z}px;height:${c.h * z}px"></div>`).join('') : '';
     stage.innerHTML = `<div class="lay-sheet" style="width:${sh.width * z}px;height:${sh.height * z}px">
       <div class="lay-svg">${sh.svg}</div>
       ${l.batch ? `<div class="lay-block-hint" style="top:${sh.top * z}px;width:${sh.cell.w * z}px;height:${sh.cell.h * z}px"></div>` : ''}
-      <div class="lay-overlay">${cells}${editMark}${copyMarks()}${overlays}${axisHot}</div></div>`;
+      <div class="lay-overlay">${cells}${editMark}${copyMarks()}${overlays}${axisHot}${copyTools}<div class="lay-copy-drop" hidden></div></div></div>`;
     const svg = stage.querySelector('.lay-svg svg');
     svg.setAttribute('width', sh.width * z);
     svg.setAttribute('height', sh.height * z);
@@ -504,10 +550,20 @@ export function createLayoutEditor(root, env) {
   // them quickly for every copy.
   function renderQuick() {
     const l = current();
+    // A warning while samples are out of the batch or its copies were moved.
+    const note = $('lay-batchnote');
+    const ch = l?.batch ? batchChanges(l) : { out: [], moved: false };
+    note.hidden = !(ch.out.length || ch.moved);
+    const outNames = ch.out.map((k) => env.batchSamples(l).find((x) => env.sampleKey(x) === k)?.name).filter(Boolean);
+    note.innerHTML = note.hidden ? '' : `<span title="${escH(outNames.join(', '))}">⚠ ${[
+      ch.out.length ? `${ch.out.length} sample${ch.out.length === 1 ? '' : 's'} taken out of this batch${outNames.length <= 3 ? ` (${escH(outNames.join(', '))})` : ''}` : '',
+      ch.moved ? `${ch.out.length ? 'copies' : 'Copies'} moved from the folder's order` : '',
+    ].filter(Boolean).join('; ')}.</span>
+      <button class="btn btn-small" data-act="batch-reset" title="Bring back every sample of the folder, in the folder's order">Reset</button>`;
     const el = $('lay-quick');
     const plots = l ? l.items.filter((x) => x.kind === 'plot') : [];
     const it = l?.batch && plots.length === 1 ? plots[0] : null;
-    const s = it && sampleFor(it, ui.blocks?.[0]?.sample || env.batchSamples(l)[0] || pageSampleOf(l));
+    const s = it && sampleFor(it, ui.blocks?.[0]?.sample || batchList(l)[0] || pageSampleOf(l));
     el.hidden = !s;
     if (!s) { el.innerHTML = ''; return; }
     const view = itemView(it, s);
@@ -698,11 +754,11 @@ export function createLayoutEditor(root, env) {
           ${field('', 'Colour', `<input id="lpg-stratcolor" type="color" value="${escH(/^#[0-9a-f]{6}$/i.test(l.strategyColor || '') ? l.strategyColor : '#000000')}">`)}
           <p class="muted small">${steps?.length ? 'Each gate from All Events down to the plotted population, with the channels it was drawn on. Shown once, above the figure.' : 'The plot shows All Events, so there are no gates to list.'}</p>` : ''}`;
           })()}
-          ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${env.batchSamples(l).length})`)}
+          ${check('lpg-batch', l.batch, `Batch: repeat for every sample (${l.batch && batchList(l).length !== env.batchSamples(l).length ? `${batchList(l).length} of ${env.batchSamples(l).length}` : env.batchSamples(l).length})`)}
           ${l.batch && pinnedPlots(l).length ? `<div class="notice is-warn">⚠ ${pinnedPlots(l).length} plot${pinnedPlots(l).length === 1 ? ' shows' : 's show'} the same sample in every copy.
             <div class="btn-row"><button class="btn btn-small" data-act="follow-each">Show each copy's own sample</button></div></div>` : ''}
           ${field('', 'Repeat for', `<select id="lpg-group" title="The folder whose samples the batch repeats for (it can be picked before turning Batch on)"><option value="">Non-control samples</option>${env.folders().map((g) => `<option value="${escH(g.id)}" ${l.batchGroup === g.id ? 'selected' : ''}>${escH(g.name)}</option>`).join('')}</select>`)}
-          ${l.batch ? `<div class="field-pair">${field('', 'Columns', `<input id="lpg-cols" type="number" min="0" max="24" step="1" value="${l.columns || ''}" placeholder="Auto">`)}${field('', 'Rows', `<input id="lpg-rows" type="number" min="0" max="24" step="1" value="${l.rows || ''}" placeholder="Auto">`)}</div>
+          ${l.batch ? `<div class="field-pair">${field('', 'Columns', `<input id="lpg-cols" type="number" min="0" max="24" step="1" value="${l.columns || ''}" placeholder="Auto (${Math.max(1, Math.floor(Math.sqrt(batchList(l).length)))})">`)}${field('', 'Rows', `<input id="lpg-rows" type="number" min="0" max="24" step="1" value="${l.rows || ''}" placeholder="Auto">`)}</div>
           ${field('', 'Fill order', `<select id="lpg-order"><option value="row" ${l.order !== 'col' ? 'selected' : ''}>Across, then down</option><option value="col" ${l.order === 'col' ? 'selected' : ''}>Down, then across</option></select>`)}
           <p id="lpg-grid" class="muted small">${gridNote(l)}</p>
           ${field('', 'Sample ID', `<select id="lpg-id">${[['none', 'None'], ['file', 'File name'], ['name', 'Name (or file name)']].map(([v, t]) => `<option value="${v}" ${(l.idShow || 'none') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
@@ -830,10 +886,25 @@ export function createLayoutEditor(root, env) {
 
   // ---------------------------------------------------------------- editing
 
+  // A new layout starts with the settings last used on a layout: batch
+  // columns, rows and fill order, the gating strategy and the sample IDs.
+  const LAYOUT_KEPT = ['columns', 'rows', 'order', 'showStrategy', 'strategySize', 'strategyFont', 'strategyAlign', 'strategyBold',
+    'strategyItalic', 'strategyColor', 'idShow', 'idAlign', 'idSize', 'idFont', 'idBold', 'idItalic', 'idColor'];
+  const freshLayout = (name) => Object.assign(newLayout(name), JSON.parse(JSON.stringify(env.layoutLast().layout || {})));
+  function rememberLayout(l) {
+    const kept = {};
+    for (const k of LAYOUT_KEPT) if (l[k] !== undefined) kept[k] = l[k];
+    env.setLayoutLast({ layout: kept });
+  }
+  // New plots start with the title and text settings last used on a plot.
+  function rememberPlot(x) {
+    env.setLayoutLast({ plot: { fontSize: x.fontSize || 11, sizes: x.sizes ? { ...x.sizes } : null, stats: { ...statsOf(x) }, pctSign: x.pctSign !== false, showLabels: x.showLabels !== false, title: x.title ?? '' } });
+  }
+
   function ensureLayout() {
     let l = current();
     if (!l) {
-      l = newLayout(`Layout ${layouts().length + 1}`);
+      l = freshLayout(`Layout ${layouts().length + 1}`);
       layouts().push(l);
       ui.layoutId = l.id;
     }
@@ -863,15 +934,18 @@ export function createLayoutEditor(root, env) {
       : placeFor(l, w, h);
     const item = {
       id: newId('i'), kind: 'plot', ...pos, w, h, sampleKey, path: s ? env.pathOf(pop) : [],
-      view: view ? { ...view } : null, title: '{population}', xLabel: '', yLabel: '', fontSize: 11, showGates: true, showLabels: true,
+      view: view ? { ...view } : null, title: '{population}', xLabel: '', yLabel: '', showGates: true, showLabels: true,
+      fontSize: 16, sizes: { axis: 16, ticks: 12, gateName: 16, gateNum: 16 },
     };
-    // The dot size and colour depth used in Gating, then the text settings
-    // kept with "Set for all plots".
+    // The dot size and colour depth used in Gating, then the title and text
+    // settings last used on a plot (or kept with "Set for all plots").
     const look = env.look();
     if (look.dotSize > 1) item.dotSize = look.dotSize;
     if (look.depth > 0) item.depth = look.depth;
-    const d = env.plotDefaults();
+    const last = env.layoutLast().plot;
+    const d = last || env.plotDefaults();
     if (d) applyDefaults(item, d);
+    if (typeof last?.title === 'string') item.title = last.title;
     l.items.push(item);
     // In grid mode the new plot goes into the cell it was dropped on (or
     // after the others), and the rest move along.
@@ -939,6 +1013,8 @@ export function createLayoutEditor(root, env) {
     }
     // One undo step per field being edited, not per keystroke.
     env.checkpoint(`${t.id}:${ui.sel}`);
+    // Page settings are remembered for new layouts, once applied below.
+    if (t.id.startsWith('lpg-')) queueMicrotask(() => rememberLayout(l));
     const it = itemById(ui.sel);
     const val = t.type === 'checkbox' ? t.checked : t.value;
     const n = parseFloat(val);
@@ -948,6 +1024,7 @@ export function createLayoutEditor(root, env) {
       const key = tm[2];
       if (key === 'title-pick' && !val) return;
       for (const x of targets) setPlotText(x, key, val, n);
+      if (targets[0]) rememberPlot(targets[0]);
       return changed({ props: key === 'title-pick' });
     }
     switch (t.id) {
@@ -974,6 +1051,8 @@ export function createLayoutEditor(root, env) {
       case 'lpg-sample': l.sampleKey = val || null; return changed({ props: true });
       case 'lpg-batch': {
         l.batch = val;
+        // Turned on again, a batch starts afresh: every sample, in order.
+        if (val) { l.batchOmit = []; l.batchOrder = []; }
         // A batch repeats the page for every sample: plots kept on one sample
         // (added from another sample's tree) would show that sample in every
         // copy, so they follow each copy's sample instead (Undo keeps them).
@@ -1047,7 +1126,7 @@ export function createLayoutEditor(root, env) {
     const act = b.dataset.act;
     if (['new-layout', 'del-item', 'dup-item'].includes(act) || (act === 'del-layout' && b.dataset.confirm === '1')) env.checkpoint();
     if (act === 'new-layout') {
-      const nl = newLayout(`Layout ${layouts().length + 1}`);
+      const nl = freshLayout(`Layout ${layouts().length + 1}`);
       layouts().push(nl);
       ui.layoutId = nl.id;
       pick(null);
@@ -1113,6 +1192,16 @@ export function createLayoutEditor(root, env) {
       return render();
     }
     if (act === 'copy-item' && it) return copyImage(singleItemSheet(it));
+    if (act === 'copy-out') return editCopies(l, +b.dataset.block);
+    if (act === 'copy-move') return editCopies(l, +b.dataset.block, +b.dataset.to);
+    if (act === 'batch-reset') {
+      env.checkpoint();
+      l.batchOmit = [];
+      l.batchOrder = [];
+      pick(null);
+      env.changed();
+      return render();
+    }
     if (act === 'lq-swap') {
       const x = itemById(b.dataset.item);
       const s = x && sampleFor(x, ui.blocks?.[0]?.sample || pageSampleOf(l));
@@ -1147,6 +1236,7 @@ export function createLayoutEditor(root, env) {
         for (const x of lay.items) if (x.kind === 'plot') applyDefaults(x, d);
       }
       env.setPlotDefaults(d);
+      rememberPlot(ref);
       env.changed();
       env.toast('Text sizes and gate labels set for every plot; new plots will start with them.');
       return render();
@@ -1163,6 +1253,7 @@ export function createLayoutEditor(root, env) {
 
   // Dragging and resizing items on the page.
   let drag = null;
+  let copyDrag = null; // a batch copy being dragged to another place: { from, to }
   let lastDown = { id: null, t: 0 }; // "<copy>:<item id>" of the last press, for double-clicks
 
   // The plot item under a pointer event on the sheet, and which batch copy.
@@ -1193,6 +1284,13 @@ export function createLayoutEditor(root, env) {
 
   function onPointerDown(e) {
     if (e.target.closest('.lay-axis-hot')) return; // a channel menu opens instead
+    const handle = e.target.closest('.lay-copy-handle');
+    if (handle) {
+      e.preventDefault();
+      copyDrag = { from: +handle.dataset.block, to: null };
+      return;
+    }
+    if (e.target.closest('.lay-copy-tools')) return;
     const box = e.target.closest('.lay-box');
     const stage = $('lay-stage');
     if (!box) {
@@ -1281,7 +1379,32 @@ export function createLayoutEditor(root, env) {
     root.querySelector('.lay-overlay')?.insertAdjacentHTML('afterbegin', copyMarks());
   }
 
+  // The batch copy under a pointer (anywhere in its cell), or -1.
+  function copyAt(e) {
+    const sheetEl = root.querySelector('.lay-sheet');
+    if (!sheetEl || !ui.blocks || !ui.cell) return -1;
+    const r = sheetEl.getBoundingClientRect();
+    const X = (e.clientX - r.left) / ui.zoom, Y = (e.clientY - r.top) / ui.zoom;
+    return ui.blocks.findIndex((bl) => {
+      const x = bl.dx + ui.cell.x0, y = bl.dy + ui.cell.y0;
+      return X >= x && X < x + ui.cell.w && Y >= y && Y < y + ui.cell.h;
+    });
+  }
+
+  // While a copy is dragged, the place it would go is outlined.
+  function onCopyDragMove(e) {
+    const b = copyAt(e);
+    copyDrag.to = b >= 0 ? b : null;
+    const mark = root.querySelector('.lay-copy-drop');
+    if (!mark) return;
+    mark.hidden = b < 0 || b === copyDrag.from;
+    if (mark.hidden) return;
+    const bl = ui.blocks[b], z = ui.zoom;
+    Object.assign(mark.style, { left: `${(bl.dx + ui.cell.x0) * z}px`, top: `${(bl.dy + ui.cell.y0) * z}px`, width: `${ui.cell.w * z}px`, height: `${ui.cell.h * z}px` });
+  }
+
   function onPointerMove(e) {
+    if (copyDrag) { onCopyDragMove(e); return; }
     if (marquee) { onMarqueeMove(e); return; }
     if (!drag) return;
     const l = current();
@@ -1319,6 +1442,13 @@ export function createLayoutEditor(root, env) {
     renderSoon();
   }
   function onPointerUp() {
+    if (copyDrag) {
+      const { from, to } = copyDrag;
+      copyDrag = null;
+      if (to !== null && to !== from) editCopies(current(), from, to);
+      else { const mark = root.querySelector('.lay-copy-drop'); if (mark) mark.hidden = true; }
+      return;
+    }
     if (marquee) {
       const moved = marquee.moved;
       marquee = null;

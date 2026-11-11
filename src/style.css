@@ -490,6 +490,18 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .lay-pick:hover { background: var(--sunk); }
 .lay-pick.is-sel { background: var(--accent-soft); border-left-color: var(--accent); font-weight: 600; }
 .lay-add { padding: 8px 12px 0; }
+/* A batch's copies: tools in each copy's corner, and where a dragged copy
+   would go. */
+.lay-copy-tools { position: absolute; transform: translate(calc(-100% - 4px), 4px); display: flex; gap: 2px; padding: 2px; border-radius: 4px; background: var(--surface); border: 1px solid var(--line); opacity: 0.45; z-index: 3; }
+.lay-copy-tools:hover, .lay-copy-tools:focus-within { opacity: 1; }
+.lay-copy-tools button { border: 0; background: none; cursor: pointer; padding: 0 5px; font-size: 12px; line-height: 20px; color: var(--fg); border-radius: 3px; }
+.lay-copy-tools button:hover:not(:disabled) { background: var(--sunk); }
+.lay-copy-tools button:disabled { opacity: 0.3; cursor: default; }
+.lay-copy-tools .lay-copy-handle { cursor: grab; touch-action: none; }
+.lay-copy-tools .lay-copy-out:hover { color: var(--danger); }
+.lay-copy-drop { position: absolute; outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 8%, transparent); pointer-events: none; }
+.lay-batchnote { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lay-batchnote[hidden] { display: none; }
 /* Over the page of a batch with one plot: its channels, for every copy. */
 .lay-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
 .lay-quick[hidden] { display: none; }
