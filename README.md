@@ -253,8 +253,8 @@ Gating, **Add to layout** places the plot you are looking at.
 - Text items and titles take fill-ins: `{sample}`, `{label}`, `{population}`, `{parent}`, `{count}`,
   `{freq}` (of parent), `{freqTotal}`, `{x}`, `{y}`, `{n}`, and any keyword of the sample in
   braces, such as `{$DATE}` or `{DONOR}` (including keywords added in other software and saved in the .wsp).
-- A batch of a single plot shows that plot's **X** and **Y** channels (and **Swap**) above the
-  page, to change them for every copy at once.
+- A batch of a single plot shows that plot's **X** and **Y** channels, their axis titles (empty
+  for the channel name) and **Swap** above the page, to change them for every copy at once.
 - **Batch** repeats the page for every sample of a folder (**Repeat for**: the non-control
   samples by default, all samples including controls, any folder of yours, or the compensation
   controls; it can be picked before Batch is turned on), in a grid: set the number of **Columns** and/or
@@ -278,10 +278,13 @@ Gating, **Add to layout** places the plot you are looking at.
     the selected plots, each with its sample ID, cropped to fit. It switches to the selection by
     itself when two or more plots are selected. Each copy is only as big as
   the items on the page (plus a small margin), so a half-filled page gives compact copies.
-- The cards on the right (Export, Page, the plot or text settings, Plot text, All plots in the
-  batch) each fold away from their heading; the browser remembers which are folded. The column
-  stays in view and scrolls on its own, so the page stays in sight while you reach a setting.
-- Export (the first card on the right): **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
+- On the right, from the top: **Layouts** (✎ beside a layout renames it, × deletes it after
+  asking; Undo brings it back), **Page**, **Export**, All plots in the batch, the selected
+  plot's or text's settings and Plot text, and **On this page** (the page's items, **Add text**,
+  **Add name label**). The cards fold away from their heading; the browser remembers which are
+  folded. The column stays in view and scrolls on its own, so the page stays in sight while you
+  reach a setting.
+- Export: **Download SVG** (vector axes, ticks, text, gates and histograms, editable in
   Illustrator, Inkscape or PowerPoint; density clouds embedded as images), **Download PNG**,
   **Copy as image**, **Copy plot as image** for one plot, and a preview image you can
   right-click to copy.

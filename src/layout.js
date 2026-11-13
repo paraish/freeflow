@@ -495,8 +495,14 @@ export function createLayoutEditor(root, env) {
 
   function renderList() {
     const l = current();
-    $('lay-list').innerHTML = layouts().map((x) => `<li><button class="lay-pick${x === l ? ' is-sel' : ''}" data-act="pick-layout" data-id="${x.id}">${escH(x.name)}<span class="sample-meta">${x.items.length} item${x.items.length === 1 ? '' : 's'}${x.batch ? ' · batch' : ''}</span></button></li>`).join('')
+    // Each layout with ✎ (rename it here) and × (delete it, after asking).
+    $('lay-list').innerHTML = layouts().map((x) => (ui.renaming === x.id
+      ? `<li class="lay-row is-renaming"><input class="lay-rename" data-id="${x.id}" type="text" value="${escH(x.name)}" aria-label="Layout name" autocomplete="off"></li>`
+      : `<li class="lay-row${x === l ? ' is-sel' : ''}"><button class="lay-pick${x === l ? ' is-sel' : ''}" data-act="pick-layout" data-id="${x.id}">${escH(x.name)}<span class="sample-meta">${x.items.length} item${x.items.length === 1 ? '' : 's'}${x.batch ? ' · batch' : ''}</span></button>
+        <span class="row-tools"><button class="row-edit" data-act="ren-layout" data-id="${x.id}" aria-label="Rename ${escH(x.name)}" title="Rename">✎</button><button class="row-edit row-del" data-act="del-layout" data-id="${x.id}" aria-label="Delete ${escH(x.name)}" title="Delete this layout">×</button></span></li>`)).join('')
       || '<li class="empty">No layouts yet.</li>';
+    const box = root.querySelector('.lay-rename');
+    if (box && document.activeElement !== box) { box.focus(); box.select(); }
     const selIds = new Set(selection().map((i) => i.id));
     $('lay-items').innerHTML = l ? l.items.map((it) => `<li><button class="lay-pick${selIds.has(it.id) ? ' is-sel' : ''}" data-act="pick-item" data-id="${it.id}">${it.kind === 'text' ? 'Text' : 'Plot'}: ${escH(it.kind === 'text' ? (it.text || '').split('\n')[0].slice(0, 40) : (it.path || []).slice(-1)[0] || 'All Events')}</button></li>`).join('')
       || '<li class="empty">Click or drag a population from Samples to add its plot.</li>' : '';
@@ -564,6 +570,8 @@ export function createLayoutEditor(root, env) {
     ].filter(Boolean).join('; ')}.</span>
       <button class="btn btn-small" data-act="batch-reset" title="Bring back every sample of the folder, in the folder's order">Reset</button>`;
     const el = $('lay-quick');
+    // Not redrawn while an axis title is being typed there.
+    if (el.contains(document.activeElement) && document.activeElement.type === 'text') return;
     const plots = l ? l.items.filter((x) => x.kind === 'plot') : [];
     const it = l?.batch && plots.length === 1 ? plots[0] : null;
     const s = it && sampleFor(it, ui.blocks?.[0]?.sample || batchList(l)[0] || pageSampleOf(l));
@@ -572,8 +580,10 @@ export function createLayoutEditor(root, env) {
     const view = itemView(it, s);
     const opts = (sel) => env.menuChannels(s, [view.x, view.y]).map((c) => `<option value="${escH(c.name)}" ${c.name === sel ? 'selected' : ''}>${escH(c.label)}${c.uncomp ? ' (uncomp.)' : ''}</option>`).join('');
     el.innerHTML = `<span class="lq-title" title="Channels of the page's plot, in every copy">${escH((it.path || []).slice(-1)[0] || 'All Events')}: every copy</span>
-      <label class="axis-pick"><span>X</span><select id="lq-x" data-item="${it.id}" data-axis="x" aria-label="X channel">${opts(view.x)}</select></label>
-      ${view.type === 'histogram' ? '' : `<label class="axis-pick"><span>Y</span><select id="lq-y" data-item="${it.id}" data-axis="y" aria-label="Y channel">${opts(view.y)}</select></label>
+      <span class="lq-axis"><label class="axis-pick"><span>X</span><select id="lq-x" data-item="${it.id}" data-axis="x" aria-label="X channel">${opts(view.x)}</select></label>
+        <input id="lq-xlabel" class="lq-title-input" type="text" data-item="${it.id}" data-key="xLabel" value="${escH(it.xLabel || '')}" placeholder="X axis title (channel name)" aria-label="X axis title" autocomplete="off"></span>
+      ${view.type === 'histogram' ? '' : `<span class="lq-axis"><label class="axis-pick"><span>Y</span><select id="lq-y" data-item="${it.id}" data-axis="y" aria-label="Y channel">${opts(view.y)}</select></label>
+        <input id="lq-ylabel" class="lq-title-input" type="text" data-item="${it.id}" data-key="yLabel" value="${escH(it.yLabel || '')}" placeholder="Y axis title (channel name)" aria-label="Y axis title" autocomplete="off"></span>
       <button class="btn btn-quiet btn-small" data-act="lq-swap" data-item="${it.id}" title="Swap X and Y">Swap</button>`}`;
   }
 
@@ -712,30 +722,11 @@ export function createLayoutEditor(root, env) {
         <div class="btn-row"><button class="btn" data-act="dup-item">Duplicate</button><button class="btn btn-danger" data-act="del-item">Delete</button></div>`;
     }
 
-    // Export first, so it is always at hand.
+    // The page's settings, then Export, then the batch and item cards.
     el.innerHTML = `
-      <details class="card" data-card="export" ${fold('export')}>
-        <summary class="card-head"><span class="eyebrow">Export</span></summary>
-        ${(() => {
-          const n = exportTargets().length;
-          const scope = exportScope();
-          return `<div class="fields"><label class="field"><span>What</span><select id="lay-export-scope">
-            <option value="all" ${scope === 'all' ? 'selected' : ''}>${l.batch ? 'Entire batch' : 'Entire page'}</option>
-            <option value="sel" ${scope === 'sel' ? 'selected' : ''} ${n ? '' : 'disabled'}>Selected ${l.batch ? 'plot' : 'item'}${n === 1 ? '' : 's'}${n ? ` (${n})` : ''}</option>
-          </select></label></div>`;
-        })()}
-        <div class="btn-row">
-          <button class="btn btn-primary" data-act="svg">Download SVG</button>
-          <button class="btn" data-act="png">Download PNG</button>
-          <button class="btn" data-act="copy">Copy as image</button>
-        </div>
-        <p class="muted small">SVG keeps text, axes and gates editable in Illustrator, Inkscape or PowerPoint. Right-click the preview to copy it.</p>
-        <img id="lay-preview" class="lay-preview" alt="Preview of the layout">
-      </details>
       <details class="card" data-card="page" ${fold('page')}>
         <summary class="card-head"><span class="eyebrow">Page</span></summary>
         <div class="fields">
-          ${field('', 'Name', txt('lpg-name', l.name))}
           ${field('', 'Size', `<select id="lpg-size">${pageOptions(l)}</select>`)}
           ${l.size === 'custom' ? `<div class="field-pair">${field('', 'Width', num('lpg-w', l.width, 'min="200" step="8"'))}${field('', 'Height', num('lpg-h', l.height, 'min="200" step="8"'))}</div>` : ''}
           ${field('', 'Arrange', `<select id="lpg-arrange"><option value="free" ${isGrid(l) ? '' : 'selected'}>Free</option><option value="grid" ${isGrid(l) ? 'selected' : ''}>Snap to grid</option></select>`)}
@@ -772,6 +763,24 @@ export function createLayoutEditor(root, env) {
           ${field('', 'Colour', `<input id="lpg-idcolor" type="color" value="${escH(/^#[0-9a-f]{6}$/i.test(l.idColor || '') ? l.idColor : '#000000')}">`)}
           <p class="muted small">Shown above each copy. "Name" is the name given to the sample in the Samples pane.</p>` : ''}` : ''}
         </div>
+      </details>
+      <details class="card" data-card="export" ${fold('export')}>
+        <summary class="card-head"><span class="eyebrow">Export</span></summary>
+        ${(() => {
+          const n = exportTargets().length;
+          const scope = exportScope();
+          return `<div class="fields"><label class="field"><span>What</span><select id="lay-export-scope">
+            <option value="all" ${scope === 'all' ? 'selected' : ''}>${l.batch ? 'Entire batch' : 'Entire page'}</option>
+            <option value="sel" ${scope === 'sel' ? 'selected' : ''} ${n ? '' : 'disabled'}>Selected ${l.batch ? 'plot' : 'item'}${n === 1 ? '' : 's'}${n ? ` (${n})` : ''}</option>
+          </select></label></div>`;
+        })()}
+        <div class="btn-row">
+          <button class="btn btn-primary" data-act="svg">Download SVG</button>
+          <button class="btn" data-act="png">Download PNG</button>
+          <button class="btn" data-act="copy">Copy as image</button>
+        </div>
+        <p class="muted small">SVG keeps text, axes and gates editable in Illustrator, Inkscape or PowerPoint. Right-click the preview to copy it.</p>
+        <img id="lay-preview" class="lay-preview" alt="Preview of the layout">
       </details>
       ${l.batch && l.items.some((x) => x.kind === 'plot') ? (() => {
         const ref = l.items.find((x) => x.kind === 'plot');
@@ -1031,7 +1040,6 @@ export function createLayoutEditor(root, env) {
       return changed({ props: key === 'title-pick' });
     }
     switch (t.id) {
-      case 'lpg-name': l.name = val || 'Layout'; return changed();
       case 'lpg-arrange': {
         l.arrange = val === 'grid' ? 'grid' : 'free';
         if (isGrid(l) && !Number.isFinite(l.gridTop)) l.gridTop = titleTop(l);
@@ -1169,17 +1177,22 @@ export function createLayoutEditor(root, env) {
       if (act === 'ls-expand') for (const k of [...ui.closed]) if (k.startsWith('p:')) ui.closed.delete(k);
       return renderSamplesSide();
     }
-    if (act === 'del-layout' && l) {
+    if (act === 'ren-layout') { ui.renaming = b.dataset.id; return renderList(); }
+    if (act === 'del-layout') {
+      const gone = layouts().find((x) => x.id === b.dataset.id);
+      if (!gone) return;
+      // Two clicks: the first asks.
       if (b.dataset.confirm !== '1') {
         b.dataset.confirm = '1';
-        b.textContent = 'Delete this layout?';
-        setTimeout(() => { if (b.isConnected) { b.dataset.confirm = ''; b.textContent = 'Delete layout'; } }, 3000);
+        b.textContent = 'Delete?';
+        b.classList.add('is-confirm');
+        setTimeout(() => { if (b.isConnected) { b.dataset.confirm = ''; b.textContent = '×'; b.classList.remove('is-confirm'); } }, 3000);
         return;
       }
-      layouts().splice(layouts().indexOf(l), 1);
-      ui.layoutId = layouts()[0]?.id ?? null;
-      pick(null);
+      layouts().splice(layouts().indexOf(gone), 1);
+      if (gone === l) { ui.layoutId = layouts()[0]?.id ?? null; pick(null); }
       env.changed();
+      env.toast(`Deleted ${gone.name}. Undo (Ctrl+Z) brings it back.`);
       return render();
     }
     if (!l) return;
@@ -1511,6 +1524,7 @@ export function createLayoutEditor(root, env) {
   }
 
   root.addEventListener('click', onClick);
+  root.addEventListener('focusout', (e) => { if (e.target.matches?.('.lay-rename') && ui.renaming) endRename(true); });
   // A card folded or opened.
   root.addEventListener('toggle', (e) => {
     const d = e.target;
@@ -1525,12 +1539,25 @@ export function createLayoutEditor(root, env) {
   const axisMenu = (e) => { const sel = e.target.closest?.('.lay-axis-hot select'); if (sel) fillAxisMenu(sel); };
   root.addEventListener('pointerdown', axisMenu, true);
   root.addEventListener('focusin', axisMenu);
-  root.addEventListener('input', (e) => { if (e.target.closest('#lay-props')) onPropInput(e); });
+  root.addEventListener('input', (e) => {
+    if (e.target.closest('#lay-props')) onPropInput(e);
+    // An axis title typed over a batch of one plot: one undo step per title.
+    const t = e.target;
+    if (t.matches('#lay-quick .lq-title-input')) {
+      const it = itemById(t.dataset.item);
+      if (!it) return;
+      env.checkpoint(`${t.id}:${it.id}`);
+      it[t.dataset.key] = t.value;
+      const card = $(t.dataset.key === 'xLabel' ? 'lp-xlabel' : 'lp-ylabel');
+      if (card && ui.sel === it.id) card.value = t.value;
+      changed();
+    }
+  });
   root.addEventListener('change', (e) => {
     const t = e.target;
     // A channel picked from an axis title on the page, or from the channels
     // over a batch of one plot.
-    const hot = t.closest('.lay-axis-hot, #lay-quick');
+    const hot = t.matches('select') && t.closest('.lay-axis-hot, #lay-quick');
     if (hot) {
       const it = itemById(t.dataset.item);
       const s = it && sampleFor(it, ui.blocks?.[+t.dataset.block || 0]?.sample || pageSampleOf(current()));
@@ -1545,7 +1572,20 @@ export function createLayoutEditor(root, env) {
     if (t.matches('#lay-samples .order-box')) env.setOrder(t.dataset.sample, t.value);
     if (t.matches('#lay-samples .label-box')) env.setLabel(t.dataset.sample, t.value);
   });
+  const endRename = (save) => {
+    const box = root.querySelector('.lay-rename');
+    const x = box && layouts().find((y) => y.id === box.dataset.id);
+    ui.renaming = null;
+    const name = box?.value.trim();
+    if (save && x && name && name !== x.name) { env.checkpoint(); x.name = name; env.changed(); }
+    renderList();
+  };
   root.addEventListener('keydown', (e) => {
+    if (e.target.matches('.lay-rename')) {
+      if (e.key === 'Enter') { e.preventDefault(); endRename(true); }
+      if (e.key === 'Escape') { e.preventDefault(); endRename(false); }
+      return;
+    }
     if (!e.target.matches('#lay-samples .order-box, #lay-samples .label-box')) return;
     if (e.key === 'Enter') e.target.blur();
     if (e.key === 'Escape') renderSamplesSide();
