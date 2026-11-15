@@ -405,6 +405,8 @@ async function autosave() {
     await pruneFiles(new Set(files.map((f) => f.key)));
     AS.last = sig;
     AS.worked = true;
+    // A newer session replaces one that would not open.
+    try { localStorage.removeItem(RESTORING); } catch { /* not kept */ }
   } catch (err) {
     AS.off = true;
     // Where the browser keeps nothing (private windows, blocked storage), stay quiet.
@@ -415,10 +417,29 @@ async function autosave() {
 }
 
 // Opens the session saved in this browser, if there is one.
-async function restoreSession() {
+// Set while the saved session is being opened. Still set at the next start,
+// it means the page crashed or froze while opening it, so it is not opened by
+// itself again: the note offers to try again or to start a new session.
+const RESTORING = 'freeflow.restoring';
+
+function showRestoreTrouble(text, canRetry) {
+  $('restore-text').textContent = `${text} Start a new session to clear it (your files are not changed)${canRetry ? ', or try again' : ''}.`;
+  $('restore-retry').hidden = !canRetry;
+  $('restore-note').classList.add('is-warn');
+  $('restore-note').hidden = false;
+}
+
+async function restoreSession({ force = false } = {}) {
   let ses = null;
   try { ses = await getSession(); } catch { return; }
   if (!ses?.files?.length || S.samples.some((s) => !s.isExample)) return;
+  let stuck = false;
+  try { stuck = !force && !!localStorage.getItem(RESTORING); } catch { /* not kept */ }
+  if (stuck) { showRestoreTrouble('Your saved session did not finish opening last time, so it was not opened again.', true); return; }
+  try { localStorage.setItem(RESTORING, String(Date.now())); } catch { /* not kept */ }
+  $('restore-note').hidden = true;
+  $('restore-note').classList.remove('is-warn');
+  $('restore-retry').hidden = true;
   AS.restoring = true;
   try {
     const text = (t) => async () => new TextEncoder().encode(t).buffer;
@@ -449,9 +470,10 @@ async function restoreSession() {
     if (['gating', 'group', 'layout'].includes(ui.mode) && ui.mode !== S.mode) setMode(ui.mode);
     else renderAll();
   } catch (err) {
-    toast(`Your last session could not be restored: ${err?.message || err}`, true);
+    showRestoreTrouble(`Your saved session could not be opened: ${err?.message || err}.`, false);
   } finally {
     AS.restoring = false;
+    try { localStorage.removeItem(RESTORING); } catch { /* not kept */ }
   }
 }
 
@@ -4405,6 +4427,7 @@ export function start() {
     armed = setTimeout(() => { armed = null; b.textContent = 'New session'; b.classList.remove('is-confirm'); }, 4000);
   });
   $('restore-hide').addEventListener('click', () => { $('restore-note').hidden = true; });
+  $('restore-retry').addEventListener('click', () => restoreSession({ force: true }));
   (sharedFile ? Promise.resolve() : restoreSession()).finally(() => {
     setInterval(autosave, AUTOSAVE_MS);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autosave(); });

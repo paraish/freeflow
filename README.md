@@ -300,7 +300,20 @@ settings, folders and layouts. Reload the page or reopen it later in the same br
 picks up where you left off, with a note saying so. **New session** (top right, shown while
 anything is open; click it twice to confirm) closes everything and forgets the saved copy, as
 does **Start a new session** in that note. Your files are never changed; save a bundle first
-to keep the work. The data stays on your computer, in this browser
+to keep the work.
+
+If the saved session itself causes trouble (errors that come back after reloading, or files
+that will not open), there are ways out that work even when the app does not start properly:
+
+- **Clear FreeFlow's saved data** at the bottom of the page (click twice) removes the session
+  and display settings FreeFlow keeps in this browser and reloads. Your files, your share-link
+  storage settings and other sites' data are not touched.
+- An unexpected error shows a bar saying what went wrong, with the same **Clear saved data and
+  reload**.
+- If opening the saved session crashed or froze the page, the next visit does not open it by
+  itself again: a note offers **Try again** or **Start a new session**.
+- Opening the page with `?reset` at the end of its address (for example
+  `https://paraish.github.io/freeflow/?reset`) clears the saved data before anything loads. The data stays on your computer, in this browser
 only. Sample data and opened share links are not kept this way. For a copy you can move or
 send, use an analysis bundle.
 

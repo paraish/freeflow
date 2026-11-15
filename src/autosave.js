@@ -10,6 +10,7 @@ const DB_NAME = 'freeflow';
 const VERSION = 1;
 
 let dbPromise = null;
+let off = false; // FreeFlow's saved data is being cleared: nothing more is stored
 
 function db() {
   if (!dbPromise) {
@@ -30,6 +31,7 @@ function db() {
 }
 
 function run(store, mode, fn) {
+  if (off) return Promise.resolve(undefined);
   return db().then((d) => new Promise((resolve, reject) => {
     const tx = d.transaction(store, mode);
     const req = fn(tx.objectStore(store));
@@ -49,6 +51,32 @@ export async function pruneFiles(keep) {
   const keys = await run('files', 'readonly', (st) => st.getAllKeys());
   const gone = keys.filter((k) => !keep.has(k));
   if (gone.length) await run('files', 'readwrite', (st) => { for (const k of gone) st.delete(k); });
+}
+
+// Clears everything FreeFlow keeps in this browser: the saved session and its
+// files (this database) and its settings (localStorage keys "freeflow.…"),
+// keeping the share-link storage settings unless `all`. The browser's other
+// data is not touched. Nothing more is stored until the page is reloaded,
+// unless `keepSaving`.
+export async function forgetEverything({ all = false, keepSaving = false } = {}) {
+  off = true;
+  try { (await dbPromise)?.close(); } catch { /* never opened */ }
+  dbPromise = null;
+  await new Promise((resolve) => {
+    try {
+      const req = indexedDB.deleteDatabase(DB_NAME);
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve();
+      // Open in another tab: it is deleted once that tab closes.
+      req.onblocked = () => setTimeout(resolve, 400);
+    } catch { resolve(); }
+  });
+  try {
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith('freeflow.') && (all || k !== 'freeflow.storage.v1')) localStorage.removeItem(k);
+    }
+  } catch { /* nothing stored */ }
+  if (keepSaving) off = false;
 }
 
 export async function clearAll() {
