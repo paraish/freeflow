@@ -1587,6 +1587,16 @@ export function createLayoutEditor(root, env) {
       return;
     }
     if (!e.target.matches('#lay-samples .order-box, #lay-samples .label-box')) return;
+    if (e.key === 'Enter' && e.target.matches('.label-box')) {
+      // Keeps the name and moves on to the next sample's name.
+      e.preventDefault();
+      const boxes = [...$('lay-samples').querySelectorAll('.label-box')];
+      const next = boxes[boxes.indexOf(e.target) + 1]?.dataset.sample;
+      e.target.blur();
+      const box = next && [...$('lay-samples').querySelectorAll('.label-box')].find((x) => x.dataset.sample === next);
+      if (box) { box.focus(); box.select(); box.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+      return;
+    }
     if (e.key === 'Enter') e.target.blur();
     if (e.key === 'Escape') renderSamplesSide();
   });

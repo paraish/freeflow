@@ -289,7 +289,7 @@ function labelBox(g, o, x, y, lines, selected, ref = null, lab = null) {
   const bx = Math.max(geo.l + 2, Math.min(geo.r - w - 2, x - w / 2));
   const by = Math.max(geo.t + 2, Math.min(geo.b - h - 2, y - h / 2));
   g.fillStyle = o.colors.labelBg;
-  g.strokeStyle = selected ? o.colors.gateSel : o.colors.gate;
+  g.strokeStyle = selected ? o.colors.gateSel : gateColor(o, ref?.shape);
   g.lineWidth = 1;
   g.beginPath();
   g.roundRect(bx + 0.5, by + 0.5, w, h, 3);
@@ -316,8 +316,11 @@ function drawGates(g, geo, o) {
   }
 }
 
+// A gate is drawn in its folder's colour (`fc`), if it is a folder's gate.
+const gateColor = (o, s) => (s?.fc != null && o.colors.folders?.[s.fc]) || o.colors.gate;
+
 function drawGate(g, geo, o, s, clampS) {
-  const col = s.selected ? o.colors.gateSel : o.colors.gate;
+  const col = s.selected ? o.colors.gateSel : gateColor(o, s);
   g.strokeStyle = col;
   g.lineWidth = s.selected ? 2 : 1.5;
   if (s.kind === 'poly') {

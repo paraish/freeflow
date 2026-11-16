@@ -16,6 +16,8 @@
   --axis: #8995a2;
   --gate: #17212c;
   --gate-sel: #c4187c;
+  /* Folder colours: each folder, and the gates it owns, in the panes and on the plots. */
+  --fc-0: #1d5fc4; --fc-1: #d55e00; --fc-2: #0f8f5f; --fc-3: #b77d00; --fc-4: #7b4fc0; --fc-5: #1b8fbd; --fc-6: #8d5a2b; --fc-7: #5f7d00;
   --multi-soft: #f8e3ee;
   --ok: #1d7a4c;
   --ok-soft: #e1f3e9;
@@ -32,6 +34,7 @@
     --bg: #0e1318; --surface: #151c23; --sunk: #11171d; --fg: #e3e9ef; --muted: #8e9bab; --line: #26313c;
     --accent: #6ea2ff; --accent-ink: #0b1220; --accent-soft: #1b2a42; --danger: #ff7b80;
     --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --multi-soft: #3a1f30; --ok: #6fd6a0; --ok-soft: #173326; --label-bg: rgba(10, 15, 20, 0.62);
+    --fc-0: #6ea2ff; --fc-1: #ff8a4c; --fc-2: #3fd19b; --fc-3: #ffc04d; --fc-4: #b58cf0; --fc-5: #6fd0f5; --fc-6: #d9a066; --fc-7: #b5d334;
     --dot: #d6dee6; --hist-fill: rgba(110, 162, 255, 0.25); --hist-line: #6ea2ff;
     color-scheme: dark;
   }
@@ -40,6 +43,7 @@
   --bg: #0e1318; --surface: #151c23; --sunk: #11171d; --fg: #e3e9ef; --muted: #8e9bab; --line: #26313c;
   --accent: #6ea2ff; --accent-ink: #0b1220; --accent-soft: #1b2a42; --danger: #ff7b80;
   --plot: #0a0f14; --axis: #5f6c7a; --gate: #e9eef3; --gate-sel: #ff5bb5; --multi-soft: #3a1f30; --ok: #6fd6a0; --ok-soft: #173326; --label-bg: rgba(10, 15, 20, 0.62);
+    --fc-0: #6ea2ff; --fc-1: #ff8a4c; --fc-2: #3fd19b; --fc-3: #ffc04d; --fc-4: #b58cf0; --fc-5: #6fd0f5; --fc-6: #d9a066; --fc-7: #b5d334;
   --dot: #d6dee6; --hist-fill: rgba(110, 162, 255, 0.25); --hist-line: #6ea2ff;
   color-scheme: dark;
 }
@@ -632,6 +636,7 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .group-row.is-sel .group-name { font-weight: 600; }
 .group-count { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
 .group-icon { width: 7px; height: 7px; flex: none; background: currentColor; border-radius: 50%; opacity: 0.45; align-self: center; margin: 0 2px; }
+.group-row .group-icon { background: var(--fc, currentColor); opacity: 1; width: 9px; height: 9px; }
 .group-sep { border-top: 1px solid var(--line); margin: 4px 12px; }
 .group-form { margin: 0 12px 10px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunk); display: flex; flex-direction: column; gap: 8px; }
 .group-form .field { grid-template-columns: minmax(0, 1fr); gap: 3px; }
@@ -658,12 +663,12 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .fg-row.is-picked { background: var(--multi-soft); box-shadow: inset 3px 0 0 var(--gate-sel); }
 .fg-row.is-picked .fg-name { color: var(--gate-sel); font-weight: 600; }
 .fg-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.fg-name::before { content: "↳ "; color: var(--muted); }
+.fg-name::before { content: "↳ "; color: var(--fc, var(--muted)); font-weight: 700; }
 .fg-adj { color: var(--gate-sel); font-size: 11px; white-space: nowrap; }
 .fg-confirm { list-style: none; margin: 2px 8px 6px 24px; padding: 8px; border-radius: var(--r); background: var(--multi-soft); display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .fg-confirm p { margin: 0; }
 .fg-mark { display: inline-block; margin-left: 6px; font-size: 10px; color: var(--accent); vertical-align: 1px; }
-.fg-mark::before { content: ""; display: inline-block; width: 6px; height: 6px; background: currentColor; border-radius: 50%; margin-right: 3px; vertical-align: 1px; }
+.fg-mark::before { content: ""; display: inline-block; width: 7px; height: 7px; background: var(--fc, currentColor); border-radius: 50%; margin-right: 3px; vertical-align: 0; }
 .fg-mark.is-custom { color: var(--gate-sel); font-weight: 600; }
 .fg-status { padding: 8px 10px; border-radius: var(--r); background: var(--accent-soft); font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
 .fg-status.is-custom { background: var(--multi-soft); }

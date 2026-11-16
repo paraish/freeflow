@@ -119,6 +119,10 @@ with one click).
   drag a gate onto a folder to copy it to every sample in it, and repeat a batch layout over one
   folder. Folders are saved in analysis bundles, shared workspaces and .wsp files (as sample
   groups), and .wsp sample groups open as folders.
+- **Folder colours**: each folder has a colour of its own (chosen automatically, and kept with
+  it), and the gates it owns share it: the dot before the folder, its gates under it in the
+  Folders pane, the dot after a gate's name in the sample trees, and the gate's outline and
+  label on the gating plots (a selected gate is pink; figures in Layout stay black).
 - **Folder gates**: drag a gate onto a folder and it becomes that folder's gate. Every sample in
   the folder gets a linked copy (marked with a blue dot after its name), including samples added to the
   folder later. Moving or reshaping it on one sample changes that sample only: its copy is
@@ -154,7 +158,8 @@ with one click).
     order.
   - **Name**: the box under each sample gives it a name for figures (for example a code such as
     WT-1). Layouts show it with `{label}` (or the **Add name label** button), filling in each
-    sample's own name in batch; the statistics table gets a Name column.
+    sample's own name in batch; the statistics table gets a Name column. Enter keeps the name
+    and moves to the next sample's box (scrolling it into view), here and in the Layout sidebar.
   - **Selecting several**: Ctrl/⌘-click or Shift-click samples, then drag any of them onto a
     folder to add them all, or use a row's − / × or the Delete key on all of them at once.
   - **Delete / Backspace** with samples selected does what their row button does: in a folder

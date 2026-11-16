@@ -1304,8 +1304,10 @@ function gateShapes(pop = viewedPop(), v = pop && viewOf(pop), { ghosts = false 
     if (!g) continue;
     const ghost = !!only && c.link?.group !== only;
     if (ghost && !ghosts) continue;
-    // This gate's shape goes with the folder's gates, or with the faint ones.
-    const out = { push: (sh) => (ghost ? faint : own).push(ghost ? { ...sh, ghost: true } : sh) };
+    // This gate's shape goes with the folder's gates, or with the faint ones,
+    // and carries its folder's colour.
+    const fc = c.link ? { fc: folderColor(c.link.group) } : {};
+    const out = { push: (sh) => (ghost ? faint : own).push(ghost ? { ...sh, ...fc, ghost: true } : { ...sh, ...fc }) };
     const sub = fmtPct(pct(c.indices.length, pop.indices.length));
     const counts = { n: c.indices.length, parent: pop.indices.length, grand: (pop.parent || pop).indices.length };
     if (hist) {
@@ -1373,6 +1375,7 @@ function requestPlot() {
 
 function plotColors() {
   return {
+    folders: Array.from({ length: FOLDER_COLORS }, (_, i) => cssVar(`--fc-${i}`)),
     surface: cssVar('--surface'), plotBg: cssVar('--plot'), fg: cssVar('--fg'), muted: cssVar('--muted'),
     axis: cssVar('--axis'), gate: cssVar('--gate'), gateSel: cssVar('--gate-sel'), labelBg: cssVar('--label-bg'),
     histFill: cssVar('--hist-fill'), histLine: cssVar('--hist-line'), dotRGB: hexToRGB(cssVar('--dot')),
@@ -1461,7 +1464,7 @@ function renderTiles() {
         <span class="tile-meta">${pop ? fmtInt(pop.indices.length) : ''}</span>
       </figcaption>
       ${pop ? '<canvas class="tile-plot"></canvas>' : `<p class="tile-missing">No “${esc(S.viewPath[S.viewPath.length - 1] ?? 'All Events')}” population</p>`}
-      ${adjusted ? '<p class="tile-adj"><span class="fg-mark is-custom">adjusted for this sample</span><button class="btn btn-quiet btn-small" data-act="tile-reset" title="Use the folder’s gates again in this sample">Reset</button></p>' : ''}
+      ${adjusted ? `<p class="tile-adj"><span class="fg-mark is-custom" style="${fcStyle(g.id)}">adjusted for this sample</span><button class="btn btn-quiet btn-small" data-act="tile-reset" title="Use the folder’s gates again in this sample">Reset</button></p>` : ''}
     </figure>`;
   }).join('');
   for (const s of shown) {
@@ -2039,7 +2042,7 @@ function treeRows(s, list) {
       : '<span class="twisty-space"></span>';
     rows.push(`<li class="${cls.join(' ')}" style="--depth:${depth}" data-id="${p.id}" data-list="${list}"${drag}>${twisty}
       <button class="pop-pick" data-act="view" title="${p.gate ? 'Click to open. Drag to copy. Ctrl/⌘- or Shift-click to select several.' : 'Click to open'}">
-        <span class="pop-name">${esc(p.name)}${p.link ? `<span class="fg-mark${p.custom ? ' is-custom' : ''}" title="${esc(p.custom ? `Folder gate from ${folderGateName(p.link)}, adjusted for this sample only` : `Folder gate from ${folderGateName(p.link)}`)}">${p.custom ? 'adjusted' : ''}</span>` : ''}</span>
+        <span class="pop-name">${esc(p.name)}${p.link ? `<span class="fg-mark${p.custom ? ' is-custom' : ''}" style="${fcStyle(p.link.group)}" title="${esc(p.custom ? `Folder gate from ${folderGateName(p.link)}, adjusted for this sample only` : `Folder gate from ${folderGateName(p.link)}`)}">${p.custom ? 'adjusted' : ''}</span>` : ''}</span>
         <span class="pop-stats"><span class="pop-num">${fmtInt(p.indices.length)}</span><span class="pop-pct">${par}</span></span>
       </button>${p.gate ? `<span class="row-tools"><button class="row-edit" data-act="rename" aria-label="Rename ${esc(p.name)}" title="Rename">✎</button><button class="row-edit row-del" data-act="delete" aria-label="Delete ${esc(p.name)}" title="Delete this gate and the gates under it">×</button></span>` : ''}</li>`);
     if (!collapsed) for (const c of p.children) visit(c, depth + 1);
@@ -2072,6 +2075,26 @@ function keepScroll(el, fn) {
 // ---------------------------------------------------------------- folders
 
 const BUILT_IN = [{ id: ALL, name: 'All samples' }, { id: CONTROLS, name: 'Compensation controls' }, { id: NONCONTROLS, name: 'Non-control samples' }];
+// Each folder has a colour (an index into the --fc-* palette), shared by the
+// gates it owns in the panes and on the plots: All samples the accent blue,
+// the built-in folders their own, and folders of yours the next colour not in
+// use, kept with the folder.
+const FOLDER_COLORS = 8;
+function folderColor(groupId) {
+  if (groupId === ALL) return 0;
+  if (groupId === NONCONTROLS) return 5;
+  if (groupId === CONTROLS) return 6;
+  const g = S.groups.find((x) => x.id === groupId);
+  if (!g) return 0;
+  if (!Number.isInteger(g.color)) {
+    const order = [1, 2, 3, 4, 7, 5, 6, 0];
+    const used = new Set(S.groups.map((x) => x.color).filter(Number.isInteger));
+    g.color = order.find((c) => !used.has(c)) ?? order[S.groups.indexOf(g) % order.length];
+  }
+  return g.color;
+}
+const fcStyle = (groupId) => `--fc: var(--fc-${folderColor(groupId)})`;
+
 const groupById = (id) => BUILT_IN.find((g) => g.id === id) || S.groups.find((g) => g.id === id) || null;
 // A folder's samples in its order: positions set by hand, then run time.
 const sampleTime = (s) => (s.runTime ??= runTime(s.keywords));
@@ -2115,7 +2138,7 @@ function renderGroups() {
       });
     }
     return `<li class="group-row${g.id === S.groupId ? ' is-sel' : ''}" data-group="${esc(g.id)}">
-      <button class="group-pick" data-act="pick-group"><span class="group-icon" aria-hidden="true"></span><span class="group-name">${esc(g.name)}</span><span class="group-count">${n}</span></button>${edit}</li>${gateRows.length ? `<li class="fg-list"><ul>${gateRows.join('')}</ul></li>` : ''}`;
+      <button class="group-pick" data-act="pick-group" style="${fcStyle(g.id)}"><span class="group-icon" aria-hidden="true"></span><span class="group-name">${esc(g.name)}</span><span class="group-count">${n}</span></button>${edit}</li>${gateRows.length ? `<li class="fg-list" style="${fcStyle(g.id)}"><ul>${gateRows.join('')}</ul></li>` : ''}`;
   };
   keepScroll(el, () => {
     el.innerHTML = BUILT_IN.map(row).join('') + (S.groups.length ? '<li class="group-sep" aria-hidden="true"></li>' : '') + S.groups.map(row).join('');
@@ -3794,6 +3817,16 @@ function bind() {
   });
   $('samples').addEventListener('keydown', (e) => {
     if (!e.target.matches('.order-box, .label-box')) return;
+    if (e.key === 'Enter' && e.target.matches('.label-box')) {
+      // Keeps the name and moves on to the next sample's name.
+      e.preventDefault();
+      const boxes = [...$('samples').querySelectorAll('.label-box')];
+      const next = boxes[boxes.indexOf(e.target) + 1]?.closest('.ws-sample')?.querySelector('.sample-row')?.dataset.id;
+      e.target.blur();
+      const box = next && $('samples').querySelector(`.sample-row[data-id="${next}"]`)?.closest('.ws-sample')?.querySelector('.label-box');
+      if (box) { box.focus(); box.select(); box.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+      return;
+    }
     if (e.key === 'Enter') e.target.blur();
     if (e.key === 'Escape') { renderSamples(); }
   });
