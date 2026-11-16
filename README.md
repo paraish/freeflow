@@ -124,7 +124,7 @@ with one click).
   Folders pane, the dot after a gate's name in the sample trees, and the gate's outline and
   label on the gating plots (a selected gate is pink; figures in Layout stay black).
 - **Folder gates**: drag a gate onto a folder and it becomes that folder's gate. Every sample in
-  the folder gets a linked copy (marked with a blue dot after its name), including samples added to the
+  the folder gets a linked copy (marked with a dot in the folder's colour after its name), including samples added to the
   folder later. Moving or reshaping it on one sample changes that sample only: its copy is
   marked "adjusted", stays in the same place in the tree, and the gates under it stay linked and
   recalculate from it. The gate panel offers **Use the folder's gate** (undo the adjustment) and
