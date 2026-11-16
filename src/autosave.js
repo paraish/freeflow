@@ -42,14 +42,64 @@ function run(store, mode, fn) {
 }
 
 export const putFile = (key, name, bytes) => run('files', 'readwrite', (st) => st.put({ name, bytes }, key));
+export const fileKeys = () => run('files', 'readonly', (st) => st.getAllKeys()).then((k) => k || []);
+
+// Runs a save (or a clear) with no other FreeFlow tab saving at the same
+// time, so the session stored and its files always match: a tab removes the
+// files its own session does not use, which may be another tab's.
+export function exclusive(fn) {
+  return typeof navigator !== 'undefined' && navigator.locks?.request ? navigator.locks.request('freeflow-session', fn) : fn();
+}
 export const getFile = (key) => run('files', 'readonly', (st) => st.get(key));
 export const putSession = (session) => run('session', 'readwrite', (st) => st.put(session, 'current'));
 export const getSession = () => run('session', 'readonly', (st) => st.get('current'));
 
-// Removes stored files no longer in the session.
+// Each tab holds a shared lock named after every stored file its samples
+// use, released when the tab closes, so another tab's save does not remove
+// them (a restored sample reads its file from here).
+const held = new Map(); // file key -> release
+const LOCK = 'freeflow-file:';
+
+export function holdFiles(keys) {
+  if (typeof navigator === 'undefined' || !navigator.locks?.request) return;
+  for (const k of keys) {
+    if (held.has(k)) continue;
+    let release;
+    const until = new Promise((r) => { release = r; });
+    navigator.locks.request(LOCK + k, { mode: 'shared' }, () => until).catch(() => {});
+    held.set(k, release);
+  }
+  for (const [k, release] of held) if (!keys.has(k)) { release(); held.delete(k); }
+}
+
+async function keysInUse() {
+  try {
+    const { held: locks = [] } = await navigator.locks.query();
+    return new Set(locks.map((l) => l.name).filter((n) => n?.startsWith(LOCK)).map((n) => n.slice(LOCK.length)));
+  } catch {
+    return new Set();
+  }
+}
+
+// Whether FreeFlow is open in another tab of this browser too.
+export async function otherTabs() {
+  if (typeof navigator === 'undefined' || !navigator.locks?.query) return false;
+  try {
+    const { held: locks = [] } = await navigator.locks.query();
+    return locks.filter((l) => l.name === 'freeflow-open').length > 1;
+  } catch {
+    return false;
+  }
+}
+export function markOpen() {
+  if (typeof navigator !== 'undefined' && navigator.locks?.request) navigator.locks.request('freeflow-open', { mode: 'shared' }, () => new Promise(() => {})).catch(() => {});
+}
+
+// Removes stored files no longer in the session, nor in use by another tab.
 export async function pruneFiles(keep) {
   const keys = await run('files', 'readonly', (st) => st.getAllKeys());
-  const gone = keys.filter((k) => !keep.has(k));
+  const inUse = await keysInUse();
+  const gone = (keys || []).filter((k) => !keep.has(k) && !inUse.has(k));
   if (gone.length) await run('files', 'readwrite', (st) => { for (const k of gone) st.delete(k); });
 }
 

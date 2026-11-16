@@ -2,7 +2,7 @@ import { parseFCS } from './fcs.js';
 import { exportWSP, parseWSP } from './wsp.js';
 import { makeZip, makeZipCompressed, readZip } from './zip.js';
 import { SharedWorkspaces, stableStringify } from './share.js';
-import { clearAll, getFile, getSession, pruneFiles, putFile, putSession } from './autosave.js';
+import { clearAll, exclusive, fileKeys, getFile, getSession, holdFiles, markOpen, otherTabs, pruneFiles, putFile, putSession } from './autosave.js';
 import { PROVIDERS, forgetStorageSettings, loadStorageSettings, providerById, saveStorageSettings } from './storage/index.js';
 import { xhr } from './storage/http.js';
 import { PUBLIC_SITE, makeShareLink, sharedFileFrom } from './links.js';
@@ -301,6 +301,15 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
     dropExamples();
     report = applyWorkspace(ws, wsps[0].name);
   }
+  // Files of the saved session whose stored copies were gone get their gates,
+  // folder links and label places back when they are opened again.
+  const back = AS.waiting && !ws ? added.filter((s) => AS.waiting.names.has(s.fileName.toLowerCase())) : [];
+  if (back.length) {
+    applyWorkspace(AS.waiting.ws, 'session', { only: back });
+    applySampleExtras(AS.waiting.info, back);
+    for (const s of back) AS.waiting.names.delete(s.fileName.toLowerCase());
+    if (!AS.waiting.names.size) { AS.waiting = null; $('restore-note').hidden = true; }
+  }
   for (const s of added) applyPendingShared(s);
   let bundleLayouts = 0;
   const syncAfter = () => { if (Object.keys(S.groupGates).length) syncFolderGates(); };
@@ -322,24 +331,7 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
         // Folder ids in the bundle match the folders restored just above.
         S.groupGates = { ...S.groupGates, ...info.groupGates };
       }
-      // Which populations follow which folder gate, and which are adjusted.
-      for (const [key, list] of Object.entries(info.gateLabels || {})) {
-        const x = S.samples.find((y) => sampleKey(y) === key);
-        for (const g of x ? list : []) {
-          const p = findByPath(x.root, g.path);
-          if (p && g.lab) p.lab = { dx: +g.lab.dx || 0, dy: +g.lab.dy || 0 };
-        }
-      }
-      for (const [key, links] of Object.entries(info.links || {})) {
-        const x = S.samples.find((y) => sampleKey(y) === key);
-        if (!x) continue;
-        for (const l of links) {
-          const p = findByPath(x.root, l.path);
-          if (!p) continue;
-          p.link = l.link;
-          if (l.custom) p.custom = true;
-        }
-      }
+      applySampleExtras(info, S.samples);
       if (Array.isArray(info.layouts)) {
         const ids = new Set(info.layouts.map((l) => l.id));
         S.layouts = [...S.layouts.filter((l) => !ids.has(l.id)), ...info.layouts];
@@ -365,16 +357,43 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
     lines.push(...report.warnings.slice(0, 4));
     if (report.warnings.length > 4) lines.push(`…and ${report.warnings.length - 4} more notes.`);
   } else {
-    lines.push(`Opened ${added.length} FCS file${added.length > 1 ? 's' : ''}.`);
+    lines.push(`Opened ${added.length} FCS file${added.length > 1 ? 's' : ''}${back.length ? `; ${back.length === added.length ? 'all' : back.length} reconnected to the gates of your saved session` : ''}.`);
   }
   if (errors.length) lines.push(...errors);
   if (quiet && !errors.length) return;
   toast(lines.join('\n'), errors.length > 0 || (report && (report.missing.length > 0 || report.warnings.length > 0)));
 }
 
+// The parts of FreeFlow's own bundle file that belong to samples: where gate
+// labels were moved, and which populations follow which folder gate (and
+// which are adjusted), for the samples given.
+function applySampleExtras(info, samples) {
+  const byKey = (key) => samples.find((y) => sampleKey(y) === key);
+  for (const [key, list] of Object.entries(info.gateLabels || {})) {
+    const x = byKey(key);
+    for (const g of x ? list : []) {
+      const p = findByPath(x.root, g.path);
+      if (p && g.lab) p.lab = { dx: +g.lab.dx || 0, dy: +g.lab.dy || 0 };
+    }
+  }
+  for (const [key, links] of Object.entries(info.links || {})) {
+    const x = byKey(key);
+    if (!x) continue;
+    for (const l of links) {
+      const p = findByPath(x.root, l.path);
+      if (!p) continue;
+      p.link = l.link;
+      if (l.custom) p.custom = true;
+    }
+  }
+}
+
 // ---------------------------------------------------------------- keeping the session in this browser
 
-const AS = { last: null, busy: false, off: false, restoring: false, worked: false }; // worked: a save has succeeded
+// worked: a save has succeeded; saved: a session is stored in this browser.
+// waiting: the saved session's analysis for its files that were no longer
+// stored ({ ws, info, names }), applied when those files are opened again.
+const AS = { last: null, busy: false, off: false, restoring: false, worked: false, saved: false, waiting: null };
 const AUTOSAVE_MS = 15000;
 
 // Saves the session if anything changed since the last save. FCS files are
@@ -386,7 +405,7 @@ async function autosave() {
   try {
     if (!samples.length) {
       // Everything was closed: forget the saved session too.
-      if (AS.last) { await clearAll(); AS.last = null; }
+      if (AS.last) { await exclusive(() => clearAll()); AS.last = null; AS.saved = false; }
       return;
     }
     const named = uniqueNames(samples);
@@ -396,15 +415,29 @@ async function autosave() {
     const files = named.map(({ s, fn }) => ({ key: s.storeKey, name: fn }));
     const sig = wspText + json + JSON.stringify(ui) + JSON.stringify(files);
     if (sig === AS.last) return;
-    for (const { s, fn } of named) {
-      if (s.stored) continue;
-      await putFile(s.storeKey, fn, await s.source.read());
-      s.stored = true;
-    }
-    await putSession({ savedAt: new Date().toISOString(), wsp: wspText, json, ui, files });
-    await pruneFiles(new Set(files.map((f) => f.key)));
+    await exclusive(async () => {
+      // A file stored before may have been removed by another FreeFlow tab
+      // (or the browser): it is stored again, so the session never points to
+      // files that are gone.
+      const have = new Set(await fileKeys());
+      for (const { s, fn } of named) {
+        if (s.stored && have.has(s.storeKey)) continue;
+        // A file that can no longer be read (its stored copy is gone) is
+        // left as it is: opening the session reports it, and opening the
+        // file again reconnects it.
+        let bytes = null;
+        try { bytes = await s.source.read(); } catch { continue; }
+        await putFile(s.storeKey, fn, bytes);
+        s.stored = true;
+      }
+      await putSession({ savedAt: new Date().toISOString(), wsp: wspText, json, ui, files });
+      const keep = new Set(files.map((f) => f.key));
+      holdFiles(keep);
+      await pruneFiles(keep);
+    });
     AS.last = sig;
     AS.worked = true;
+    AS.saved = true;
     // A newer session replaces one that would not open.
     try { localStorage.removeItem(RESTORING); } catch { /* not kept */ }
   } catch (err) {
@@ -423,7 +456,7 @@ async function autosave() {
 const RESTORING = 'freeflow.restoring';
 
 function showRestoreTrouble(text, canRetry) {
-  $('restore-text').textContent = `${text} Start a new session to clear it (your files are not changed)${canRetry ? ', or try again' : ''}.`;
+  $('restore-text').textContent = text;
   $('restore-retry').hidden = !canRetry;
   $('restore-note').classList.add('is-warn');
   $('restore-note').hidden = false;
@@ -435,7 +468,9 @@ async function restoreSession({ force = false } = {}) {
   if (!ses?.files?.length || S.samples.some((s) => !s.isExample)) return;
   let stuck = false;
   try { stuck = !force && !!localStorage.getItem(RESTORING); } catch { /* not kept */ }
-  if (stuck) { showRestoreTrouble('Your saved session did not finish opening last time, so it was not opened again.', true); return; }
+  AS.saved = true;
+  renderHeader();
+  if (stuck) { showRestoreTrouble('Your saved session did not finish opening last time, so it was not opened again. Start a new session to clear it (your files are not changed), or try again.', true); return; }
   try { localStorage.setItem(RESTORING, String(Date.now())); } catch { /* not kept */ }
   $('restore-note').hidden = true;
   $('restore-note').classList.remove('is-warn');
@@ -443,7 +478,10 @@ async function restoreSession({ force = false } = {}) {
   AS.restoring = true;
   try {
     const text = (t) => async () => new TextEncoder().encode(t).buffer;
-    const entries = ses.files.map(({ key, name }) => ({
+    // Files no longer stored are left out (and reported once, below).
+    const have = new Set(await fileKeys().catch(() => []));
+    const lost = ses.files.filter((f) => !have.has(f.key));
+    const entries = ses.files.filter((f) => have.has(f.key)).map(({ key, name }) => ({
       name, path: `session/${name}`,
       read: async () => {
         const f = await getFile(key);
@@ -458,19 +496,24 @@ async function restoreSession({ force = false } = {}) {
       const s = S.samples.find((x) => x.fileName === name && !x.storeKey);
       if (s) { s.storeKey = key; s.stored = true; }
     }
+    holdFiles(new Set(S.samples.map((x) => x.storeKey).filter(Boolean)));
     const ui = ses.ui || {};
     const main = S.samples.find((x) => x.fileName === ses.files[ui.sampleIndex]?.name);
     if (main) S.sampleId = main.id;
     if (groupById(ui.groupId)) S.groupId = ui.groupId;
     if (Array.isArray(ui.viewPath)) S.viewPath = ui.viewPath;
-    if (S.samples.length) {
+    if (lost.length) {
+      try { AS.waiting = { ws: parseWSP(ses.wsp), info: JSON.parse(ses.json || '{}'), names: new Set(lost.map((f) => f.name.toLowerCase())) }; } catch { AS.waiting = null; }
+      const n = ses.files.length;
+      showRestoreTrouble(`${lost.length === n ? `None of the ${n} FCS files` : `${lost.length} of the ${n} FCS files`} of your saved session (from ${timeAgo(ses.savedAt)}) are still stored in this browser${lost.length === n ? ', so only its folders, sample names and layouts came back for now' : ''}. This happens when FreeFlow was open in more than one tab, or the browser cleared its storage. Open those FCS files again (their folder, say) and they get their gates back; or start a new session (your files are not changed).`, false);
+    } else if (S.samples.length) {
       $('restore-text').textContent = `Restored your last session (saved ${timeAgo(ses.savedAt)}).`;
       $('restore-note').hidden = false;
     }
     if (['gating', 'group', 'layout'].includes(ui.mode) && ui.mode !== S.mode) setMode(ui.mode);
     else renderAll();
   } catch (err) {
-    showRestoreTrouble(`Your saved session could not be opened: ${err?.message || err}.`, false);
+    showRestoreTrouble(`Your saved session could not be opened: ${err?.message || err}. Start a new session to clear it (your files are not changed).`, false);
   } finally {
     AS.restoring = false;
     try { localStorage.removeItem(RESTORING); } catch { /* not kept */ }
@@ -497,15 +540,17 @@ function matchSample(w, used, warnings) {
   return s || null;
 }
 
-function applyWorkspace(ws, wspName) {
+// `only`: apply it to these samples alone (the others keep what they have,
+// and the axis settings stay).
+function applyWorkspace(ws, wspName, { only = null } = {}) {
   const warnings = [...ws.warnings];
-  const used = new Set();
+  const used = new Set(only ? S.samples.filter((x) => !only.includes(x)) : []);
   const connected = [];
   const missing = [];
   // Axis settings are per channel in FreeFlow; take each from the first
   // sample that defines it.
   const seen = new Set();
-  for (const w of ws.samples) {
+  for (const w of only ? [] : ws.samples) {
     for (const [ch, t] of Object.entries(w.transforms)) {
       const key = transformName(ch);
       if (ch !== key && w.transforms[key]) continue; // the compensated channel's axis wins
@@ -2011,7 +2056,7 @@ function deleteGate(pop) {
 
 function renderHeader() {
   $('example-note').hidden = !S.examples;
-  $('new-session').hidden = !S.samples.length;
+  $('new-session').hidden = !S.samples.length && !AS.saved;
   updateUndoButtons();
   const s = sample();
   $('comp-btn').disabled = !s;
@@ -4445,7 +4490,7 @@ export function start() {
   // A new session closes everything and forgets the stored one.
   const startOver = async () => {
     AS.off = true;
-    try { await clearAll(); } catch { /* nothing stored */ }
+    try { await exclusive(() => clearAll()); } catch { /* nothing stored */ }
     location.reload();
   };
   $('restore-new').addEventListener('click', startOver);
@@ -4461,6 +4506,11 @@ export function start() {
   });
   $('restore-hide').addEventListener('click', () => { $('restore-note').hidden = true; });
   $('restore-retry').addEventListener('click', () => restoreSession({ force: true }));
+  // With FreeFlow open in another tab too, only the tab used last is kept.
+  markOpen();
+  setTimeout(async () => {
+    if (await otherTabs()) toast('FreeFlow is also open in another tab of this browser. Only the tab you change last is kept here for next time; save a bundle (Save & share) to keep the other.');
+  }, 1500);
   (sharedFile ? Promise.resolve() : restoreSession()).finally(() => {
     setInterval(autosave, AUTOSAVE_MS);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autosave(); });

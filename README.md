@@ -317,6 +317,11 @@ that will not open), there are ways out that work even when the app does not sta
   reload**.
 - If opening the saved session crashed or froze the page, the next visit does not open it by
   itself again: a note offers **Try again** or **Start a new session**.
+- If the session's FCS files are no longer stored (the browser cleared its storage, say), a
+  note says so, with **Start a new session**; its folders, sample names and layouts come back,
+  and opening those FCS files again gives them their gates back.
+- With FreeFlow open in two tabs, only the tab changed last is kept for next time (a note says
+  so); each tab's files stay stored while it is open, so neither tab breaks the other's session.
 - Opening the page with `?reset` at the end of its address (for example
   `https://paraish.github.io/freeflow/?reset`) clears the saved data before anything loads. The data stays on your computer, in this browser
 only. Sample data and opened share links are not kept this way. For a copy you can move or
