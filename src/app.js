@@ -37,6 +37,7 @@ const S = {
   examples: false,
   version: 0,
   stat: { metric: 'freqParent', channel: null },
+  statHidden: new Set(), // statistics columns left out: population keys ("Cells / Singlets"), and STAT_NAME
   clip: null, // copied gates: { items: [serialized populations], label }
   mode: 'gating', // or 'group' (group gating) or 'layout'
   layouts: [],
@@ -325,6 +326,7 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
       }
       if (info.orders && typeof info.orders === 'object') S.orders = { ...S.orders, ...info.orders };
       if (info.labels && typeof info.labels === 'object') S.labels = { ...S.labels, ...info.labels };
+      if (Array.isArray(info.statHidden)) S.statHidden = new Set(info.statHidden.map(String));
       if (info.plotDefaults && typeof info.plotDefaults === 'object') S.plotDefaults = info.plotDefaults;
       if (info.layoutLast && typeof info.layoutLast === 'object') S.layoutLast = info.layoutLast;
       if (info.groupGates && typeof info.groupGates === 'object') {
@@ -671,7 +673,7 @@ function analysisParts(named, created = new Date().toISOString()) {
   const wrapped = named.map(({ s, fn }) => ({ ...s, fileName: fn }));
   const wrap = new Map(named.map(({ s }, i) => [s, wrapped[i]]));
   const wspText = exportWSP({ samples: wrapped, transformOf: getTransform, groups: wspGroups(samples).map((g) => ({ name: g.name, members: g.members.map((m) => wrap.get(m)).filter(Boolean) })) });
-  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, labels: S.labels, plotDefaults: S.plotDefaults, layoutLast: S.layoutLast, links: bundleLinks(named), gateLabels: bundleGateLabels(named) }, null, 1);
+  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, labels: S.labels, plotDefaults: S.plotDefaults, layoutLast: S.layoutLast, statHidden: [...S.statHidden], links: bundleLinks(named), gateLabels: bundleGateLabels(named) }, null, 1);
   return { wspText, json };
 }
 
@@ -2923,6 +2925,9 @@ const METRICS = [
   { id: 'mean', label: 'Mean' },
 ];
 
+// The Name column's key among the statistics columns left out.
+const STAT_NAME = '\u0001name';
+
 function statColumns() {
   const seen = new Map();
   for (const s of S.samples) {
@@ -2980,13 +2985,25 @@ function renderStats() {
     }
     chSel.value = S.stat.channel;
   }
-  const cols = statColumns();
+  const all = statColumns();
+  const cols = all.filter(([key]) => !S.statHidden.has(key));
+  const hasNames = S.samples.some((s) => labelOf(s));
+  const named = hasNames && !S.statHidden.has(STAT_NAME);
+  // The Columns dropdown: Name, then each population, indented as in the tree.
+  const choices = [...(hasNames ? [[STAT_NAME, 'Name (from the Samples pane)', 0, true]] : []), ...all.map(([key, path]) => [key, path[path.length - 1] || 'All Events', path.length])];
+  $('stat-cols-list').innerHTML = choices.map(([key, label, depth, sep]) => `<label style="--depth:${depth}" title="${esc(key === STAT_NAME ? 'Name' : key)}"><input type="checkbox" data-col="${esc(key)}" ${S.statHidden.has(key) ? '' : 'checked'}> ${esc(label)}</label>${sep ? '<div class="col-sep"></div>' : ''}`).join('')
+    || '<p class="muted small" style="margin:4px 12px">No populations yet.</p>';
+  const shown = choices.filter(([key]) => !S.statHidden.has(key)).length;
+  $('stat-cols-count').textContent = choices.length && shown < choices.length ? `(${shown} of ${choices.length})` : '';
   const table = $('stats-table');
-  if (!S.samples.length || !cols.length) {
+  if (!S.samples.length || !all.length) {
     table.innerHTML = '<tbody><tr><td class="empty">Draw a gate to see statistics for every sample here.</td></tr></tbody>';
     return;
   }
-  const named = S.samples.some((s) => labelOf(s));
+  if (!cols.length) {
+    table.innerHTML = '<tbody><tr><td class="empty">No population columns are shown: pick them under Columns.</td></tr></tbody>';
+    return;
+  }
   const head = `<thead><tr><th scope="col" class="sticky">Sample</th>${named ? '<th scope="col">Name</th>' : ''}${cols.map(([key, path]) => {
     const leaf = path[path.length - 1] || 'All Events';
     const parent = path.slice(0, -1).join(' / ');
@@ -2997,10 +3014,10 @@ function renderStats() {
 }
 
 function statsTSV() {
-  const cols = statColumns();
+  const cols = statColumns().filter(([key]) => !S.statHidden.has(key));
   const metric = METRICS.find((m) => m.id === S.stat.metric).label;
   const suffix = S.stat.metric === 'median' || S.stat.metric === 'mean' ? ` · ${S.stat.channel}` : '';
-  const named = S.samples.some((s) => labelOf(s));
+  const named = S.samples.some((s) => labelOf(s)) && !S.statHidden.has(STAT_NAME);
   const lines = [['Sample', ...(named ? ['Name'] : []), ...cols.map(([k]) => `${k} | ${metric}${suffix}`)].join('\t')];
   for (const s of allInOrder()) {
     lines.push([s.name, ...(named ? [labelOf(s)] : []), ...cols.map(([, path]) => {
@@ -4339,6 +4356,29 @@ function bind() {
 
   $('stat-metric').addEventListener('change', (e) => { S.stat.metric = e.target.value; renderStats(); });
   $('stat-channel').addEventListener('change', (e) => { S.stat.channel = e.target.value; renderStats(); });
+  // The Columns dropdown of the statistics table.
+  $('stat-cols').addEventListener('change', (e) => {
+    const key = e.target.dataset.col;
+    if (key === undefined) return;
+    if (e.target.checked) S.statHidden.delete(key); else S.statHidden.add(key);
+    renderStats();
+  });
+  $('stat-cols').addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'cols-all') { S.statHidden.clear(); renderStats(); }
+    if (act === 'cols-none') {
+      for (const el of $('stat-cols-list').querySelectorAll('[data-col]')) S.statHidden.add(el.dataset.col);
+      renderStats();
+    }
+  });
+  // It closes on a click elsewhere, or Esc.
+  document.addEventListener('click', (e) => { if ($('stat-cols').open && !e.target.closest('#stat-cols')) $('stat-cols').open = false; });
+  $('stat-cols').addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !$('stat-cols').open) return;
+    e.stopPropagation();
+    $('stat-cols').open = false;
+    $('stat-cols').querySelector('summary').focus();
+  });
   $('copy-stats').addEventListener('click', () => {
     const text = statsTSV();
     const fallback = () => {

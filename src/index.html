@@ -183,6 +183,13 @@
       <h2>Statistics</h2>
       <label class="axis-pick"><span>Show</span><select id="stat-metric"></select></label>
       <label id="stat-channel-wrap" class="axis-pick" hidden><span>of</span><select id="stat-channel"></select></label>
+      <details id="stat-cols" class="col-pick">
+        <summary class="btn btn-small" title="Choose the table's columns">Columns <span id="stat-cols-count" class="col-count"></span> ▾</summary>
+        <div class="col-menu" role="group" aria-label="Columns to show">
+          <div class="col-menu-head"><button type="button" class="btn btn-quiet btn-small" data-act="cols-all">Show all</button><button type="button" class="btn btn-quiet btn-small" data-act="cols-none">Hide all</button></div>
+          <div id="stat-cols-list" class="col-menu-list"></div>
+        </div>
+      </details>
       <button id="copy-stats" class="btn btn-small">Copy table</button>
     </header>
     <div class="table-scroll"><table id="stats-table" class="stats-table"></table></div>

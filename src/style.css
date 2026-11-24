@@ -418,6 +418,17 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .stats-head { justify-content: flex-start; flex-wrap: wrap; }
 .stats-head h2 { margin-right: 8px; }
 .stats-head #copy-stats { margin-left: auto; }
+/* The table's columns, picked from a dropdown of checkboxes. */
+.col-pick { position: relative; }
+.col-pick > summary { list-style: none; }
+.col-pick > summary::-webkit-details-marker { display: none; }
+.col-count { color: var(--muted); font-weight: 400; }
+.col-menu { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 240px; max-width: min(380px, 90vw); max-height: 50vh; overflow: auto;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16); padding: 4px 0 6px; }
+.col-menu-head { display: flex; gap: 4px; padding: 2px 8px 4px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.col-menu-list label { display: flex; gap: 8px; align-items: center; padding: 3px 12px 3px calc(12px + var(--depth, 0) * 14px); font-size: 13px; cursor: pointer; }
+.col-menu-list label:hover { background: var(--sunk); }
+.col-menu-list .col-sep { border-top: 1px solid var(--line); margin: 4px 0; }
 .stats-table { width: 100%; font-size: 12px; }
 .stats-table th, .stats-table td { padding: 6px 12px; border-top: 1px solid var(--line); text-align: right; white-space: nowrap; }
 .stats-table thead th { vertical-align: bottom; font-weight: 600; }
