@@ -174,7 +174,7 @@ export function uniqueName(parent, base) {
 // Basic statistics of one channel over a population.
 export function channelStats(col, idx) {
   const n = idx.length;
-  if (n === 0) return { median: NaN, mean: NaN, sd: NaN, cv: NaN };
+  if (n === 0) return { median: NaN, mean: NaN, sd: NaN, cv: NaN, min: NaN, max: NaN };
   const v = new Float32Array(n);
   let sum = 0;
   for (let i = 0; i < n; i++) { v[i] = col[idx[i]]; sum += v[i]; }
@@ -184,5 +184,5 @@ export function channelStats(col, idx) {
   const sd = n > 1 ? Math.sqrt(ss / (n - 1)) : 0;
   v.sort();
   const median = n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
-  return { median, mean, sd, cv: mean !== 0 ? (sd / Math.abs(mean)) * 100 : NaN };
+  return { median, mean, sd, cv: mean !== 0 ? (sd / Math.abs(mean)) * 100 : NaN, min: v[0], max: v[n - 1] };
 }

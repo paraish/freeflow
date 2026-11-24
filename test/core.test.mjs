@@ -141,6 +141,8 @@ test('channel stats', () => {
   const st = channelStats(Float32Array.from([1, 2, 3, 4, 100]), Uint32Array.from([0, 1, 2, 3]));
   assert.equal(st.median, 2.5);
   assert.equal(st.mean, 2.5);
+  assert.equal(st.min, 1);
+  assert.equal(st.max, 4);
 });
 
 test('synthetic example: compensation separates the populations it was built from', () => {

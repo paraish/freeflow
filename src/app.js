@@ -327,6 +327,7 @@ async function openEntries(rawEntries, { folder = false, quiet = false } = {}) {
       if (info.orders && typeof info.orders === 'object') S.orders = { ...S.orders, ...info.orders };
       if (info.labels && typeof info.labels === 'object') S.labels = { ...S.labels, ...info.labels };
       if (Array.isArray(info.statHidden)) S.statHidden = new Set(info.statHidden.map(String));
+      if (info.stat && METRICS.some((m) => m.id === info.stat.metric)) S.stat = { metric: info.stat.metric, channel: info.stat.channel ?? null };
       if (info.plotDefaults && typeof info.plotDefaults === 'object') S.plotDefaults = info.plotDefaults;
       if (info.layoutLast && typeof info.layoutLast === 'object') S.layoutLast = info.layoutLast;
       if (info.groupGates && typeof info.groupGates === 'object') {
@@ -673,7 +674,7 @@ function analysisParts(named, created = new Date().toISOString()) {
   const wrapped = named.map(({ s, fn }) => ({ ...s, fileName: fn }));
   const wrap = new Map(named.map(({ s }, i) => [s, wrapped[i]]));
   const wspText = exportWSP({ samples: wrapped, transformOf: getTransform, groups: wspGroups(samples).map((g) => ({ name: g.name, members: g.members.map((m) => wrap.get(m)).filter(Boolean) })) });
-  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, labels: S.labels, plotDefaults: S.plotDefaults, layoutLast: S.layoutLast, statHidden: [...S.statHidden], links: bundleLinks(named), gateLabels: bundleGateLabels(named) }, null, 1);
+  const json = JSON.stringify({ app: 'FreeFlow', format: 1, created, layouts: S.layouts, groups: S.groups, groupGates: S.groupGates, orders: S.orders, labels: S.labels, plotDefaults: S.plotDefaults, layoutLast: S.layoutLast, statHidden: [...S.statHidden], stat: S.stat, links: bundleLinks(named), gateLabels: bundleGateLabels(named) }, null, 1);
   return { wspText, json };
 }
 
@@ -2917,13 +2918,26 @@ function renderSide() {
 
 // ---------------------------------------------------------------- statistics table
 
+// The statistics the table can show, in groups; `unit` heads each column,
+// and those of a channel (`channel`) are of the channel picked beside them.
 const METRICS = [
-  { id: 'freqParent', label: 'Freq. of parent (%)' },
-  { id: 'freqTotal', label: 'Freq. of total (%)' },
-  { id: 'count', label: 'Count' },
-  { id: 'median', label: 'Median' },
-  { id: 'mean', label: 'Mean' },
+  { id: 'freqParent', group: 'Frequency', label: '% of parent', unit: '% of parent' },
+  { id: 'freqGrand', group: 'Frequency', label: '% of grandparent', unit: '% of grandparent' },
+  { id: 'freqTotal', group: 'Frequency', label: '% of total', unit: '% of total' },
+  { id: 'count', group: 'Count', label: 'Count (events)', unit: 'events' },
+  { id: 'min', group: 'Fluorescence of a channel', label: 'Minimum', unit: 'min', channel: true },
+  { id: 'max', group: 'Fluorescence of a channel', label: 'Maximum', unit: 'max', channel: true },
+  { id: 'median', group: 'Fluorescence of a channel', label: 'Median (MFI)', unit: 'median', channel: true },
+  { id: 'mean', group: 'Fluorescence of a channel', label: 'Mean', unit: 'mean', channel: true },
 ];
+const metricOf = (id) => METRICS.find((m) => m.id === id) || METRICS[0];
+// What a column's numbers are, e.g. "% of parent" or "median · CD3".
+function statUnit() {
+  const m = metricOf(S.stat.metric);
+  if (!m.channel) return m.unit;
+  const s0 = sample() || S.samples[0];
+  return `${m.unit} · ${s0 && S.stat.channel ? shortLabel(s0, S.stat.channel) : ''}`;
+}
 
 // The Name column's key among the statistics columns left out.
 const STAT_NAME = '\u0001name';
@@ -2938,7 +2952,7 @@ function statColumns() {
     });
   }
   const metric = S.stat.metric;
-  return [...seen.entries()].filter(([, path]) => path.length > 0 || metric !== 'freqParent');
+  return [...seen.entries()].filter(([, path]) => path.length > 0 || (metric !== 'freqParent' && metric !== 'freqGrand'));
 }
 
 const statCache = new Map();
@@ -2948,6 +2962,7 @@ function statValue(s, path) {
   const m = S.stat.metric;
   if (m === 'count') return pop.indices.length;
   if (m === 'freqParent') return pop.parent ? pct(pop.indices.length, pop.parent.indices.length) : 100;
+  if (m === 'freqGrand') return pop.parent?.parent ? pct(pop.indices.length, pop.parent.parent.indices.length) : null;
   if (m === 'freqTotal') return pct(pop.indices.length, s.n);
   const ch = S.stat.channel;
   if (!s.cols.has(ch)) return null;
@@ -2965,17 +2980,20 @@ function formatStat(v) {
   if (v === null || !Number.isFinite(v)) return '—';
   const m = S.stat.metric;
   if (m === 'count') return fmtInt(v);
-  if (m === 'freqParent' || m === 'freqTotal') return v.toFixed(2);
+  if (m === 'freqParent' || m === 'freqGrand' || m === 'freqTotal') return v.toFixed(2);
   return formatNumber(v);
 }
 
 function renderStats() {
-  const metricSel = $('stat-metric');
-  if (!metricSel.options.length) metricSel.innerHTML = METRICS.map((m) => `<option value="${m.id}">${m.label}</option>`).join('');
-  metricSel.value = S.stat.metric;
+  // The Statistic dropdown: one choice, in groups.
+  const metric = metricOf(S.stat.metric);
+  S.stat.metric = metric.id;
+  $('stat-pick-label').textContent = metric.label;
+  $('stat-pick-list').innerHTML = METRICS.map((m, i) => `${i === 0 || METRICS[i - 1].group !== m.group ? `<p class="col-group">${esc(m.group)}</p>` : ''}
+    <label><input type="radio" name="stat-metric" value="${m.id}" ${m.id === metric.id ? 'checked' : ''}> ${esc(m.label)}</label>`).join('');
   const chSel = $('stat-channel');
   const s0 = sample() || S.samples[0];
-  const needsChannel = S.stat.metric === 'median' || S.stat.metric === 'mean';
+  const needsChannel = !!metric.channel;
   $('stat-channel-wrap').hidden = !needsChannel;
   if (s0) {
     const chans = menuChannels(s0).filter((c) => channelKind(c.name) !== 'time');
@@ -3004,10 +3022,11 @@ function renderStats() {
     table.innerHTML = '<tbody><tr><td class="empty">No population columns are shown: pick them under Columns.</td></tr></tbody>';
     return;
   }
+  const unit = statUnit();
   const head = `<thead><tr><th scope="col" class="sticky">Sample</th>${named ? '<th scope="col">Name</th>' : ''}${cols.map(([key, path]) => {
     const leaf = path[path.length - 1] || 'All Events';
     const parent = path.slice(0, -1).join(' / ');
-    return `<th scope="col" title="${esc(key)}"><span class="col-parent">${esc(parent || '')}</span><span class="col-leaf">${esc(leaf)}</span></th>`;
+    return `<th scope="col" title="${esc(key)}: ${esc(unit)}"><span class="col-parent">${esc(parent || '')}</span><span class="col-leaf">${esc(leaf)}</span><span class="col-unit">${esc(unit)}</span></th>`;
   }).join('')}</tr></thead>`;
   const body = allInOrder().map((s) => `<tr class="${s.id === S.sampleId ? 'is-sel' : ''}"><th scope="row" class="sticky">${esc(s.name)}</th>${named ? `<td class="left">${esc(labelOf(s))}</td>` : ''}${cols.map(([, path]) => `<td>${formatStat(statValue(s, path))}</td>`).join('')}</tr>`).join('');
   table.innerHTML = head + `<tbody>${body}</tbody>`;
@@ -3015,10 +3034,9 @@ function renderStats() {
 
 function statsTSV() {
   const cols = statColumns().filter(([key]) => !S.statHidden.has(key));
-  const metric = METRICS.find((m) => m.id === S.stat.metric).label;
-  const suffix = S.stat.metric === 'median' || S.stat.metric === 'mean' ? ` · ${S.stat.channel}` : '';
+  const unit = statUnit();
   const named = S.samples.some((s) => labelOf(s)) && !S.statHidden.has(STAT_NAME);
-  const lines = [['Sample', ...(named ? ['Name'] : []), ...cols.map(([k]) => `${k} | ${metric}${suffix}`)].join('\t')];
+  const lines = [['Sample', ...(named ? ['Name'] : []), ...cols.map(([k]) => `${k} | ${unit}`)].join('\t')];
   for (const s of allInOrder()) {
     lines.push([s.name, ...(named ? [labelOf(s)] : []), ...cols.map(([, path]) => {
       const v = statValue(s, path);
@@ -4354,7 +4372,13 @@ function bind() {
     inp.setSelectionRange(pos, pos);
   });
 
-  $('stat-metric').addEventListener('change', (e) => { S.stat.metric = e.target.value; renderStats(); });
+  // A statistic picked closes the dropdown.
+  $('stat-pick').addEventListener('change', (e) => {
+    if (e.target.name !== 'stat-metric') return;
+    S.stat.metric = e.target.value;
+    $('stat-pick').open = false;
+    renderStats();
+  });
   $('stat-channel').addEventListener('change', (e) => { S.stat.channel = e.target.value; renderStats(); });
   // The Columns dropdown of the statistics table.
   $('stat-cols').addEventListener('change', (e) => {
@@ -4372,13 +4396,15 @@ function bind() {
     }
   });
   // It closes on a click elsewhere, or Esc.
-  document.addEventListener('click', (e) => { if ($('stat-cols').open && !e.target.closest('#stat-cols')) $('stat-cols').open = false; });
-  $('stat-cols').addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || !$('stat-cols').open) return;
-    e.stopPropagation();
-    $('stat-cols').open = false;
-    $('stat-cols').querySelector('summary').focus();
-  });
+  for (const id of ['stat-cols', 'stat-pick']) {
+    document.addEventListener('click', (e) => { if ($(id).open && !e.target.closest(`#${id}`)) $(id).open = false; });
+    $(id).addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !$(id).open) return;
+      e.stopPropagation();
+      $(id).open = false;
+      $(id).querySelector('summary').focus();
+    });
+  }
   $('copy-stats').addEventListener('click', () => {
     const text = statsTSV();
     const fallback = () => {

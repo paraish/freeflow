@@ -187,8 +187,10 @@ with one click).
 - **Settings pane**: the axis, transform and gate settings on the right of the Gating view.
   **Hide settings** folds it away to give the plot more room, and the choice is remembered.
 - **Statistics**: per-population median, mean and CV for every channel, and a
-  samples × populations table (frequency of parent, frequency of total, count, median or
-  mean of a chosen channel). **Columns ▾** picks which columns are shown, with a checkbox for each
+  samples × populations table. **Statistic ▾** picks what it shows: % of parent, % of
+  grandparent or % of total, the count of events, or the minimum, maximum, median (MFI) or mean
+  of a chosen channel; each column's heading says which (for example "% of parent" or
+  "median · CD3"), as does the copied table. **Columns ▾** picks which columns are shown, with a checkbox for each
   population (indented as in the tree) and for the sample names, plus **Show all** and
   **Hide all**; the choice is kept with the session. **Copy table** puts the table as shown on
   the clipboard for Excel or Sheets.
