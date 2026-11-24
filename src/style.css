@@ -157,24 +157,23 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 }
 .sidebar > .panel { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
 .sidebar .scroll { overflow-y: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
-/* Folders above the folder's samples, in one sidebar at the far left that
-   stays in view (beside the statistics too) and scrolls on its own: down,
-   and sideways for long names. */
+/* Folders above the folder's samples, in a sidebar at the far left that
+   stays in view (beside the statistics too). Each takes half its height and
+   scrolls on its own, down and sideways for long names, so the folders stay
+   in reach while scrolling to a sample far down. */
 .nav-side {
   position: sticky;
   top: calc(12px + env(safe-area-inset-top, 0px));
-  max-height: calc(100vh - 76px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-  overflow: auto;
+  height: calc(100vh - 76px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   min-width: 0;
-  border-radius: var(--r);
-  container-type: inline-size;
 }
-.nav-side.is-tall { overscroll-behavior: contain; }
-.nav-inner { width: max-content; min-width: 100%; display: flex; flex-direction: column; gap: 12px; }
-.nav-side .sidebar { position: static; max-height: none; }
+.nav-inner { height: 100%; display: flex; flex-direction: column; gap: 12px; }
+.nav-side .sidebar { position: static; max-height: none; flex: 1 1 0; min-height: 0; overflow: auto; border-radius: var(--r); container-type: inline-size; }
+.nav-side .sidebar.is-tall { overscroll-behavior: contain; }
+.nav-side .sidebar > .panel { flex: none; width: max-content; min-width: 100%; min-height: 100%; }
 .nav-side .scroll { overflow: visible; }
 /* Names keep to one line (scroll sideways to read them); headings, hints and
-   forms keep to the sidebar's visible width (100cqw). */
+   forms keep to the pane's visible width (100cqw). */
 .nav-side .panel > :not(ul) { max-width: calc(100cqw - 2px); }
 .nav-side .panel > .tree-hint, .nav-side .panel > .group-form, .nav-side .panel > .sel-bar { max-width: calc(100cqw - 26px); }
 .nav-side .sample-name { overflow: visible; text-overflow: clip; }
@@ -220,7 +219,7 @@ h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: 
 /* Phones: the sidebar above the plot, as wide as the screen. */
 @media (max-width: 760px) {
   .gating-body { grid-template-columns: minmax(0, 1fr); }
-  .nav-side { position: static; max-height: 45vh; }
+  .nav-side { position: static; height: 80vh; }
 }
 /* Group gating: the same sidebar, the main plot with every sample tiled
    below, and the display and axis settings beside it, in view and
@@ -492,8 +491,18 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .lay-left { grid-column: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 /* In Layout the Folders pane sits above the folder's samples. */
 .lay-left .sidebar { position: static; }
-.lay-left .groups.sidebar { max-height: 42vh; }
-.lay-left .lay-samples-side { max-height: 70vh; }
+/* Here too the folders and the samples each take half the column's height,
+   which stays in view, and scroll on their own. */
+@media (min-width: 761px) {
+  .lay-left { position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); height: calc(100vh - 76px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); }
+  .lay-folders-slot { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .lay-left .groups.sidebar, .lay-left .lay-samples-side { flex: 1 1 0; min-height: 0; max-height: none; }
+  .lay-left .sidebar > .panel { flex: 1 1 auto; }
+}
+@media (max-width: 760px) {
+  .lay-left .groups.sidebar { max-height: 42vh; }
+  .lay-left .lay-samples-side { max-height: 70vh; }
+}
 .lay-order { flex: none; align-self: center; min-width: 20px; margin-right: 4px; text-align: right; font: 11px var(--font-mono); color: var(--muted); }
 .lay-label { color: var(--accent); }
 .lay-pop[draggable="true"] .pop-pick { cursor: grab; }

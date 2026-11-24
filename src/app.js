@@ -2108,9 +2108,9 @@ function fitGroupView() {
 }
 
 // Keeps a list where it was scrolled to while it is redrawn, and the
-// Folders and samples sidebar around it.
+// Folders or Samples pane around it.
 function keepScroll(el, fn) {
-  const box = el.closest('.nav-side');
+  const box = el.closest('.nav-side .sidebar');
   const top = el.scrollTop, boxTop = box?.scrollTop, boxLeft = box?.scrollLeft;
   fn();
   el.scrollTop = top;
@@ -4432,12 +4432,11 @@ function bind() {
   });
 
   new ResizeObserver(sizePlot).observe($('plot-wrap'));
-  // The Folders and samples sidebar keeps the wheel to itself only while it
-  // has more to scroll; otherwise the page scrolls under the pointer.
-  const nav = $('nav-side');
-  const navFit = new ResizeObserver(() => nav.classList.toggle('is-tall', nav.scrollHeight > nav.clientHeight + 1));
-  navFit.observe(nav);
-  navFit.observe($('nav-inner'));
+  // The Folders and the Samples panes keep the wheel to themselves only while
+  // they have more to scroll; otherwise the page scrolls under the pointer.
+  const panes = [...$('nav-inner').querySelectorAll(':scope > aside')];
+  const navFit = new ResizeObserver(() => { for (const a of panes) a.classList.toggle('is-tall', a.scrollHeight > a.clientHeight + 1); });
+  for (const a of panes) { navFit.observe(a); navFit.observe(a.querySelector('.panel')); }
   // So does the settings pane beside the plot in Group gating.
   const right = $('right-pane');
   const rightFit = new ResizeObserver(() => right.classList.toggle('is-tall', right.scrollHeight > right.clientHeight + 1));

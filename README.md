@@ -144,8 +144,10 @@ with one click).
   workspaces; .wsp files carry each sample's full gates plus the folder memberships.
 - **Folders and samples sidebar**: in Gating and Group gating, the Folders pane and the
   folder's samples share one sidebar at the far left, about a fifth of the window wide. It
-  stays in view (beside the statistics table too) and scrolls on its own: down, and sideways
-  when names are long (numbers and row buttons stay at its right edge).
+  stays in view (beside the statistics table too). The Folders pane and the Samples pane each
+  take half its height and scroll on their own (down, and sideways when names are long, with
+  numbers and row buttons kept at the right edge), so a folder stays in reach while you scroll
+  to a sample far down and drag it there. Layout's left column is split the same way.
 - **Samples pane**: every sample with its own gating tree, each collapsible (per sample,
   per population, or **Expand all** / **Collapse all**). It scrolls separately from the
   active sample's **Populations** column, so you can drag between any two trees. Clicking a
