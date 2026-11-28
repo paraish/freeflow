@@ -62,7 +62,12 @@ with one click).
   applied automatically, creating `Comp-` parameters. **Hide uncompensated** (beside the Compensation
   button) leaves the raw detector channels out of the channel menus (plot axes, axis titles,
   layouts and statistics); a plot already using one keeps it. The matrix can be edited per sample,
-  switched off, reset, or applied to all samples.
+  switched off, reset, or applied to all samples. Beside it, a **Preview** plot shows a chosen
+  sample's population on two channels with the matrix as you type, before the value is applied
+  (when you leave its cell). Clicking into a cell shows its two channels (the fluorochrome
+  against the detector it spills into), so over- or under-compensation shows as a tilt. The
+  preview's sample can be another one (a single-stain control, say), to see what this matrix
+  would do to it.
 - **Compensation from single-stain controls** (Compensation → Calculate from controls):
   - Finds the unstained control and one single-stain control per fluorochrome automatically,
     from file and tube names (BD FACSDiva's "FITC Stained Control", "Unstained Control",

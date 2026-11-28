@@ -447,6 +447,17 @@ table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .overlay { position: fixed; inset: 0; background: rgba(8, 12, 16, 0.45); display: grid; place-items: center; z-index: 20; padding: 16px; }
 .sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; width: min(820px, 100%); max-height: calc(100% - 32px); overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; }
+/* The compensation matrix with its live preview beside it. */
+.sheet.is-wide { width: min(1280px, 100%); }
+.comp-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px); gap: 16px; align-items: start; }
+.comp-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.comp-preview { display: flex; flex-direction: column; gap: 8px; min-width: 0; position: sticky; top: 0; }
+.comp-preview .field { grid-template-columns: 80px minmax(0, 1fr); }
+.comp-preview select { height: 28px; border: 1px solid var(--line); border-radius: var(--r); background: var(--sunk); padding: 0 6px; min-width: 0; width: 100%; }
+.cp-axes { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; }
+.cp-axes .field { grid-template-columns: auto minmax(0, 1fr); }
+.cp-plot { display: block; border-radius: 4px; }
+@media (max-width: 900px) { .comp-layout { grid-template-columns: minmax(0, 1fr); } .comp-preview { position: static; } }
 .sheet-head h2 { font-size: 15px; letter-spacing: 0; text-transform: none; color: var(--fg); }
 #comp-body { display: flex; flex-direction: column; gap: 12px; }
 #comp-body p { margin: 0; }

@@ -11,6 +11,7 @@ import { computeSpillover, detectControls } from './compcalc.js';
 import { ALL, CONTROLS, NONCONTROLS, addMember, members, nameMatches, newGroup, orderSamples, removeMember, runTime, setRule } from './groups.js';
 import { applyTemplates, findTemplate, removeLinkedPops, subtreeGids, templateFrom, unlinkPops, walkTemplate } from './groupgates.js';
 import { applyCompensation, buildChannels, createSample, gatingContext, sampleKey } from './model.js';
+import { identity, invert } from './compensation.js';
 import {
   TRANSFORM_TYPES, channelKind, convertTransform, defaultTransform, formatNumber, makeScaler, validBiex, validLogicle,
 } from './transforms.js';
@@ -3088,6 +3089,10 @@ function renderComp() {
     <button class="seg${CC.tab === 'matrix' ? ' is-on' : ''}" role="tab" aria-selected="${CC.tab === 'matrix'}" data-act="comp-tab" data-tab="matrix">Matrix</button>
     <button class="seg${CC.tab === 'calc' ? ' is-on' : ''}" role="tab" aria-selected="${CC.tab === 'calc'}" data-act="comp-tab" data-tab="calc">Calculate from controls</button></div>`;
   el.innerHTML = tabs + (CC.tab === 'calc' ? compCalcHTML(s) : compMatrixHTML(s));
+  // The matrix gets a live preview beside it, in a wider window.
+  const wide = CC.tab === 'matrix' && !!s.comp;
+  $('comp-panel').querySelector('.sheet').classList.toggle('is-wide', wide);
+  if (wide) drawCompPreview();
 }
 
 function compMatrixHTML(s) {
@@ -3098,7 +3103,7 @@ function compMatrixHTML(s) {
   const label = (n) => esc(channelInfo(s, n).stain ? `${n} (${channelInfo(s, n).stain})` : n);
   const source = s.comp.source === 'controls' ? 'Calculated from single-stain controls.'
     : `Read from the file's ${esc(s.keywords.$SPILLOVER ? '$SPILLOVER' : 'SPILL')} keyword.`;
-  return `
+  return `<div class="comp-layout"><div class="comp-main">
     <p class="muted small">Spillover values in percent. Each row is a fluorochrome; each column is the detector it spills into. ${source}</p>
     <label class="check"><input id="comp-enabled" type="checkbox" ${enabled ? 'checked' : ''}> Apply compensation to ${esc(s.name)}</label>
     <div class="table-scroll"><table class="matrix">
@@ -3109,7 +3114,95 @@ function compMatrixHTML(s) {
     <div class="btn-row">
       <button class="btn" data-act="comp-reset" ${s.comp.fileMatrix ? '' : 'disabled'}>Reset to file values</button>
       <button class="btn" data-act="comp-all" ${S.samples.length < 2 ? 'disabled' : ''}>Use this matrix for all samples</button>
-    </div>`;
+    </div></div>
+    ${compPreviewHTML(s)}</div>`;
+}
+
+// ---- the live preview beside the matrix
+//
+// One sample's population on two channels, compensated with the matrix being
+// edited as it is typed (before it is applied). The sample can be another
+// one, such as a single-stain control: it then shows what this matrix would
+// do to it. With `follow`, clicking into a cell shows the two channels it
+// links: the fluorochrome (X) and the detector it spills into (Y).
+const PV = { sampleId: null, path: [], x: null, y: null, follow: true };
+
+function compPreviewHTML(s) {
+  const names = s.comp.names;
+  const fits = (x) => x.comp && x.comp.names.join() === names.join();
+  const choices = S.samples.filter(fits);
+  if (!choices.some((x) => x.id === PV.sampleId)) PV.sampleId = s.id;
+  const ps = S.samples.find((x) => x.id === PV.sampleId);
+  if (!findByPath(ps.root, PV.path)) PV.path = [];
+  const paths = [];
+  walk(ps.root, (p) => paths.push(pathOf(p)));
+  const chans = ps.channels.filter((c) => !c.uncomp && channelKind(c.name) !== 'time');
+  const comp = chans.filter((c) => c.name.startsWith('Comp-'));
+  if (!chans.some((c) => c.name === PV.x)) PV.x = comp[0]?.name ?? chans[0]?.name;
+  if (!chans.some((c) => c.name === PV.y)) PV.y = comp[1]?.name ?? chans[1]?.name;
+  const opt = (sel) => chans.map((c) => `<option value="${esc(c.name)}" ${c.name === sel ? 'selected' : ''}>${esc(c.label)}</option>`).join('');
+  return `<div class="comp-preview">
+    <h3 class="comp-h">Preview</h3>
+    <label class="field"><span>Sample</span><select id="cp-sample">${choices.map((x) => `<option value="${x.id}" ${x.id === PV.sampleId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+    <label class="field"><span>Population</span><select id="cp-path">${paths.map((p) => `<option value="${esc(JSON.stringify(p))}" ${JSON.stringify(p) === JSON.stringify(PV.path) ? 'selected' : ''}>${esc(['All Events', ...p].join(' / '))}</option>`).join('')}</select></label>
+    <div class="cp-axes"><label class="field"><span>X</span><select id="cp-x">${opt(PV.x)}</select></label><label class="field"><span>Y</span><select id="cp-y">${opt(PV.y)}</select></label>
+      <button class="btn btn-quiet btn-small" data-act="cp-swap" title="Swap X and Y">Swap</button></div>
+    <label class="check check-small"><input id="cp-follow" type="checkbox" ${PV.follow ? 'checked' : ''}> Show the two channels of the cell being edited</label>
+    <canvas id="cp-plot" class="cp-plot" aria-label="Preview of the compensated data"></canvas>
+    <p id="cp-note" class="muted small"></p>
+  </div>`;
+}
+
+// Draws the preview with `matrix` (the matrix being edited, or a trial copy
+// while a value is typed).
+function drawCompPreview(matrix = null) {
+  const canvas = $('cp-plot');
+  const edited = sample();
+  const ps = S.samples.find((x) => x.id === PV.sampleId);
+  if (!canvas || !edited?.comp || !ps?.comp) return;
+  const pop = findByPath(ps.root, PV.path) || ps.root;
+  const names = ps.comp.names;
+  const m = edited.comp.enabled ? (matrix || edited.comp.matrix) : identity(names.length);
+  // Only the two channels shown, only for the population's events.
+  const idx = pop.indices;
+  const column = (name) => {
+    const j = name.startsWith('Comp-') ? names.indexOf(name.slice(5)) : -1;
+    if (j < 0) return ps.cols.get(name);
+    const out = new Float32Array(ps.n);
+    const src = names.map((nm) => ps.raw.get(nm));
+    const inv = invert(m);
+    const w = inv.map((row) => row[j]);
+    for (let k = 0; k < idx.length; k++) {
+      const e = idx[k];
+      let sum = 0;
+      for (let i = 0; i < names.length; i++) sum += src[i][e] * w[i];
+      out[e] = sum;
+    }
+    return out;
+  };
+  let xs, ys;
+  try {
+    const scale = (name) => {
+      const col = column(name);
+      const fwd = scalerFor(name).fwd;
+      const out = new Float32Array(ps.n);
+      for (let k = 0; k < idx.length; k++) out[idx[k]] = fwd(col[idx[k]]);
+      return out;
+    };
+    xs = scale(PV.x);
+    ys = scale(PV.y);
+  } catch (err) {
+    $('cp-note').textContent = err.message;
+    return;
+  }
+  const size = Math.max(240, Math.min(420, Math.floor(canvas.parentElement.clientWidth)));
+  renderPlot(canvas, {
+    w: size, h: size, dpr: devicePixelRatio || 1, colors: plotColors(), fontSans: cssVar('--font-sans'), fontMono: cssVar('--font-mono'),
+    type: 'pseudo', xs, ys, idx, dotSize: S.dotSize, depth: S.depth,
+    xTicks: scalerFor(PV.x).ticks(), yTicks: scalerFor(PV.y).ticks(),
+    xLabel: channelInfo(ps, PV.x).label, yLabel: channelInfo(ps, PV.y).label, gates: [],
+  });
+  $('cp-note').textContent = `${fmtInt(idx.length)} events of ${pop.name}${ps === edited ? '' : `, with ${edited.name}’s matrix`}${edited.comp.enabled ? '' : ' (compensation is off)'}. Updates as you type; a value is applied to ${edited.name} when you leave its cell.`;
 }
 
 function compCalcHTML(s) {
@@ -3207,7 +3300,9 @@ function addExampleControls() {
   toast('Added 5 example controls: unstained plus one single stain per fluorochrome.');
 }
 
-function compChanged(s) {
+// `keepPanel`: a value typed in the matrix; the panel stays as it is (the
+// cursor stays in the grid) and only its preview is redrawn.
+function compChanged(s, { keepPanel = false } = {}) {
   try {
     applyCompensation(s);
   } catch (err) {
@@ -3216,7 +3311,10 @@ function compChanged(s) {
   }
   recompute(s.root, ctxFor(s), s.n);
   S.version++;
+  CC.keepPanel = keepPanel;
   renderAll();
+  CC.keepPanel = false;
+  if (keepPanel) drawCompPreview();
 }
 
 // ---------------------------------------------------------------- layouts
@@ -3654,7 +3752,7 @@ function renderAll() {
   renderToolbar();
   renderSide();
   renderStats();
-  if (!$('comp-panel').hidden) renderComp();
+  if (!$('comp-panel').hidden && !CC.keepPanel) renderComp();
   requestPlot();
 }
 
@@ -3791,6 +3889,7 @@ function bind() {
     const act = btn?.dataset.act;
     const s = sample();
     if (act === 'comp-tab') { CC.tab = btn.dataset.tab; renderComp(); return; }
+    if (act === 'cp-swap') { [PV.x, PV.y] = [PV.y, PV.x]; $('cp-x').value = PV.x; $('cp-y').value = PV.y; drawCompPreview(); return; }
     if (act === 'cc-detect') { CC.detected = false; renderComp(); renderSamples(); return; }
     if (act === 'cc-examples') { addExampleControls(); return; }
     if (act === 'cc-calc') { runCompCalc(); renderComp(); return; }
@@ -3828,8 +3927,41 @@ function bind() {
       const old = s.comp.matrix[e.target.dataset.i][e.target.dataset.j];
       s.comp.matrix[e.target.dataset.i][e.target.dataset.j] = v / 100;
       try { applyCompensation(s); } catch (err) { s.comp.matrix[e.target.dataset.i][e.target.dataset.j] = old; toast(err.message, true); return; }
-      compChanged(s);
+      compChanged(s, { keepPanel: true });
     }
+  });
+  // The preview: its sample, population and channels; and, as a value is
+  // typed, the matrix with that value tried out.
+  $('comp-panel').addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.id === 'cp-sample') { PV.sampleId = t.value; renderComp(); }
+    if (t.id === 'cp-path') { PV.path = JSON.parse(t.value); drawCompPreview(); }
+    if (t.id === 'cp-x') { PV.x = t.value; drawCompPreview(); }
+    if (t.id === 'cp-y') { PV.y = t.value; drawCompPreview(); }
+    if (t.id === 'cp-follow') PV.follow = t.checked;
+  });
+  $('comp-panel').addEventListener('input', (e) => {
+    const t = e.target;
+    const s = sample();
+    if (t.dataset.i === undefined || !s?.comp) return;
+    const v = parseFloat(t.value);
+    t.classList.toggle('hot', v > 10);
+    if (!Number.isFinite(v)) return;
+    const trial = s.comp.matrix.map((r) => [...r]);
+    trial[t.dataset.i][t.dataset.j] = v / 100;
+    try { invert(trial); } catch { return; }
+    drawCompPreview(trial);
+  });
+  $('comp-panel').addEventListener('focusin', (e) => {
+    const t = e.target;
+    const s = sample();
+    if (t.dataset.i === undefined || !PV.follow || !s?.comp) return;
+    const x = `Comp-${s.comp.names[t.dataset.i]}`, y = `Comp-${s.comp.names[t.dataset.j]}`;
+    if (x === PV.x && y === PV.y) return;
+    PV.x = x;
+    PV.y = y;
+    if ($('cp-x')) { $('cp-x').value = x; $('cp-y').value = y; }
+    drawCompPreview();
   });
 
   $('samples').addEventListener('click', (e) => {
